@@ -718,7 +718,7 @@ export default function MarketingPage() {
           </div>
           <div>
             <div style={{ fontSize:8, letterSpacing:'0.22em', color:T.footerMuted, marginBottom:14, textTransform:'uppercase' }}>Company</div>
-            {[{label:'Dashboard',href:'/dashboard'},{label:'Privacy Policy',href:'/privacy'},{label:'Terms of Service',href:'/terms'},{label:'Contact',href:'mailto:hello@heymonday.ai'}].map((l,i)=>(
+            {[{label:'Dashboard',href:'/dashboard'},{label:'Privacy Policy',href:'/privacy'},{label:'Terms of Service',href:'/terms'},{label:'Contact',href:'mailto:legal@heymonday.store'}].map((l,i)=>(
               <Link key={i} href={l.href} style={{ display:'block', fontSize:12, color:T.footerText, marginBottom:10, textDecoration:'none', transition:'color 0.15s' }}
                 onMouseEnter={e=>((e.target as HTMLElement).style.color=isDark?'#c9922a':'#d4a030')}
                 onMouseLeave={e=>((e.target as HTMLElement).style.color=T.footerText)}>{l.label}</Link>
@@ -730,7 +730,7 @@ export default function MarketingPage() {
           </div>
         </div>
         <div style={{ borderTop:`1px solid ${isDark?'#2a2618':'#3a2808'}`, padding:'16px 24px', maxWidth:1100, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
-          <div style={{ fontSize:9, color:T.footerMuted, letterSpacing:'0.1em' }}>© 2026 Monday AI, Inc. All rights reserved.</div>
+          <div style={{ fontSize:9, color:T.footerMuted, letterSpacing:'0.1em' }}>© 2026 Expedition Way Ventures LLC. All rights reserved.</div>
           <div style={{ fontSize:9, color:T.footerMuted, letterSpacing:'0.08em' }}>Not financial advice. · Past performance does not guarantee future results.</div>
         </div>
       </footer>
