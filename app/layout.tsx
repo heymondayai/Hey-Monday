@@ -13,10 +13,15 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+
+
 export const metadata: Metadata = {
-  title: "Hey Monday — AI Market Intelligence",
-  description: "Your AI voice analyst. Live prices, macro events, and spoken briefings.",
-};
+  title: 'Hey Monday',
+  description: 'AI Market Intelligence',
+  icons: {
+    icon: '/favicon.svg',
+  },
+}
 
 export default function RootLayout({
   children,

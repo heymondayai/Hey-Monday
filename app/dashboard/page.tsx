@@ -1139,10 +1139,46 @@ export default function DashboardPage() {
               <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '21px', fontWeight: 600, fontStyle: 'italic', color: T.text }}>
                 Hey <span style={{ color: T.gold }}>Monday</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '7px', cursor: 'pointer' }} onClick={() => setWakeOn(!wakeOn)}>
-                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: wakeOn ? T.green : T.text6, boxShadow: wakeOn ? `0 0 8px ${T.greenGlow2}` : 'none', flexShrink: 0, transition: 'all 0.3s' }} />
-                <span style={{ fontSize: '11px', color: wakeOn ? T.text4 : T.text6, letterSpacing: '0.12em', textTransform: 'uppercase' }}>{wakeOn ? 'Listening · Hey Monday' : 'Wake word off'}</span>
-              </div>
+              <div
+  onClick={() => setWakeOn(!wakeOn)}
+  style={{
+    display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px',
+    padding: '6px 10px 6px 8px',
+    background: wakeOn ? T.greenFaint3 : T.inputBg,
+    border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`,
+    cursor: 'pointer', transition: 'all 0.25s', width: 'fit-content',
+  }}
+>
+  {/* Toggle track */}
+  <div style={{
+    width: '28px', height: '16px', borderRadius: '8px',
+    background: wakeOn ? T.green : T.text7,
+    position: 'relative', flexShrink: 0, transition: 'background 0.25s',
+  }}>
+    <div style={{
+      position: 'absolute', top: '2px',
+      left: wakeOn ? '14px' : '2px',
+      width: '12px', height: '12px', borderRadius: '50%',
+      background: '#fff', transition: 'left 0.25s',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+    }} />
+  </div>
+  {/* Status dot */}
+  <div style={{
+    width: '5px', height: '5px', borderRadius: '50%',
+    background: wakeOn ? T.green : T.text6,
+    boxShadow: wakeOn ? `0 0 6px ${T.greenGlow2}` : 'none',
+    flexShrink: 0, transition: 'all 0.25s',
+    animation: wakeOn ? 'pulse 2s ease infinite' : 'none',
+  }} />
+  <span style={{
+    fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase',
+    color: wakeOn ? T.green : T.text6, fontWeight: 600, transition: 'color 0.25s',
+    fontFamily: "'DM Mono', monospace",
+  }}>
+    {wakeOn ? 'Hey Monday' : 'Wake Word Off'}
+  </span>
+</div>
               <div onClick={() => setShowSettings(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginTop: '10px', padding: '5px 11px', background: activeTrader.bgColor, border: `1px solid ${activeTrader.borderColor}`, cursor: 'pointer' }}>
                 <span style={{ fontSize: '14px' }}>{activeTrader.icon}</span>
                 <span style={{ fontSize: '11px', color: activeTrader.color, fontWeight: 600, letterSpacing: '0.08em' }}>{activeTrader.label}</span>
