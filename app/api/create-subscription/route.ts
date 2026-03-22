@@ -3,11 +3,11 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-02-25.clover',
-})
-
 export async function POST(req: NextRequest) {
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    apiVersion: '2026-02-25.clover',
+  })
+
   try {
     const { email, name, paymentMethodId, priceId, billing } = await req.json()
 
@@ -15,7 +15,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // 1. Create or retrieve Stripe customer
     const existingCustomers = await stripe.customers.list({ email, limit: 1 })
     let customer: Stripe.Customer
 
@@ -32,12 +31,10 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // 2. Set as default payment method
     await stripe.customers.update(customer.id, {
       invoice_settings: { default_payment_method: paymentMethodId },
     })
 
-    // 3. Create subscription with 5-day trial
     const subscription = await stripe.subscriptions.create({
       customer: customer.id,
       items: [{ price: priceId }],
@@ -50,7 +47,6 @@ export async function POST(req: NextRequest) {
       metadata: { email, name, billing },
     })
 
-    // Access expanded invoice + payment_intent safely
     const invoice = subscription.latest_invoice as Stripe.Invoice & {
       payment_intent: Stripe.PaymentIntent | null
     }
