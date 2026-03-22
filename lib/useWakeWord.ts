@@ -1,0 +1,325 @@
+'use client'
+
+/**
+ * useWakeWord.ts
+ *
+ * Runs the full openWakeWord pipeline in the browser:
+ *   Mic → 1280-sample chunks (80ms @ 16kHz)
+ *     → melspectrogram.onnx
+ *     → (output / 10 + 2) transform
+ *     → mel buffer (sliding window of 76 frames)
+ *     → embedding_model.onnx
+ *     → embedding buffer (sliding window)
+ *     → hey_monday.onnx
+ *     → score > threshold → onDetected()
+ *
+ * Place all three .onnx files in /public/models/
+ * Install: npm install onnxruntime-web
+ *
+ * Usage:
+ *   const { listening, error, start, stop } = useWakeWord({
+ *     onDetected: () => console.log('Hey Monday detected!'),
+ *   })
+ */
+
+import { useRef, useState, useCallback, useEffect } from 'react'
+
+// ── CONSTANTS (must match openWakeWord's Python pipeline exactly) ─────────────
+const SAMPLE_RATE       = 16000
+const CHUNK_SAMPLES     = 1280          // 80ms per chunk
+const MEL_FRAMES_NEEDED = 76            // embedding model input window
+const MEL_STEP          = 8             // slide mel buffer by this many frames
+const DETECTION_THRESHOLD = 0.3        // score above this = detected
+const COOLDOWN_MS       = 2000          // prevent re-firing for 2 seconds
+
+interface UseWakeWordOptions {
+  onDetected: () => void
+  threshold?: number
+  modelBasePath?: string
+}
+
+interface UseWakeWordReturn {
+  listening: boolean
+  loading: boolean
+  error: string | null
+  start: () => Promise<void>
+  stop: () => void
+}
+
+export function useWakeWord({
+  onDetected,
+  threshold = DETECTION_THRESHOLD,
+  modelBasePath = '/models',
+}: UseWakeWordOptions): UseWakeWordReturn {
+
+  const [listening, setListening] = useState(false)
+  const [loading, setLoading]     = useState(false)
+  const [error, setError]         = useState<string | null>(null)
+
+  // ONNX sessions
+  const melSession       = useRef<any>(null)
+  const embSession       = useRef<any>(null)
+  const wakeSession      = useRef<any>(null)
+
+  // Audio pipeline refs
+  const audioCtxRef      = useRef<AudioContext | null>(null)
+  const streamRef        = useRef<MediaStream | null>(null)
+  const processorRef     = useRef<ScriptProcessorNode | null>(null)
+  const sourceRef        = useRef<MediaStreamAudioSourceNode | null>(null)
+
+  // Pipeline state — must persist across chunk callbacks
+  const sampleBufferRef  = useRef<Float32Array>(new Float32Array(0))
+  const melBufferRef     = useRef<number[][]>([])   // array of mel frames [frames][32]
+  const embBufferRef     = useRef<number[][]>([])   // array of embeddings [n][96]
+  const lastDetectRef    = useRef<number>(0)
+  const isProcessingRef  = useRef<boolean>(false)
+  const embWindowSizeRef = useRef<number>(16)        // will be inferred from model
+
+  // ── LOAD MODELS ─────────────────────────────────────────────────────────────
+  const loadModels = useCallback(async () => {
+    // Dynamic import so onnxruntime-web only loads client-side
+    const ort = await import('onnxruntime-web')
+
+    // WASM backend is required for melspectrogram (uses audio-specific ops)
+    ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/'
+
+    const opts = { executionProviders: ['wasm'] }
+
+    const [mel, emb, wake] = await Promise.all([
+      ort.InferenceSession.create(`${modelBasePath}/melspectrogram.onnx`, opts),
+      ort.InferenceSession.create(`${modelBasePath}/embedding_model.onnx`, opts),
+      ort.InferenceSession.create(`${modelBasePath}/hey_monday.onnx`, opts),
+    ])
+
+    melSession.current  = mel
+    embSession.current  = emb
+    wakeSession.current = wake
+
+    // Infer the embedding window size from the wake word model's input shape
+    // The input is typically [1, N, 96] where N is the window size
+    try {
+      const inputName = wake.inputNames[0]
+      const meta = (wake.inputMetadata as any)?.[inputName]
+      if (meta?.dims?.[1]) {
+        embWindowSizeRef.current = Number(meta.dims[1])
+      }
+    } catch {
+      // fallback to 16 — correct for most custom models
+    }
+  }, [modelBasePath])
+
+  // ── PROCESS ONE 1280-SAMPLE CHUNK ────────────────────────────────────────
+  const processChunk = useCallback(async (samples: Float32Array) => {
+    if (isProcessingRef.current) return
+    isProcessingRef.current = true
+    const ort = await import('onnxruntime-web')
+    const mel = melSession.current
+    const emb = embSession.current
+    const wake = wakeSession.current
+    if (!mel || !emb || !wake) { isProcessingRef.current = false; return }
+
+    try {
+      // ── STAGE 1: Melspectrogram ──────────────────────────────────────────
+      // Input: [1, 1280] float32
+      const melInput = new ort.Tensor('float32', samples, [1, CHUNK_SAMPLES])
+      const melResult = await mel.run({ [mel.inputNames[0]]: melInput })
+      const melOutput = melResult[mel.outputNames[0]].data as Float32Array
+
+      // Mandatory transform: output = (value / 10.0) + 2.0
+      // This corrects the log scale to match Python's preprocessing
+      const melFrames: number[][] = []
+      const framesPerChunk = melOutput.length / 32  // 32 mel bins
+      for (let f = 0; f < framesPerChunk; f++) {
+        const frame: number[] = []
+        for (let b = 0; b < 32; b++) {
+          const raw = melOutput[f * 32 + b]
+          frame.push((raw / 10.0) + 2.0)
+        }
+        melFrames.push(frame)
+      }
+
+      // Push new mel frames into the rolling buffer
+      melBufferRef.current.push(...melFrames)
+
+      // ── STAGE 2: Embedding (runs when we have enough mel frames) ──────────
+      while (melBufferRef.current.length >= MEL_FRAMES_NEEDED) {
+        const window = melBufferRef.current.slice(0, MEL_FRAMES_NEEDED)
+
+        // Input: [1, 76, 32, 1] float32
+        const flat = new Float32Array(MEL_FRAMES_NEEDED * 32)
+        for (let i = 0; i < MEL_FRAMES_NEEDED; i++) {
+          for (let j = 0; j < 32; j++) {
+            flat[i * 32 + j] = window[i][j]
+          }
+        }
+        const embInput = new ort.Tensor('float32', flat, [1, MEL_FRAMES_NEEDED, 32, 1])
+        const embResult = await emb.run({ [emb.inputNames[0]]: embInput })
+        const embOutput = embResult[emb.outputNames[0]].data as Float32Array
+
+        // embOutput is [1,1,1,96] — flatten to 96 values
+        embBufferRef.current.push(Array.from(embOutput))
+
+        // Slide mel buffer forward by MEL_STEP
+        melBufferRef.current.splice(0, MEL_STEP)
+
+        // ── STAGE 3: Wake word detection ──────────────────────────────────
+        const embWindowSize = embWindowSizeRef.current
+        if (embBufferRef.current.length >= embWindowSize) {
+          const embWindow = embBufferRef.current.slice(-embWindowSize)
+
+          // Input: [1, embWindowSize, 96] float32
+          const embFlat = new Float32Array(embWindowSize * 96)
+          for (let i = 0; i < embWindowSize; i++) {
+            for (let j = 0; j < 96; j++) {
+              embFlat[i * 96 + j] = embWindow[i][j]
+            }
+          }
+          const wakeInput = new ort.Tensor('float32', embFlat, [1, embWindowSize, 96])
+          const wakeResult = await wake.run({ [wake.inputNames[0]]: wakeInput })
+          const score = (wakeResult[wake.outputNames[0]].data as Float32Array)[0]
+          console.log('[WakeWord] score:', score.toFixed(4))
+
+          if (score > threshold) {
+            const now = Date.now()
+            if (now - lastDetectRef.current > COOLDOWN_MS) {
+              lastDetectRef.current = now
+              console.log(`[WakeWord] Detected! score=${score.toFixed(3)}`)
+              // Play a short confirmation tone using the Web Audio API
+              try {
+                const actx = new AudioContext()
+                const osc = actx.createOscillator()
+                const gain = actx.createGain()
+                // Two-tone Siri-style chime: soft low note then higher note
+                osc.type = 'sine'
+                osc.frequency.setValueAtTime(440, actx.currentTime)
+                osc.frequency.setValueAtTime(587, actx.currentTime + 0.12)
+                gain.gain.setValueAtTime(0.0, actx.currentTime)
+                gain.gain.linearRampToValueAtTime(0.5, actx.currentTime + 0.03)
+                gain.gain.setValueAtTime(0.5, actx.currentTime + 0.10)
+                gain.gain.linearRampToValueAtTime(0.0, actx.currentTime + 0.38)
+                osc.start(actx.currentTime)
+                osc.stop(actx.currentTime + 0.38)
+                osc.onended = () => actx.close()
+              } catch {}
+              onDetected()
+            }
+          }
+
+          // Keep embedding buffer from growing unboundedly
+          if (embBufferRef.current.length > embWindowSize * 3) {
+            embBufferRef.current = embBufferRef.current.slice(-embWindowSize)
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[WakeWord] processChunk error:', err)
+    } finally {
+      isProcessingRef.current = false
+    }
+  }, [onDetected, threshold])
+
+  // ── START ────────────────────────────────────────────────────────────────
+  const start = useCallback(async () => {
+    if (listening || loading) return
+    setLoading(true)
+    setError(null)
+
+    try {
+      // 1. Load models if not already loaded
+      if (!melSession.current) {
+        await loadModels()
+      }
+
+      // 2. Reset pipeline state
+      sampleBufferRef.current = new Float32Array(0)
+      melBufferRef.current    = []
+      embBufferRef.current    = []
+      lastDetectRef.current   = 0
+
+      // 3. Open microphone at 16kHz mono
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: SAMPLE_RATE,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+        }
+      })
+      streamRef.current = stream
+
+      // 4. Set up audio processing graph
+      // AudioContext may not support 16kHz directly — we resample manually below
+      const ctx = new AudioContext()
+      audioCtxRef.current = ctx
+
+      const source = ctx.createMediaStreamSource(stream)
+      sourceRef.current = source
+
+      // ScriptProcessorNode gives us raw PCM samples
+      // bufferSize 4096 = ~93ms at 44.1kHz, we resample down to 16kHz chunks
+      const processor = ctx.createScriptProcessor(4096, 1, 1)
+      processorRef.current = processor
+
+      processor.onaudioprocess = (e: AudioProcessingEvent) => {
+        const inputData = e.inputBuffer.getChannelData(0)
+        const inputRate = ctx.sampleRate
+
+        // Downsample from browser's native rate to 16kHz
+        const ratio = inputRate / SAMPLE_RATE
+        const outLen = Math.floor(inputData.length / ratio)
+        const resampled = new Float32Array(outLen)
+        for (let i = 0; i < outLen; i++) {
+          resampled[i] = inputData[Math.floor(i * ratio)]
+        }
+
+        // Accumulate samples into a rolling buffer
+        const combined = new Float32Array(sampleBufferRef.current.length + resampled.length)
+        combined.set(sampleBufferRef.current)
+        combined.set(resampled, sampleBufferRef.current.length)
+        sampleBufferRef.current = combined
+
+        // Process all complete 1280-sample chunks
+        while (sampleBufferRef.current.length >= CHUNK_SAMPLES) {
+          const chunk = sampleBufferRef.current.slice(0, CHUNK_SAMPLES)
+          sampleBufferRef.current = sampleBufferRef.current.slice(CHUNK_SAMPLES)
+          processChunk(chunk)  // async but we don't await — fire and forget per chunk
+        }
+      }
+
+      source.connect(processor)
+      processor.connect(ctx.destination)
+
+      setListening(true)
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to start wake word detection'
+      setError(msg)
+      console.error('[WakeWord] start error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [listening, loading, loadModels, processChunk])
+
+  // ── STOP ─────────────────────────────────────────────────────────────────
+  const stop = useCallback(() => {
+    processorRef.current?.disconnect()
+    sourceRef.current?.disconnect()
+    audioCtxRef.current?.close()
+    streamRef.current?.getTracks().forEach(t => t.stop())
+
+    processorRef.current  = null
+    sourceRef.current     = null
+    audioCtxRef.current   = null
+    streamRef.current     = null
+
+    sampleBufferRef.current = new Float32Array(0)
+    melBufferRef.current    = []
+    embBufferRef.current    = []
+
+    setListening(false)
+  }, [])
+
+  // Cleanup on unmount
+  useEffect(() => () => stop(), [stop])
+
+  return { listening, loading, error, start, stop }
+}

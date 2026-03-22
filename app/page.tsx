@@ -1,65 +1,739 @@
-import Image from "next/image";
+'use client'
 
-export default function Home() {
+import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
+import { useTheme } from '@/app/context/theme-context'
+
+const TICKERS = [
+  { sym: 'AAPL',  price: '249.94', chg: '-1.69%', up: false },
+  { sym: 'TSLA',  price: '392.78', chg: '-1.63%', up: false },
+  { sym: 'META',  price: '615.68', chg: '-1.12%', up: false },
+  { sym: 'AMD',   price: '199.46', chg: '+1.60%', up: true  },
+  { sym: 'SPY',   price: '661.43', chg: '-1.40%', up: false },
+  { sym: 'GLD',   price: '444.74', chg: '-3.16%', up: false },
+  { sym: 'NVDA',  price: '180.40', chg: '-0.84%', up: false },
+  { sym: '/ES',   price: '5,621',  chg: '-0.92%', up: false },
+  { sym: 'BTC',   price: '84,120', chg: '+1.22%', up: true  },
+  { sym: 'MSFT',  price: '388.50', chg: '-0.54%', up: false },
+]
+
+const NAV_SECTIONS = [
+  { id: 'features',     label: 'Features'     },
+  { id: 'how-it-works', label: 'How It Works' },
+  { id: 'pricing',      label: 'Pricing'      },
+  { id: 'faq',          label: 'FAQ'          },
+]
+
+const FEATURES = [
+  { icon: '◈', title: 'AI Voice Assistant',       tag: 'CORE',  desc: 'Say "Hey Monday" — get an instant spoken, institutional-grade analysis of any asset, event, or market structure. No typing. No searching.' },
+  { icon: '⊟', title: 'Live Prices — All Assets',  tag: 'LIVE',  desc: 'Stocks, ETFs, futures, commodities, crypto. Your watchlist refreshes every 30 seconds with real data. Completely customizable.' },
+  { icon: '◐', title: 'High-Impact Calendar',     tag: 'MACRO', desc: 'CPI, FOMC, NFP, earnings — every event that moves markets. Actuals populate the second data drops, and Monday immediately explains the impact.' },
+  { icon: '▦', title: 'Level 2 Order Flow',       tag: 'EDGE',  desc: 'Monday reads the order book and describes what institutions are doing — block buys, sweeps, unusual size — in plain spoken English.' },
+  { icon: '◫', title: 'Intelligent News Feed',    tag: 'NEWS',  desc: 'Every headline scored for market impact and sentiment. Monday connects news events directly to expected price movement on your watchlist.' },
+  { icon: '◉', title: 'Daily Briefings',          tag: 'DAILY', desc: 'A spoken morning briefing before the open, midday pulse, power hour summary, and end-of-day wrap. Delivered like a personal analyst.' },
+]
+
+const DEMO_CHAT = [
+  { role: 'user',   text: "Hey Monday, what's happening with NVDA right now?" },
+  { role: 'monday', text: "NVDA is down 0.84% at $180.40 on moderate volume. The broader semis are mixed — AMD is the outlier at +1.60%. Key watch: Blackwell supply data out of Taiwan this week. Options market is quiet ahead of the next earnings cycle." },
+  { role: 'user',   text: "How does today's macro backdrop affect my tech positions?" },
+  { role: 'monday', text: "The 10Y Treasury Yield sits at 4.21% — elevated rates are pressuring growth multiples across your watchlist. AAPL, TSLA, META are all red. GLD is your weakest name at -3.16%, which is unusual for a safe-haven asset and may signal broader risk-off rotation." },
+]
+
+const STEPS = [
+  { n: '01', title: 'Build your watchlist',      sub: 'Any stock, ETF, future, commodity, or crypto. Monday tracks them all, refreshing every 30 seconds.' },
+  { n: '02', title: 'Say "Hey Monday"',           sub: 'Wake word always listening. Or type — your choice. No clicking through menus, no searching.' },
+  { n: '03', title: 'Monday pulls live data',     sub: 'Every API fires on your question: prices, news, order flow, macro calendar — all simultaneously.' },
+  { n: '04', title: 'Get a spoken answer',        sub: 'Claude AI synthesizes the data. ElevenLabs voices it. You hear a real analyst, not a robot, in under 4 seconds.' },
+  { n: '05', title: 'Stay briefed, hands-free',   sub: 'Automatic morning, midday, and EOD spoken briefings. Event-triggered alerts when CPI or FOMC drops.' },
+]
+
+const FAQ_ITEMS = [
+  { q: "What exactly is included in the 5-day trial?", a: "The 5-day trial includes access to Monday's core features — live prices, calendar, news, and briefings — with a limited number of AI voice replies and chat messages per day. Upgrade anytime to unlock unlimited usage." },
+  { q: "How does the voice actually work?", a: "When you say \"Hey Monday,\" it pulls live data from every connected API simultaneously, synthesizes it using Claude AI, and delivers a spoken response via ElevenLabs natural voice. It sounds like a real analyst — context, nuance, and judgment included — not a dashboard reading numbers." },
+  { q: "What assets does Monday cover?", a: "US stocks, ETFs, futures (/ES, /NQ, /CL, /GC), commodities, crypto (BTC, ETH, SOL and more), and forex pairs. If it trades on a major exchange, Monday knows about it in real time." },
+  { q: "How is this different from Bloomberg or Trade Ideas?", a: "Bloomberg costs $25,000/year and is data-first. Trade Ideas is chart pattern alerts. Monday is intelligence-first — it explains data in real-time spoken English. It's closer to having a senior analyst on call 24/7 than a terminal." },
+  { q: "Can I cancel anytime?", a: "Yes, always. No contracts, no cancellation fees, no friction. If you cancel, you keep access until the end of your billing period. We earn your subscription every month." },
+  { q: "What happens when a major event drops — like CPI or FOMC?", a: "Within seconds of the actual number hitting the wire, Monday detects it, updates the calendar, scores it against the forecast, and automatically delivers a spoken briefing explaining the impact on your specific watchlist. You never have to ask." },
+]
+
+const COMPARISONS = [
+  { name: 'Monday',       monthly: '$79.99', annual: '$66.66', highlight: true,  note: 'Voice AI + live intel' },
+  { name: 'Bloomberg',    monthly: '$2,665', annual: '$2,083', highlight: false, note: 'Data terminal, no AI' },
+  { name: 'Benzinga Pro', monthly: '$197',   annual: '$99',    highlight: false, note: 'News only, no voice' },
+  { name: 'Trade Ideas',  monthly: '$254',   annual: '$167',   highlight: false, note: 'Charts, no macro AI' },
+]
+
+const DARK = {
+  pageBg:'#0a0a08', bg2:'#120f07', bg3:'#181208', bg4:'#1c1608',
+  tickerBg:'#080806', navBg:'rgba(10,10,8,0.97)',
+  border:'#2a2618', border2:'#3a3420',
+  gold:'#c9922a', goldLight:'#e8b84b', goldDim:'#8a6420',
+  red:'#c94242', amber:'#b8860b',
+  text:'#d4c5a0', text2:'#a08040', text3:'#6a6050',
+  heading:'#e8d5a0',
+  chatBg:'#000000', chatToolbar:'#0d0b07',
+  chatUser:'#1c1608', chatUserBorder:'#3a3420',
+  chatMonday:'rgba(201,146,42,.05)', chatMondayBorder:'rgba(201,146,42,.15)',
+  featBg:'#120f07', featHover:'#181208',
+  gridLine:'rgba(201,146,42,.04)',
+  glow:'rgba(201,146,42,.06)', glow2:'rgba(201,146,42,.07)',
+  scanline:'rgba(201,146,42,.15)',
+  stepActive:'#0a0a08', stepInactive:'#120f07',
+  pricingBg:'#120f07', pricingBorder:'rgba(201,146,42,.3)',
+  pricingShadow:'0 0 50px rgba(201,146,42,.06)',
+  compBg:'#120f07',
+  faqOpen:'#0a0a08',
+  testimonialBg:'#0a0a08',
+  footerBg:'#080806', footerBorder:'rgba(201,146,42,.06)',
+  calendarBg:'#120f07',
+  badgeBg:'rgba(201,146,42,.08)', badgeBorder:'rgba(201,146,42,.2)',
+  dataRowBg:'rgba(201,146,42,.04)', dataRowBorder:'rgba(201,146,42,.15)',
+  toggleBg:'#1c1608', toggleBorder:'#3a3420',
+  btnText:'#0a0a08',
+  footerText:'#a08040', footerMuted:'#6a6050', footerPowered:'#4a4438',
+}
+
+const LIGHT = {
+  pageBg:'#f5f0e8', bg2:'#ede6d6', bg3:'#e5dcc8', bg4:'#ddd3ba',
+  tickerBg:'#1a1408', navBg:'rgba(245,240,232,0.97)',
+  border:'#c8b898', border2:'#b8a47e',
+  gold:'#a06818', goldLight:'#c98020', goldDim:'#7a5010',
+  red:'#b83232', amber:'#8a5c10',
+  text:'#2a1f0e', text2:'#6b4c20', text3:'#8a7050',
+  heading:'#1a1008',
+  chatBg:'#faf7f0', chatToolbar:'#ede6d6',
+  chatUser:'#e8dfc8', chatUserBorder:'#b8a47e',
+  chatMonday:'rgba(160,104,24,.06)', chatMondayBorder:'rgba(160,104,24,.2)',
+  featBg:'#ede6d6', featHover:'#e5dcc8',
+  gridLine:'rgba(160,104,24,.055)',
+  glow:'rgba(160,104,24,.08)', glow2:'rgba(160,104,24,.1)',
+  scanline:'rgba(160,104,24,.12)',
+  stepActive:'#f5f0e8', stepInactive:'#ede6d6',
+  pricingBg:'#faf7f0', pricingBorder:'rgba(160,104,24,.4)',
+  pricingShadow:'0 8px 40px rgba(160,104,24,.12)',
+  compBg:'#ede6d6',
+  faqOpen:'#f5f0e8',
+  testimonialBg:'#f5f0e8',
+  footerBg:'#1a1408', footerBorder:'rgba(160,104,24,.1)',
+  calendarBg:'#ede6d6',
+  badgeBg:'rgba(160,104,24,.08)', badgeBorder:'rgba(160,104,24,.25)',
+  dataRowBg:'rgba(160,104,24,.05)', dataRowBorder:'rgba(160,104,24,.18)',
+  toggleBg:'#e5dcc8', toggleBorder:'#b8a47e',
+  btnText:'#f5f0e8',
+  footerText:'#c0a060', footerMuted:'#8a7050', footerPowered:'#8a7050',
+}
+
+function SunIcon({ color }: { color: string }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+  )
+}
+
+function MoonIcon({ color }: { color: string }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  )
+}
+
+export default function MarketingPage() {
+  const { isDark, toggle } = useTheme()           // ← shared context
+  const T = isDark ? DARK : LIGHT
+
+  const [activeNav, setActiveNav]   = useState('')
+  const [chatStep, setChatStep]     = useState(1)
+  const [openFaq, setOpenFaq]       = useState<number | null>(null)
+  const [billing, setBilling]       = useState<'monthly'|'annual'>('monthly')
+  const [activeStep, setActiveStep] = useState(0)
+  const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
+
+  useEffect(() => {
+    const t = setInterval(() => setChatStep(s => s < DEMO_CHAT.length ? s + 1 : s), 2800)
+    return () => clearInterval(t)
+  }, [])
+
+  useEffect(() => {
+    const handler = () => {
+      const scrollY = window.scrollY + 80
+      let current = ''
+      for (const { id } of NAV_SECTIONS) {
+        const el = sectionRefs.current[id]
+        if (el && el.offsetTop <= scrollY) current = id
+      }
+      setActiveNav(current)
+    }
+    window.addEventListener('scroll', handler, { passive: true })
+    return () => window.removeEventListener('scroll', handler)
+  }, [])
+
+  const scrollTo = (id: string) => {
+    const el = sectionRefs.current[id]
+    if (el) { const top = el.getBoundingClientRect().top + window.scrollY - 70; window.scrollTo({ top, behavior: 'smooth' }) }
+  }
+
+  const price = billing === 'monthly' ? '79.99' : '66.66'
+
+  return (
+    <div style={{ background:T.pageBg, color:T.text, fontFamily:"'JetBrains Mono', monospace", minHeight:'100vh', transition:'background 0.3s ease, color 0.3s ease' }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600;1,700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+        *{margin:0;padding:0;box-sizing:border-box}
+        @keyframes tickerScroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+        @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(201,146,42,.4)}50%{opacity:.8;box-shadow:0 0 0 5px rgba(201,146,42,0)}}
+        @keyframes gpulse{0%,100%{opacity:1;filter:brightness(1)}50%{opacity:.85;filter:brightness(1.3)}}
+        @keyframes waveAnim{0%,100%{height:4px}50%{height:20px}}
+        @keyframes scanline{0%{top:-5%}100%{top:105%}}
+        @keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes toggleSpin{from{transform:rotate(-30deg);opacity:0}to{transform:rotate(0deg);opacity:1}}
+        .ticker-inner{display:flex;animation:tickerScroll 45s linear infinite;white-space:nowrap;align-items:center;height:30px}
+        .wb{width:3px;border-radius:2px;opacity:.65;animation:waveAnim 1.1s ease-in-out infinite}
+        .wb:nth-child(1){animation-delay:.00s}.wb:nth-child(2){animation-delay:.08s}.wb:nth-child(3){animation-delay:.16s}
+        .wb:nth-child(4){animation-delay:.12s}.wb:nth-child(5){animation-delay:.04s}.wb:nth-child(6){animation-delay:.20s}
+        .wb:nth-child(7){animation-delay:.10s}.wb:nth-child(8){animation-delay:.18s}.wb:nth-child(9){animation-delay:.06s}
+        .msg-in{animation:msgIn .35s ease both}
+        .toggle-icon{animation:toggleSpin 0.3s ease both}
+        ::-webkit-scrollbar{width:3px}
+        html{scroll-behavior:smooth}
+        @media(max-width:760px){
+          .hide-mobile{display:none!important}
+          .grid-3{grid-template-columns:1fr!important}
+          .grid-4{grid-template-columns:1fr 1fr!important}
+          .footer-grid{grid-template-columns:1fr 1fr!important}
+          .price-inner{flex-direction:column!important}
+        }
+      `}</style>
+
+      {/* ── TICKER ─────────────────────────────────────────────────────── */}
+      <div style={{ background:T.tickerBg, borderBottom:`1px solid ${isDark?T.border:'#3a2808'}`, height:30, overflow:'hidden', position:'relative', transition:'background 0.3s ease' }}>
+        <div style={{ position:'absolute', left:0, top:0, bottom:0, width:48, background:`linear-gradient(90deg,${T.tickerBg},transparent)`, zIndex:2 }} />
+        <div style={{ position:'absolute', right:0, top:0, bottom:0, width:48, background:`linear-gradient(-90deg,${T.tickerBg},transparent)`, zIndex:2 }} />
+        <div className="ticker-inner">
+          {[...TICKERS,...TICKERS].map((tk,i) => (
+            <div key={i} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'0 18px', borderRight:`1px solid ${isDark?T.border:'#3a2808'}`, height:30, fontSize:11 }}>
+              <span style={{ color:isDark?'#d4c5a0':'#f0e8d0', fontWeight:600, letterSpacing:'0.05em' }}>{tk.sym}</span>
+              <span style={{ color:isDark?'#a08040':'#c8a060' }}>{tk.price}</span>
+              <span style={{ color:tk.up?(isDark?'#b8860b':'#c89020'):(isDark?'#c94242':'#c03030') }}>{tk.chg}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── NAVBAR ─────────────────────────────────────────────────────── */}
+      <nav style={{ position:'sticky', top:0, zIndex:100, background:T.navBg, backdropFilter:'blur(16px)', borderBottom:`1px solid ${T.border}`, transition:'background 0.3s ease, border-color 0.3s ease' }}>
+        <div style={{ maxWidth:1100, margin:'0 auto', padding:'0 24px', height:58, display:'flex', alignItems:'center' }}>
+          <div style={{ marginRight:36, flexShrink:0, cursor:'pointer' }} onClick={()=>window.scrollTo({top:0,behavior:'smooth'})}>
+            <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, fontStyle:'italic', color:T.heading, fontWeight:600, transition:'color 0.3s' }}>Hey </span>
+            <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, fontStyle:'italic', color:T.gold, fontWeight:700, transition:'color 0.3s' }}>Monday</span>
+          </div>
+          <div className="hide-mobile" style={{ display:'flex', gap:28, marginRight:'auto' }}>
+            {NAV_SECTIONS.map(s=>(
+              <span key={s.id} onClick={()=>scrollTo(s.id)}
+                style={{ fontSize:11, fontWeight:500, color:activeNav===s.id?T.gold:T.text2, letterSpacing:'0.1em', textTransform:'uppercase', cursor:'pointer', transition:'color 0.15s' }}>
+                {s.label}
+              </span>
+            ))}
+          </div>
+          <div style={{ display:'flex', gap:10, alignItems:'center', marginLeft:'auto' }}>
+            <button onClick={toggle} title={isDark?'Switch to light mode':'Switch to dark mode'}
+              style={{ background:T.toggleBg, border:`1px solid ${T.toggleBorder}`, borderRadius:24, padding:'5px 12px', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:T.text2, transition:'all 0.3s ease', flexShrink:0 }}>
+              <span key={String(isDark)} className="toggle-icon">
+                {isDark ? <SunIcon color={T.text2} /> : <MoonIcon color={T.text2} />}
+              </span>
+            </button>
+            <Link href="/login" style={{ textDecoration:'none' }}>
+              <div style={{ fontSize:10, fontWeight:600, color:T.text2, padding:'7px 16px', border:`1px solid ${T.border2}`, letterSpacing:'0.1em', textTransform:'uppercase', cursor:'pointer', transition:'all 0.3s ease' }}>Log In</div>
+            </Link>
+            <Link href="/signup" style={{ textDecoration:'none' }}>
+              <div style={{ fontSize:10, fontWeight:700, color:T.btnText, background:T.gold, padding:'8px 18px', letterSpacing:'0.1em', textTransform:'uppercase', cursor:'pointer', transition:'background 0.3s ease, color 0.3s ease' }}>Start Free Trial →</div>
+            </Link>
+          </div>
+        </div>
+      </nav>
+
+      {/* ── HERO ───────────────────────────────────────────────────────── */}
+      <section style={{ padding:'88px 24px 76px', textAlign:'center', position:'relative', overflow:'hidden', backgroundImage:`linear-gradient(${T.gridLine} 1px,transparent 1px),linear-gradient(90deg,${T.gridLine} 1px,transparent 1px)`, backgroundSize:'52px 52px', transition:'background 0.3s ease' }}>
+        <div style={{ position:'absolute', top:'45%', left:'50%', transform:'translate(-50%,-50%)', width:700, height:500, background:`radial-gradient(ellipse,${T.glow} 0%,transparent 65%)`, pointerEvents:'none' }} />
+        <div style={{ display:'inline-flex', alignItems:'center', gap:7, background:T.badgeBg, border:`1px solid ${T.badgeBorder}`, padding:'5px 14px', marginBottom:36, fontSize:10, letterSpacing:'0.2em', color:T.gold, textTransform:'uppercase', transition:'all 0.3s ease' }}>
+          <span style={{ width:5, height:5, borderRadius:'50%', background:T.amber, display:'inline-block', animation:'gpulse 2s ease infinite' }} />
+          Market Intelligence · Always On
+        </div>
+        <h1 style={{ marginBottom:24, lineHeight:1.08 }}>
+          <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(50px,8vw,98px)', fontStyle:'italic', fontWeight:600, color:T.heading, display:'block', transition:'color 0.3s' }}>
+            Hey <span style={{ color:T.gold }}>Monday</span>,
+          </span>
+          <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(26px,4vw,50px)', fontStyle:'italic', fontWeight:400, color:T.text2, display:'block', marginTop:6, transition:'color 0.3s' }}>
+            what's the market doing right now?
+          </span>
+        </h1>
+        <p style={{ fontSize:14, color:T.text2, maxWidth:520, margin:'0 auto 44px', lineHeight:1.8, letterSpacing:'0.02em', transition:'color 0.3s' }}>
+          Monday is your AI voice analyst. Ask anything about any asset — stocks, futures, crypto, macro — and get a spoken, institutional-grade answer in seconds.
+        </p>
+        <div style={{ display:'flex', gap:12, justifyContent:'center', flexWrap:'wrap', marginBottom:64 }}>
+          <Link href="/signup" style={{ textDecoration:'none' }}>
+            <div style={{ background:T.gold, color:T.btnText, padding:'14px 36px', fontWeight:700, fontSize:11, letterSpacing:'0.12em', textTransform:'uppercase', display:'inline-block', cursor:'pointer', transition:'all 0.3s ease' }}>
+              Start 5-Day Free Trial →
+            </div>
+          </Link>
+          <div onClick={()=>scrollTo('how-it-works')} style={{ border:`1px solid ${T.border2}`, color:T.text2, padding:'14px 28px', fontSize:11, letterSpacing:'0.1em', textTransform:'uppercase', display:'inline-block', cursor:'pointer', transition:'all 0.3s ease' }}>
+            See How It Works
+          </div>
+        </div>
+
+        {/* Demo window */}
+        <div style={{ maxWidth:700, margin:'0 auto', background:T.chatBg, border:`1px solid ${T.border2}`, position:'relative', overflow:'hidden', boxShadow:T.pricingShadow, transition:'all 0.3s ease' }}>
+          <div style={{ position:'absolute', left:0, right:0, height:1, background:`linear-gradient(90deg,transparent,${T.scanline},transparent)`, animation:'scanline 9s linear infinite', pointerEvents:'none', zIndex:2 }} />
+          <div style={{ padding:'10px 16px', borderBottom:`1px solid ${T.border}`, display:'flex', alignItems:'center', gap:8, background:T.chatToolbar, transition:'background 0.3s ease' }}>
+            <div style={{ display:'flex', gap:5 }}>
+              {['#ff5f57','#febc2e','#28c840'].map((c,i)=><div key={i} style={{ width:9, height:9, borderRadius:'50%', background:c, opacity:.7 }} />)}
+            </div>
+            <div style={{ flex:1, textAlign:'center', fontSize:9, letterSpacing:'0.2em', color:T.text3, textTransform:'uppercase' }}>Monday — AI Market Intelligence</div>
+            <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:9, color:T.amber, letterSpacing:'0.12em', transition:'color 0.3s' }}>
+              <span style={{ width:5, height:5, borderRadius:'50%', background:T.amber, display:'inline-block', animation:'gpulse 2s ease infinite' }} />
+              Listening
+            </div>
+          </div>
+          <div style={{ padding:'18px 20px 10px', display:'flex', flexDirection:'column', gap:12, minHeight:248, background:T.chatBg, transition:'background 0.3s ease' }}>
+            {DEMO_CHAT.slice(0,chatStep).map((msg,i)=>(
+              <div key={i} className="msg-in" style={{ display:'flex', flexDirection:'column', alignItems:msg.role==='user'?'flex-end':'flex-start', gap:3 }}>
+                <div style={{ maxWidth:'87%', padding:'10px 14px', fontSize:12, lineHeight:1.7, background:msg.role==='user'?T.chatUser:T.chatMonday, border:msg.role==='user'?`1px solid ${T.chatUserBorder}`:`1px solid ${T.chatMondayBorder}`, color:T.text, textAlign:'left', transition:'all 0.3s ease' }}>
+                  {msg.text}
+                </div>
+                <div style={{ fontSize:9, letterSpacing:'0.1em', color:T.text3 }}>{msg.role==='monday'?'Monday · just now':'You'}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ padding:'9px 14px 11px', borderTop:`1px solid ${T.border}`, display:'flex', alignItems:'center', gap:10, background:T.chatToolbar, transition:'background 0.3s ease' }}>
+            <div style={{ width:28, height:28, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, color:T.btnText, flexShrink:0, transition:'background 0.3s ease' }}>🎙</div>
+            <div style={{ flex:1, display:'flex', alignItems:'center', gap:2, height:22 }}>
+              {Array.from({length:22},(_,i)=><div key={i} className="wb" style={{ background:T.gold, animationDelay:`${(i%9)*.06}s`, transition:'background 0.3s ease' }} />)}
+            </div>
+            <div style={{ fontSize:9, letterSpacing:'0.12em', color:T.gold, textTransform:'uppercase', transition:'color 0.3s' }}>Listening</div>
+          </div>
+        </div>
+        <p style={{ marginTop:16, fontSize:9, color:T.text3, letterSpacing:'0.15em', transition:'color 0.3s' }}>CANCEL ANYTIME</p>
+      </section>
+
+      {/* ── ASSET CLASSES BAR ──────────────────────────────────────────── */}
+      <div style={{ borderTop:`1px solid ${T.border}`, borderBottom:`1px solid ${T.border}`, background:T.bg2, padding:'18px 24px', transition:'background 0.3s ease' }}>
+        <div style={{ maxWidth:900, margin:'0 auto', display:'flex', flexWrap:'wrap', gap:8, justifyContent:'center', alignItems:'center' }}>
+          <span style={{ fontSize:9, letterSpacing:'0.2em', color:T.text3, textTransform:'uppercase', marginRight:6 }}>Covers →</span>
+          {['US Stocks','ETFs','Futures /ES /NQ /CL','Gold & Commodities','Crypto','Forex'].map((a,i)=>(
+            <div key={i} style={{ fontSize:10, letterSpacing:'0.08em', color:T.text2, background:T.bg3, border:`1px solid ${T.border2}`, padding:'5px 12px', transition:'all 0.3s ease' }}>{a}</div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── FEATURES ───────────────────────────────────────────────────── */}
+      <section id="features" ref={el=>{sectionRefs.current['features']=el}} style={{ padding:'96px 24px', background:T.pageBg, transition:'background 0.3s ease' }}>
+        <div style={{ maxWidth:1060, margin:'0 auto' }}>
+          <div style={{ textAlign:'center', marginBottom:60 }}>
+            <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:14, textTransform:'uppercase' }}>What Monday can do</div>
+            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(30px,5vw,52px)', fontStyle:'italic', fontWeight:600, color:T.heading, lineHeight:1.15, transition:'color 0.3s' }}>
+              Institutional-grade intelligence.<br />
+              <span style={{ color:T.gold, fontWeight:400 }}>Built for real traders.</span>
+            </h2>
+          </div>
+          <div className="grid-3" style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:1, background:T.border }}>
+            {FEATURES.map((f,i)=>(
+              <div key={i} style={{ background:T.featBg, border:'1px solid transparent', padding:'26px 22px', transition:'all 0.2s ease', cursor:'default' }}
+                onMouseEnter={e=>{const el=e.currentTarget as HTMLElement;el.style.background=T.featHover;el.style.borderColor=isDark?'rgba(201,146,42,.3)':'rgba(160,104,24,.3)';el.style.transform='translateY(-2px)'}}
+                onMouseLeave={e=>{const el=e.currentTarget as HTMLElement;el.style.background=T.featBg;el.style.borderColor='transparent';el.style.transform='translateY(0)'}}>
+                <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:14 }}>
+                  <span style={{ fontSize:22, color:T.gold }}>{f.icon}</span>
+                  <span style={{ fontSize:8, letterSpacing:'0.15em', padding:'2px 7px', border:`1px solid ${T.border2}`, color:T.text3, textTransform:'uppercase' }}>{f.tag}</span>
+                </div>
+                <div style={{ fontSize:13, fontWeight:600, color:T.heading, marginBottom:9, letterSpacing:'0.03em', transition:'color 0.3s' }}>{f.title}</div>
+                <div style={{ fontSize:12, color:T.text2, lineHeight:1.7, transition:'color 0.3s' }}>{f.desc}</div>
+                <div style={{ marginTop:18, height:1, width:28, background:T.gold, opacity:.4 }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── HOW IT WORKS ───────────────────────────────────────────────── */}
+      <section id="how-it-works" ref={el=>{sectionRefs.current['how-it-works']=el}} style={{ padding:'96px 24px', background:T.bg2, borderTop:`1px solid ${T.border}`, transition:'background 0.3s ease' }}>
+        <div style={{ maxWidth:1020, margin:'0 auto' }}>
+          <div style={{ textAlign:'center', marginBottom:60 }}>
+            <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:14, textTransform:'uppercase' }}>How it works</div>
+            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(28px,4.5vw,50px)', fontStyle:'italic', fontWeight:600, color:T.heading, lineHeight:1.15, transition:'color 0.3s' }}>
+              Five steps.<br /><span style={{ color:T.gold, fontWeight:400 }}>Infinite market intelligence.</span>
+            </h2>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'260px 1fr', gap:1, background:T.border }}>
+            <div style={{ display:'flex', flexDirection:'column' }}>
+              {STEPS.map((s,i)=>(
+                <div key={i} onClick={()=>setActiveStep(i)} style={{ background:activeStep===i?T.stepActive:T.stepInactive, borderLeft:activeStep===i?`3px solid ${T.gold}`:'3px solid transparent', padding:'20px 18px', cursor:'pointer', transition:'all .15s', borderBottom:`1px solid ${T.border}` }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:18, fontStyle:'italic', color:activeStep===i?T.gold:`${T.gold}33`, fontWeight:700, lineHeight:1, flexShrink:0, width:28 }}>{s.n}</div>
+                    <div style={{ fontSize:12, fontWeight:600, color:activeStep===i?T.heading:T.text3, letterSpacing:'0.02em', transition:'color 0.15s' }}>{s.title}</div>
+                  </div>
+                  <div style={{ fontSize:10, color:activeStep===i?T.text2:T.text3, lineHeight:1.5, marginTop:5, marginLeft:38, transition:'color 0.15s' }}>{s.sub}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ background:T.pageBg, padding:'28px 28px 24px', minHeight:320, transition:'background 0.3s ease' }}>
+              <div style={{ height:2, background:`linear-gradient(90deg,${T.gold},transparent)`, marginBottom:22, width:activeStep===0?'20%':activeStep===1?'40%':activeStep===2?'60%':activeStep===3?'80%':'100%', transition:'width .4s ease' }} />
+              {activeStep === 0 && (
+                <div>
+                  <div style={{ fontSize:9, letterSpacing:'0.2em', color:T.goldDim, marginBottom:16, textTransform:'uppercase' }}>Your Watchlist — Live</div>
+                  <div style={{ border:`1px solid ${T.border2}`, background:T.bg2 }}>
+                    {[{sym:'NVDA',price:'$180.40',chg:'-0.84%',up:false},{sym:'AAPL',price:'$249.94',chg:'-1.69%',up:false},{sym:'AMD',price:'$199.46',chg:'+1.60%',up:true},{sym:'/ES',price:'5,621',chg:'-0.92%',up:false},{sym:'BTC',price:'$84,120',chg:'+1.22%',up:true}].map((tk,i)=>(
+                      <div key={i} style={{ display:'flex', alignItems:'center', padding:'9px 14px', borderBottom:i<4?`1px solid ${T.border}`:'none', gap:12 }}>
+                        <div style={{ fontWeight:700, fontSize:12, width:44, color:tk.up?T.gold:T.red }}>{tk.sym}</div>
+                        <div style={{ flex:1, display:'flex', alignItems:'flex-end', gap:1, height:18 }}>
+                          {Array.from({length:18},(_,j)=><div key={j} style={{ flex:1, height:`${30+Math.sin(j+i*1.3)*20}%`, background:tk.up?T.gold:T.red, opacity:.35, minHeight:3 }} />)}
+                        </div>
+                        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:11, color:T.text, width:56, textAlign:'right' }}>{tk.price}</div>
+                        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:tk.up?T.gold:T.red, width:52, textAlign:'right' }}>{tk.chg}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop:12, fontSize:9, color:T.text3, letterSpacing:'0.1em' }}>Refreshes every 30 seconds automatically</div>
+                </div>
+              )}
+              {activeStep === 1 && (
+                <div>
+                  <div style={{ fontSize:9, letterSpacing:'0.2em', color:T.goldDim, marginBottom:16, textTransform:'uppercase' }}>Wake Word Detection</div>
+                  <div style={{ border:`1px solid ${T.border2}`, background:T.bg2, padding:'18px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+                      <div style={{ width:36, height:36, borderRadius:'50%', background:`linear-gradient(135deg,${T.gold},${T.goldDim})`, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:"'Cormorant Garamond',serif", fontSize:16, fontStyle:'italic', fontWeight:700, color:T.btnText, flexShrink:0 }}>M</div>
+                      <div>
+                        <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:14, fontStyle:'italic', color:T.heading }}>Monday</div>
+                        <div style={{ fontSize:9, letterSpacing:'0.15em', color:T.gold, display:'flex', alignItems:'center', gap:5, marginTop:2 }}>
+                          <span style={{ width:4, height:4, borderRadius:'50%', background:T.gold, display:'inline-block', animation:'pulse 2s ease infinite' }} />
+                          Listening for wake word
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ background:T.badgeBg, border:`1px solid ${T.badgeBorder}`, padding:'10px 13px', fontFamily:"'JetBrains Mono',monospace", fontSize:11, color:T.gold, marginBottom:12 }}>
+                      "Hey Monday" → wake word detected ✓
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, background:T.bg3, border:`1px solid ${T.border2}`, padding:'9px 13px' }}>
+                      <div style={{ width:24, height:24, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, color:T.btnText, flexShrink:0 }}>🎙</div>
+                      <div style={{ flex:1, display:'flex', alignItems:'center', gap:2, height:18 }}>
+                        {Array.from({length:22},(_,i)=><div key={i} className="wb" style={{ background:T.gold, animationDelay:`${(i%9)*.06}s` }} />)}
+                      </div>
+                      <div style={{ fontSize:9, color:T.gold, letterSpacing:'0.1em' }}>LISTENING…</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {activeStep === 2 && (
+                <div>
+                  <div style={{ fontSize:9, letterSpacing:'0.2em', color:T.goldDim, marginBottom:16, textTransform:'uppercase' }}>Live Data — All Sources Fire Simultaneously</div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:12 }}>
+                    {[{icon:'⊟',label:'Live Prices',detail:'Stocks, ETFs, futures, crypto'},{icon:'◫',label:'News Feed',detail:'Scored for impact & sentiment'},{icon:'◐',label:'Macro Calendar',detail:'CPI, FOMC, NFP, earnings'},{icon:'▦',label:'Order Flow',detail:'Level 2 — block trades, sweeps'}].map((src,i)=>(
+                      <div key={i} style={{ background:T.bg2, border:`1px solid ${T.border2}`, padding:'12px', display:'flex', alignItems:'flex-start', gap:8 }}>
+                        <div style={{ fontSize:16, color:T.gold, flexShrink:0 }}>{src.icon}</div>
+                        <div>
+                          <div style={{ fontSize:11, fontWeight:600, color:T.heading, marginBottom:2 }}>{src.label}</div>
+                          <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.06em' }}>{src.detail}</div>
+                        </div>
+                        <div style={{ marginLeft:'auto', width:5, height:5, borderRadius:'50%', background:T.gold, animation:'pulse 2s ease infinite', flexShrink:0, marginTop:2 }} />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ background:T.dataRowBg, border:`1px solid ${T.dataRowBorder}`, padding:'9px 13px', fontSize:9, color:T.text2, letterSpacing:'0.08em', textAlign:'center' }}>
+                    All sources called simultaneously on every question
+                  </div>
+                </div>
+              )}
+              {activeStep === 3 && (
+                <div>
+                  <div style={{ fontSize:9, letterSpacing:'0.2em', color:T.goldDim, marginBottom:16, textTransform:'uppercase' }}>Monday's Response</div>
+                  <div style={{ border:`1px solid ${T.border2}`, background:T.bg2, padding:'16px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14 }}>
+                      <div style={{ width:30, height:30, borderRadius:'50%', background:`linear-gradient(135deg,${T.gold},${T.goldDim})`, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:"'Cormorant Garamond',serif", fontSize:14, fontStyle:'italic', fontWeight:700, color:T.btnText }}>M</div>
+                      <div style={{ fontSize:9, letterSpacing:'0.12em', color:T.gold, display:'flex', alignItems:'center', gap:5 }}>
+                        <span style={{ width:4, height:4, borderRadius:'50%', background:T.gold, display:'inline-block' }} />SPEAKING
+                      </div>
+                      <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:2, height:18 }}>
+                        {Array.from({length:12},(_,i)=><div key={i} className="wb" style={{ background:T.gold, animationDelay:`${i*.07}s` }} />)}
+                      </div>
+                    </div>
+                    <div style={{ background:T.chatMonday, border:`1px solid ${T.chatMondayBorder}`, padding:'11px 13px', fontSize:12, color:T.text, lineHeight:1.7, fontStyle:'italic', fontFamily:"'Cormorant Garamond',serif" }}>
+                      "NVDA is down 0.84% on moderate volume. AMD is outperforming at +1.60% — the outlier in semis today. 10Y yields at 4.21% are compressing growth multiples. GLD at -3.16% is the unexpected weak name; that's unusual for a safe-haven asset."
+                    </div>
+                    <div style={{ marginTop:10, fontSize:9, color:T.text3, letterSpacing:'0.1em' }}>Claude AI · ElevenLabs voice · ~3 seconds end-to-end</div>
+                  </div>
+                </div>
+              )}
+              {activeStep === 4 && (
+                <div>
+                  <div style={{ fontSize:9, letterSpacing:'0.2em', color:T.goldDim, marginBottom:16, textTransform:'uppercase' }}>Scheduled Briefings — Today</div>
+                  <div style={{ border:`1px solid ${T.border2}`, background:T.bg2 }}>
+                    {[{time:'7:00 AM',label:'Pre-Market Briefing',status:'ready',color:T.gold},{time:'9:35 AM',label:'Open Pulse',status:'ready',color:T.gold},{time:'12:00 PM',label:'Midday Summary',status:'upcoming',color:T.goldDim},{time:'Auto',label:'CPI Alert',status:'live',color:T.red},{time:'4:15 PM',label:'End of Day',status:'upcoming',color:T.goldDim}].map((b,i)=>(
+                      <div key={i} style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderBottom:i<4?`1px solid ${T.border}`:'none' }}>
+                        <div style={{ width:2, alignSelf:'stretch', background:b.color, borderRadius:1, flexShrink:0 }} />
+                        <div style={{ fontSize:9, color:T.text3, width:56, flexShrink:0 }}>{b.time}</div>
+                        <div style={{ fontSize:12, fontWeight:500, color:T.heading, flex:1 }}>{b.label}</div>
+                        <div style={{ fontSize:8, padding:'2px 7px',
+                          background:b.status==='ready'?T.badgeBg:b.status==='live'?(isDark?'rgba(201,66,66,.08)':'rgba(184,50,50,.06)'):T.bg3,
+                          border:`1px solid ${b.status==='ready'?T.badgeBorder:b.status==='live'?(isDark?'rgba(201,66,66,.2)':'rgba(184,50,50,.2)'):T.border2}`,
+                          color:b.status==='ready'?T.gold:b.status==='live'?T.red:T.text3,
+                          letterSpacing:'0.1em', animation:b.status==='live'?'pulse 1.5s ease infinite':'none' }}>
+                          {b.status==='ready'?'▶ READY':b.status==='live'?'● LIVE':'⏳ UPCOMING'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div style={{ display:'flex', justifyContent:'space-between', marginTop:20, paddingTop:16, borderTop:`1px solid ${T.border}`, alignItems:'center' }}>
+                <button onClick={()=>setActiveStep(Math.max(0,activeStep-1))} disabled={activeStep===0} style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, padding:'6px 14px', background:'transparent', border:`1px solid ${T.border2}`, color:activeStep===0?T.border2:T.text2, cursor:activeStep===0?'default':'pointer', letterSpacing:'0.08em' }}>← Prev</button>
+                <div style={{ display:'flex', gap:5 }}>
+                  {STEPS.map((_,i)=><div key={i} onClick={()=>setActiveStep(i)} style={{ width:i===activeStep?18:5, height:5, background:i===activeStep?T.gold:T.border2, cursor:'pointer', transition:'all .2s', borderRadius:2 }} />)}
+                </div>
+                <button onClick={()=>setActiveStep(Math.min(4,activeStep+1))} disabled={activeStep===4} style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, padding:'6px 14px', background:'transparent', border:`1px solid ${T.border2}`, color:activeStep===4?T.border2:T.text2, cursor:activeStep===4?'default':'pointer', letterSpacing:'0.08em' }}>Next →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── CALENDAR PREVIEW ───────────────────────────────────────────── */}
+      <section style={{ padding:'80px 24px', background:T.pageBg, borderTop:`1px solid ${T.border}`, transition:'background 0.3s ease' }}>
+        <div style={{ maxWidth:820, margin:'0 auto' }}>
+          <div style={{ textAlign:'center', marginBottom:40 }}>
+            <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:14, textTransform:'uppercase' }}>High-impact calendar</div>
+            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(24px,4vw,42px)', fontStyle:'italic', fontWeight:600, color:T.heading, transition:'color 0.3s' }}>
+              Know what's coming before it moves markets.
+            </h2>
+          </div>
+          <div style={{ border:`1px solid ${T.border2}`, background:T.calendarBg, transition:'all 0.3s ease' }}>
+            <div style={{ padding:'10px 18px', borderBottom:`1px solid ${T.border}`, fontSize:9, letterSpacing:'0.18em', color:T.text3, textTransform:'uppercase', display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ width:5, height:5, borderRadius:'50%', background:T.gold, display:'inline-block' }} />
+              Today's Events — Mar 19
+            </div>
+            {[
+              { time:'8:30 AM', name:'Initial Jobless Claims',   tag:'JOBS · HIGH',   pip:T.red,     est:'225K', actual:'213K', beat:true  },
+              { time:'8:30 AM', name:'Philly Fed Manufacturing', tag:'FED · HIGH',    pip:T.red,     est:'8.5',  actual:null,   countdown:'5h 42m' },
+              { time:'8:30 AM', name:'Philly Fed Employment',    tag:'FED · MEDIUM',  pip:T.goldDim, est:'—',    actual:null,   countdown:'5h 42m' },
+              { time:'4:30 PM', name:"Fed's Balance Sheet",      tag:'FED · MEDIUM',  pip:T.goldDim, est:'—',    actual:null,   countdown:'13h 42m' },
+            ].map((ev,i)=>(
+              <div key={i} style={{ display:'flex', alignItems:'center', gap:14, padding:'13px 18px', borderBottom:i<3?`1px solid ${T.border}`:'none' }}>
+                <div style={{ width:2, alignSelf:'stretch', background:ev.pip, borderRadius:1, flexShrink:0 }} />
+                <div style={{ fontSize:10, color:T.text3, width:58, flexShrink:0 }}>{ev.time}</div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13, color:T.heading, fontWeight:500 }}>{ev.name}</div>
+                  <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.12em', marginTop:2 }}>{ev.tag}</div>
+                </div>
+                <div style={{ textAlign:'right', flexShrink:0 }}>
+                  <div style={{ fontSize:10, color:T.text3 }}>Est: {ev.est}</div>
+                  {ev.actual
+                    ? <div style={{ fontSize:12, fontWeight:600, color:ev.beat?T.amber:T.red, marginTop:3 }}>{ev.actual} {ev.beat?'↑ BEAT':'↑ MISS'}</div>
+                    : <div style={{ fontSize:10, color:T.goldDim, marginTop:3 }}>⏳ {(ev as any).countdown}</div>
+                  }
+                </div>
+              </div>
+            ))}
+          </div>
+          <p style={{ textAlign:'center', marginTop:12, fontSize:9, color:T.text3, letterSpacing:'0.1em' }}>
+            Actuals populate the moment data drops. Monday speaks the impact to you immediately.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </section>
+
+      {/* ── TESTIMONIALS ───────────────────────────────────────────────── */}
+      <section style={{ padding:'80px 24px', background:T.bg2, borderTop:`1px solid ${T.border}`, transition:'background 0.3s ease' }}>
+        <div style={{ maxWidth:960, margin:'0 auto' }}>
+          <div style={{ textAlign:'center', marginBottom:48 }}>
+            <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:14, textTransform:'uppercase' }}>From traders like you</div>
+            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(24px,4vw,42px)', fontStyle:'italic', fontWeight:600, color:T.heading, transition:'color 0.3s' }}>They never trade without it.</h2>
+          </div>
+          <div className="grid-3" style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:1, background:T.border }}>
+            {[
+              { name:'Marcus T.', role:'Day Trader, 9 years', hi:'3-minute briefing', text:"I used to spend 45 minutes every morning reading headlines and checking charts. Monday condenses all of it into a 3-minute briefing. It's like having a Bloomberg terminal that actually talks back." },
+              { name:'Sarah K.',  role:'Options Trader',      hi:'real time',         text:'The second CPI dropped, Monday had the actual vs forecast, explained the impact on my positions, and told me which sector was rotating. In real time. Before I even opened a chart.' },
+              { name:'James L.',  role:'Retail Investor',     hi:'like a friend',     text:"I'm not a professional. I just wanted to understand what was happening to my portfolio. Monday explains it like a friend who happens to know everything about markets." },
+            ].map((tst,i)=>(
+              <div key={i} style={{ background:T.testimonialBg, padding:'24px 20px', transition:'background 0.3s ease' }}>
+                <div style={{ fontSize:12, color:T.text2, lineHeight:1.8, marginBottom:18 }}>
+                  "{tst.text.split(tst.hi)[0]}<span style={{ color:T.gold, fontStyle:'italic', fontFamily:"'Cormorant Garamond',serif", fontSize:14 }}>{tst.hi}</span>{tst.text.split(tst.hi)[1]}"
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                  <div style={{ width:26, height:26, borderRadius:'50%', background:T.bg4, border:`1px solid ${T.border2}`, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:"'Cormorant Garamond',serif", fontSize:14, fontStyle:'italic', color:T.gold }}>{tst.name[0]}</div>
+                  <div>
+                    <div style={{ fontSize:12, fontWeight:600, color:T.heading }}>{tst.name}</div>
+                    <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.1em', marginTop:1 }}>{tst.role}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </main>
+      </section>
+
+      {/* ── PRICING ────────────────────────────────────────────────────── */}
+      <section id="pricing" ref={el=>{sectionRefs.current['pricing']=el}} style={{ padding:'96px 24px', background:T.pageBg, borderTop:`1px solid ${T.border}`, transition:'background 0.3s ease' }}>
+        <div style={{ maxWidth:840, margin:'0 auto' }}>
+          <div style={{ textAlign:'center', marginBottom:48 }}>
+            <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:14, textTransform:'uppercase' }}>Pricing</div>
+            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(26px,4.5vw,48px)', fontStyle:'italic', fontWeight:600, color:T.heading, marginBottom:10, transition:'color 0.3s' }}>One plan. Everything included.</h2>
+            <p style={{ fontSize:12, color:T.text2 }}>No tiers. No feature gates. No gotchas.</p>
+          </div>
+          <div style={{ display:'flex', justifyContent:'center', marginBottom:36 }}>
+            <div style={{ display:'inline-flex', background:T.bg2, border:`1px solid ${T.border2}`, padding:3, gap:3 }}>
+              {(['monthly','annual'] as const).map(b=>(
+                <div key={b} onClick={()=>setBilling(b)} style={{ padding:'8px 20px', fontSize:10, letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:600, cursor:'pointer', background:billing===b?T.bg4:'transparent', color:billing===b?T.heading:T.text3, border:billing===b?`1px solid ${T.border2}`:'1px solid transparent', transition:'all .15s', display:'flex', alignItems:'center', gap:8 }}>
+                  {b}
+                  {b==='annual' && <span style={{ fontSize:8, padding:'1px 5px', background:T.badgeBg, border:`1px solid ${T.badgeBorder}`, color:T.gold }}>2 MO FREE</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{ background:T.pricingBg, border:`1px solid ${T.pricingBorder}`, position:'relative', overflow:'hidden', boxShadow:T.pricingShadow, transition:'all 0.3s ease' }}>
+            <div style={{ height:2, background:`linear-gradient(90deg,transparent,${T.gold},transparent)` }} />
+            <div className="price-inner" style={{ padding:'36px 36px 28px', display:'flex', alignItems:'flex-start', gap:40 }}>
+              <div style={{ flex:1 }}>
+                <div style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:8, letterSpacing:'0.2em', color:T.gold, background:T.badgeBg, border:`1px solid ${T.badgeBorder}`, padding:'3px 10px', marginBottom:18, textTransform:'uppercase' }}>
+                  <span style={{ width:4, height:4, borderRadius:'50%', background:T.gold, display:'inline-block', animation:'pulse 2s ease infinite' }} />
+                  Pro Plan · Full Access
+                </div>
+                <div style={{ display:'flex', alignItems:'baseline', gap:4, marginBottom:6 }}>
+                  <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:70, fontWeight:700, color:T.gold, lineHeight:1 }}>${price.split('.')[0]}</span>
+                  <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:26, color:T.goldDim, fontWeight:500 }}>.{price.split('.')[1]}</span>
+                  <span style={{ fontSize:10, color:T.text3, letterSpacing:'0.08em' }}>/ mo{billing==='annual'?', billed annually':''}</span>
+                </div>
+                {billing==='annual' && <div style={{ fontSize:11, color:T.gold, marginBottom:8 }}>You save $159.96/year</div>}
+                <p style={{ fontSize:12, color:T.text2, lineHeight:1.65, marginBottom:24, maxWidth:340 }}>
+                  Full Monday access — live prices, AI voice, calendar, news, Level 2, briefings, alerts. No limits.
+                </p>
+                <Link href="/signup" style={{ textDecoration:'none' }}>
+                  <div style={{ background:T.gold, color:T.btnText, padding:'14px 32px', fontWeight:700, fontSize:11, letterSpacing:'0.12em', textTransform:'uppercase', display:'inline-block', cursor:'pointer', transition:'all 0.3s ease' }}>
+                    Start 5-Day Free Trial →
+                  </div>
+                </Link>
+                <div style={{ marginTop:12, fontSize:9, color:T.text3, letterSpacing:'0.08em' }}>✓ Cancel anytime</div>
+              </div>
+              <div style={{ flexShrink:0, minWidth:240 }} className="hide-mobile">
+                <div style={{ fontSize:9, letterSpacing:'0.18em', color:T.text3, marginBottom:12, textTransform:'uppercase' }}>Everything included</div>
+                {['Live prices — all asset classes','AI voice "Hey Monday" wake word','High-impact economic calendar','News feed with sentiment scoring','Level 2 / order flow descriptions','Morning & EOD spoken briefings','Price + macro event alerts','Watchlist (unlimited assets)','All APIs called per question','Conversation history + audio replay'].map((f,i)=>(
+                  <div key={i} style={{ display:'flex', gap:8, padding:'5px 0', borderBottom:i<9?`1px solid ${T.footerBorder}`:'none' }}>
+                    <span style={{ color:T.gold, fontSize:11, flexShrink:0, marginTop:1 }}>✓</span>
+                    <span style={{ fontSize:11, color:T.text2 }}>{f}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div style={{ marginTop:16, display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:1, background:T.border }} className="grid-4">
+            {COMPARISONS.map((c,i)=>(
+              <div key={i} style={{ background:c.highlight?T.dataRowBg:T.compBg, padding:'14px', textAlign:'center', borderTop:c.highlight?`2px solid ${T.gold}`:'2px solid transparent', transition:'all 0.3s ease' }}>
+                <div style={{ fontSize:9, letterSpacing:'0.1em', color:c.highlight?T.gold:T.text3, marginBottom:5, textTransform:'uppercase' }}>{c.name}</div>
+                <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:18, fontStyle:'italic', fontWeight:700, color:c.highlight?T.gold:T.text3, marginBottom:3, textDecoration:c.highlight?'none':'line-through' }}>
+                  {billing==='annual'?c.annual:c.monthly}<span style={{ fontSize:10, fontStyle:'normal', fontWeight:400 }}>/mo</span>
+                </div>
+                <div style={{ fontSize:9, color:T.text3 }}>{c.note}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── FAQ ────────────────────────────────────────────────────────── */}
+      <section id="faq" ref={el=>{sectionRefs.current['faq']=el}} style={{ padding:'96px 24px', background:T.bg2, borderTop:`1px solid ${T.border}`, transition:'background 0.3s ease' }}>
+        <div style={{ maxWidth:700, margin:'0 auto' }}>
+          <div style={{ textAlign:'center', marginBottom:48 }}>
+            <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:14, textTransform:'uppercase' }}>Common questions</div>
+            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(24px,4vw,42px)', fontStyle:'italic', fontWeight:600, color:T.heading, transition:'color 0.3s' }}>Everything you need to know.</h2>
+          </div>
+          <div style={{ border:`1px solid ${T.border2}` }}>
+            {FAQ_ITEMS.map((item,i)=>(
+              <div key={i} onClick={()=>setOpenFaq(openFaq===i?null:i)} style={{ borderBottom:i<FAQ_ITEMS.length-1?`1px solid ${T.border}`:'none', background:openFaq===i?T.faqOpen:'transparent', cursor:'pointer', transition:'background 0.15s' }}>
+                <div style={{ padding:'17px 20px', display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16 }}>
+                  <div style={{ fontSize:13, fontWeight:500, color:openFaq===i?T.gold:T.heading, lineHeight:1.5, transition:'color 0.15s' }}>{item.q}</div>
+                  <div style={{ fontSize:18, color:T.text3, flexShrink:0, transition:'transform .2s', transform:openFaq===i?'rotate(45deg)':'none' }}>+</div>
+                </div>
+                {openFaq===i && <div style={{ padding:'0 20px 16px', fontSize:12, color:T.text2, lineHeight:1.8 }}>{item.a}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── FINAL CTA ──────────────────────────────────────────────────── */}
+      <section style={{ padding:'96px 24px', background:T.pageBg, borderTop:`1px solid ${T.border}`, textAlign:'center', position:'relative', overflow:'hidden', backgroundImage:`linear-gradient(${T.gridLine} 1px,transparent 1px),linear-gradient(90deg,${T.gridLine} 1px,transparent 1px)`, backgroundSize:'52px 52px', transition:'background 0.3s ease' }}>
+        <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:600, height:400, background:`radial-gradient(ellipse,${T.glow2} 0%,transparent 65%)`, pointerEvents:'none' }} />
+        <div style={{ maxWidth:540, margin:'0 auto', position:'relative' }}>
+          <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:20, textTransform:'uppercase' }}>Ready to start?</div>
+          <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(30px,5.5vw,60px)', fontStyle:'italic', fontWeight:600, lineHeight:1.12, marginBottom:20 }}>
+            <span style={{ color:T.heading, transition:'color 0.3s' }}>The market doesn't sleep.</span><br />
+            <span style={{ color:T.gold }}>Neither does Monday.</span>
+          </h2>
+          <p style={{ fontSize:13, color:T.text2, marginBottom:34, lineHeight:1.75, letterSpacing:'0.02em', transition:'color 0.3s' }}>
+            $79.99/month. No contracts. Cancel anytime.<br />5-day free trial — limited voice replies and chat messages.
+          </p>
+          <div style={{ display:'flex', gap:12, justifyContent:'center', flexWrap:'wrap' }}>
+            <Link href="/signup" style={{ textDecoration:'none' }}>
+              <div style={{ background:T.gold, color:T.btnText, padding:'15px 38px', fontWeight:700, fontSize:11, letterSpacing:'0.12em', textTransform:'uppercase', display:'inline-block', cursor:'pointer', transition:'all 0.3s ease' }}>
+                Start 5-Day Free Trial →
+              </div>
+            </Link>
+            <div onClick={()=>scrollTo('pricing')} style={{ border:`1px solid ${T.border2}`, color:T.text2, padding:'15px 26px', fontSize:11, letterSpacing:'0.1em', textTransform:'uppercase', display:'inline-block', cursor:'pointer', transition:'all 0.3s ease' }}>
+              View Pricing
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FOOTER ─────────────────────────────────────────────────────── */}
+      <footer style={{ background:T.footerBg, borderTop:`1px solid ${isDark?T.border:'#3a2808'}`, transition:'background 0.3s ease' }}>
+        <div className="footer-grid" style={{ maxWidth:1100, margin:'0 auto', padding:'52px 24px 36px', display:'grid', gridTemplateColumns:'1.6fr 1fr 1fr 1fr', gap:40 }}>
+          <div>
+            <div style={{ marginBottom:14 }}>
+              <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, fontStyle:'italic', color:isDark?'#e8d5a0':'#f0e8d0', fontWeight:600 }}>Hey </span>
+              <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, fontStyle:'italic', color:isDark?'#c9922a':'#d4a030', fontWeight:700 }}>Monday</span>
+            </div>
+            <p style={{ fontSize:12, color:T.footerText, lineHeight:1.7, maxWidth:250, marginBottom:16 }}>
+              Your AI voice market analyst. Live prices, real-time intelligence, and spoken briefings — for every trader.
+            </p>
+            <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:9, letterSpacing:'0.15em', color:isDark?'#b8860b':'#d4a030', textTransform:'uppercase' }}>
+              <span style={{ width:4, height:4, borderRadius:'50%', background:isDark?'#b8860b':'#d4a030', display:'inline-block', animation:'gpulse 2s ease infinite' }} />
+              Market intelligence, always on
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize:8, letterSpacing:'0.22em', color:T.footerMuted, marginBottom:14, textTransform:'uppercase' }}>Navigate</div>
+            {NAV_SECTIONS.map((s,i)=>(
+              <div key={i} onClick={()=>scrollTo(s.id)} style={{ fontSize:12, color:T.footerText, marginBottom:10, cursor:'pointer', letterSpacing:'0.02em', transition:'color .15s' }}
+                onMouseEnter={e=>(e.currentTarget.style.color=isDark?'#c9922a':'#d4a030')}
+                onMouseLeave={e=>(e.currentTarget.style.color=T.footerText)}>{s.label}</div>
+            ))}
+          </div>
+          <div>
+            <div style={{ fontSize:8, letterSpacing:'0.22em', color:T.footerMuted, marginBottom:14, textTransform:'uppercase' }}>Features</div>
+            {['AI Voice Assistant','Live Watchlist','Economic Calendar','News Feed','Level 2 / Order Flow','Daily Briefings'].map((l,i)=>(
+              <div key={i} style={{ fontSize:12, color:T.footerText, marginBottom:10 }}>{l}</div>
+            ))}
+          </div>
+          <div>
+            <div style={{ fontSize:8, letterSpacing:'0.22em', color:T.footerMuted, marginBottom:14, textTransform:'uppercase' }}>Company</div>
+            {[{label:'Dashboard',href:'/dashboard'},{label:'Privacy Policy',href:'/privacy'},{label:'Terms of Service',href:'/terms'},{label:'Contact',href:'mailto:hello@heymonday.ai'}].map((l,i)=>(
+              <Link key={i} href={l.href} style={{ display:'block', fontSize:12, color:T.footerText, marginBottom:10, textDecoration:'none', transition:'color 0.15s' }}
+                onMouseEnter={e=>((e.target as HTMLElement).style.color=isDark?'#c9922a':'#d4a030')}
+                onMouseLeave={e=>((e.target as HTMLElement).style.color=T.footerText)}>{l.label}</Link>
+            ))}
+            <div style={{ marginTop:18 }}>
+              <div style={{ fontSize:8, letterSpacing:'0.18em', color:T.footerMuted, marginBottom:8, textTransform:'uppercase' }}>Powered by</div>
+              {['Claude AI','ElevenLabs','Finnhub','FRED'].map((pw,i)=><div key={i} style={{ fontSize:10, color:T.footerPowered, marginBottom:4, letterSpacing:'0.06em' }}>{pw}</div>)}
+            </div>
+          </div>
+        </div>
+        <div style={{ borderTop:`1px solid ${isDark?'#2a2618':'#3a2808'}`, padding:'16px 24px', maxWidth:1100, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
+          <div style={{ fontSize:9, color:T.footerMuted, letterSpacing:'0.1em' }}>© 2026 Monday AI, Inc. All rights reserved.</div>
+          <div style={{ fontSize:9, color:T.footerMuted, letterSpacing:'0.08em' }}>Not financial advice. · Past performance does not guarantee future results.</div>
+        </div>
+      </footer>
     </div>
-  );
+  )
 }
