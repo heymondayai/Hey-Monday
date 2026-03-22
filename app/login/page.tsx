@@ -60,11 +60,19 @@ function LoginPageContent() {
   }
 
   useEffect(() => {
-    let mounted = true
+  let mounted = true
 
-    async function inspectCurrentSession() {
-      setCheckingSession(true)
+  async function inspectCurrentSession() {
+    setCheckingSession(true)
+
+    // Safety timeout — never hang forever
+    const timeout = setTimeout(() => {
+      if (mounted) setCheckingSession(false)
+    }, 3000)
+
+    try {
       const { data: { session } } = await supabase.auth.getSession()
+      clearTimeout(timeout)
       if (!mounted) return
 
       if (!session?.user) {
@@ -97,11 +105,15 @@ function LoginPageContent() {
       }
 
       router.replace('/dashboard')
+    } catch {
+      clearTimeout(timeout)
+      if (mounted) setCheckingSession(false)
     }
+  }
 
-    inspectCurrentSession()
-    return () => { mounted = false }
-  }, [supabase, router])
+  inspectCurrentSession()
+  return () => { mounted = false }
+}, [supabase, router])
 
   async function handleLogin() {
     if (!email.trim() || !password.trim()) {
