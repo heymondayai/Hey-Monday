@@ -542,6 +542,7 @@ export default function DashboardPage() {
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const autoSendRef = useRef<string | null>(null)
+  const stopThinkingChimesRef = useRef<(() => void) | null>(null)
 
   const [tickerData, setTickerData] = useState<{ sym: string; price?: string; change?: string; up?: boolean }[]>(DEFAULT_TICKER_DATA)
   const [watchlist, setWatchlist] = useState<{ ticker: string; bars: number[]; price?: string; change?: string; up?: boolean }[]>(DEFAULT_WATCHLIST_TICKERS.map(makeWlItem))
@@ -772,6 +773,60 @@ export default function DashboardPage() {
     setIsSpeaking(false)
   }
 
+  function playChime(type: 'alert' | 'tick') {
+  try {
+    const AudioCtx = (globalThis as any).AudioContext || (globalThis as any).webkitAudioContext
+    if (!AudioCtx) return
+    const actx = new AudioCtx()
+    if (actx.state === 'suspended') actx.resume()
+    if (type === 'alert') {
+      const osc1 = actx.createOscillator()
+      const osc2 = actx.createOscillator()
+      const gain = actx.createGain()
+      osc1.type = 'sine'; osc2.type = 'sine'
+      osc1.frequency.setValueAtTime(440, actx.currentTime)
+      osc2.frequency.setValueAtTime(587, actx.currentTime + 0.12)
+      gain.gain.setValueAtTime(0.0, actx.currentTime)
+      gain.gain.linearRampToValueAtTime(0.18, actx.currentTime + 0.03)
+      gain.gain.setValueAtTime(0.18, actx.currentTime + 0.10)
+      gain.gain.linearRampToValueAtTime(0.0, actx.currentTime + 0.38)
+      osc1.connect(gain); osc2.connect(gain); gain.connect(actx.destination)
+      osc1.start(actx.currentTime); osc1.stop(actx.currentTime + 0.14)
+      osc2.start(actx.currentTime + 0.12); osc2.stop(actx.currentTime + 0.38)
+      osc2.onended = () => void actx.close()
+    } else {
+      const osc = actx.createOscillator()
+      const gain = actx.createGain()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(880, actx.currentTime)
+      gain.gain.setValueAtTime(0.0, actx.currentTime)
+      gain.gain.linearRampToValueAtTime(0.06, actx.currentTime + 0.02)
+      gain.gain.linearRampToValueAtTime(0.0, actx.currentTime + 0.10)
+      osc.connect(gain); gain.connect(actx.destination)
+      osc.start(actx.currentTime); osc.stop(actx.currentTime + 0.10)
+      osc.onended = () => void actx.close()
+    }
+  } catch {}
+}
+
+function startThinkingChimes(): () => void {
+  let cancelled = false
+  async function loop() {
+    if (cancelled) return
+    playChime('tick')
+    await new Promise(r => setTimeout(r, 360))
+    if (cancelled) return
+    playChime('tick')
+    await new Promise(r => setTimeout(r, 360))
+    if (cancelled) return
+    playChime('tick')
+    await new Promise(r => setTimeout(r, 1000))
+    if (!cancelled) loop()
+  }
+  loop()
+  return () => { cancelled = true }
+}
+  
   async function speakText(text: string, onEnded?: () => void) {
     try {
       stopCurrentAudio()
@@ -856,9 +911,12 @@ export default function DashboardPage() {
   }
 
   function stopVoiceRecording() {
-    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop()
+  if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null }
+  if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+    mediaRecorderRef.current.stop()
+    playChime('alert')
   }
+}
 
   async function handleSendWithText(text: string, isVoice = false) {
     if (!text.trim() || isThinking) return
@@ -866,7 +924,9 @@ export default function DashboardPage() {
     const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).formatToParts(new Date())
     const timeStr = `${p.find((x) => x.type === 'hour')?.value}:${p.find((x) => x.type === 'minute')?.value} ${p.find((x) => x.type === 'dayPeriod')?.value}`
     if (user) await supabase.from('conversations').insert({ user_id: user.id, role: 'user', content: text })
-    setMessages((prev) => [...prev, { role: 'user', time: timeStr, text }]); setIsThinking(true)
+    setMessages((prev) => [...prev, { role: 'user', time: timeStr, text }])
+    setIsThinking(true)
+    stopThinkingChimesRef.current = startThinkingChimes()
     const history = messages.map((m) => ({ role: m.role === 'monday' ? 'assistant' : 'user', content: m.text }))
     try {
       const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text, mode: 'chat', watchlist, traderType, prices: tickerData, history, news: [...watchlistNews, ...generalNews], intraday, userId: user?.id ?? 'anonymous' }) })
@@ -881,7 +941,11 @@ export default function DashboardPage() {
       const errorReply = 'Connection error. Please try again.'
       setMessages((prev) => [...prev, { role: 'monday', time: timeStr, text: errorReply }])
       if (isVoice && speechOn) void speakText(errorReply)
-    } finally { setIsThinking(false) }
+    } finally {
+  stopThinkingChimesRef.current?.()
+  stopThinkingChimesRef.current = null
+  setIsThinking(false)
+}
   }
 
   async function handleSend() {
