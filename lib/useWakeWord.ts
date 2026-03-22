@@ -29,7 +29,7 @@ const SAMPLE_RATE       = 16000
 const CHUNK_SAMPLES     = 1280          // 80ms per chunk
 const MEL_FRAMES_NEEDED = 76            // embedding model input window
 const MEL_STEP          = 8             // slide mel buffer by this many frames
-const DETECTION_THRESHOLD = 0.3        // score above this = detected
+const DETECTION_THRESHOLD = 0.1        // score above this = detected
 const COOLDOWN_MS       = 2000          // prevent re-firing for 2 seconds
 
 interface UseWakeWordOptions {
@@ -179,31 +179,48 @@ export function useWakeWord({
           const score = (wakeResult[wake.outputNames[0]].data as Float32Array)[0]
           console.log('[WakeWord] score:', score.toFixed(4))
 
-          if (score > threshold) {
-            const now = Date.now()
-            if (now - lastDetectRef.current > COOLDOWN_MS) {
-              lastDetectRef.current = now
-              console.log(`[WakeWord] Detected! score=${score.toFixed(3)}`)
-              // Play a short confirmation tone using the Web Audio API
-              try {
-                const actx = new AudioContext()
-                const osc = actx.createOscillator()
-                const gain = actx.createGain()
-                // Two-tone Siri-style chime: soft low note then higher note
-                osc.type = 'sine'
-                osc.frequency.setValueAtTime(440, actx.currentTime)
-                osc.frequency.setValueAtTime(587, actx.currentTime + 0.12)
-                gain.gain.setValueAtTime(0.0, actx.currentTime)
-                gain.gain.linearRampToValueAtTime(0.5, actx.currentTime + 0.03)
-                gain.gain.setValueAtTime(0.5, actx.currentTime + 0.10)
-                gain.gain.linearRampToValueAtTime(0.0, actx.currentTime + 0.38)
-                osc.start(actx.currentTime)
-                osc.stop(actx.currentTime + 0.38)
-                osc.onended = () => actx.close()
-              } catch {}
-              onDetected()
-            }
-          }
+          try {
+  const AudioCtx =
+    globalThis.AudioContext ||
+    (globalThis as any).webkitAudioContext
+
+  const actx = new AudioCtx()
+
+  if (actx.state === 'suspended') {
+    await actx.resume()
+  }
+
+  const osc1 = actx.createOscillator()
+  const osc2 = actx.createOscillator()
+  const gain = actx.createGain()
+
+  osc1.type = 'sine'
+  osc2.type = 'sine'
+
+  osc1.frequency.setValueAtTime(440, actx.currentTime)
+  osc2.frequency.setValueAtTime(587, actx.currentTime + 0.12)
+
+  gain.gain.setValueAtTime(0.0, actx.currentTime)
+  gain.gain.linearRampToValueAtTime(0.18, actx.currentTime + 0.03)
+  gain.gain.setValueAtTime(0.18, actx.currentTime + 0.10)
+  gain.gain.linearRampToValueAtTime(0.0, actx.currentTime + 0.38)
+
+  osc1.connect(gain)
+  osc2.connect(gain)
+  gain.connect(actx.destination)
+
+  osc1.start(actx.currentTime)
+  osc1.stop(actx.currentTime + 0.14)
+
+  osc2.start(actx.currentTime + 0.12)
+  osc2.stop(actx.currentTime + 0.38)
+
+  osc2.onended = () => {
+    void actx.close()
+  }
+} catch (err) {
+  console.error('Wake word chime failed:', err)
+}
 
           // Keep embedding buffer from growing unboundedly
           if (embBufferRef.current.length > embWindowSize * 3) {

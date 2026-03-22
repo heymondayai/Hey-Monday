@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { loadStripe } from '@stripe/stripe-js'
 import {
@@ -10,8 +11,8 @@ import {
   useStripe,
   useElements,
 } from '@stripe/react-stripe-js'
+import { useTheme } from '@/app/context/theme-context'
 
-// ── Supabase client (browser) ──────────────────────────────────────
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -19,7 +20,6 @@ const supabase = createClient(
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
 
-// ── Theme ──────────────────────────────────────────────────────────
 const DARK = {
   pageBg: '#0a0a08', bg2: '#120f07', bg3: '#181208', bg4: '#1c1608',
   border: '#2a2618', border2: '#3a3420',
@@ -34,6 +34,7 @@ const DARK = {
   trustBg: 'rgba(201,146,42,.04)', trustBorder: 'rgba(201,146,42,.12)',
   errBg: 'rgba(201,66,66,.08)', errBorder: 'rgba(201,66,66,.25)',
   navBg: '#0a0a08',
+  checkBg: 'rgba(201,146,42,.06)', checkBorder: 'rgba(201,146,42,.18)',
 }
 
 const LIGHT = {
@@ -50,6 +51,7 @@ const LIGHT = {
   trustBg: 'rgba(160,104,24,.05)', trustBorder: 'rgba(160,104,24,.15)',
   errBg: 'rgba(184,50,50,.06)', errBorder: 'rgba(184,50,50,.3)',
   navBg: '#f5f0e8',
+  checkBg: 'rgba(160,104,24,.05)', checkBorder: 'rgba(160,104,24,.2)',
 }
 
 const PLAN_FEATURES = [
@@ -63,7 +65,6 @@ const PLAN_FEATURES = [
 
 type Field = 'email' | 'password' | 'name'
 
-// ── SVG icons ──────────────────────────────────────────────────────
 function EyeOpen({ color }: { color: string }) {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -94,26 +95,8 @@ function ShieldIcon({ color }: { color: string }) {
     </svg>
   )
 }
-function SunIcon({ color }: { color: string }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
-      <circle cx="12" cy="12" r="5"/>
-      <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
-      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-      <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
-      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-    </svg>
-  )
-}
-function MoonIcon({ color }: { color: string }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-    </svg>
-  )
-}
 
-// ── Inner form (needs stripe/elements hooks) ──────────────────────
+// ── Inner form ────────────────────────────────────────────────────
 function SignupForm({
   isDark,
   billing,
@@ -126,13 +109,28 @@ function SignupForm({
   const T = isDark ? DARK : LIGHT
   const stripe = useStripe()
   const elements = useElements()
+  const searchParams = useSearchParams()
+
+  const confirmedParam = searchParams.get('confirmed') === '1'
+  const emailParam = searchParams.get('email') || ''
 
   const [step, setStep] = useState<1 | 2>(1)
+  const [emailSent, setEmailSent] = useState(false)
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [focused, setFocused] = useState<Field | null>(null)
   const [form, setForm] = useState({ name: '', email: '', password: '' })
+
+  // When user returns from email confirmation link, auto-advance to step 2
+  useEffect(() => {
+    if (confirmedParam && emailParam) {
+      setForm(f => ({ ...f, email: emailParam }))
+      setStep(2)
+      // Clean URL so refresh doesn't re-trigger
+      window.history.replaceState({}, '', '/signup')
+    }
+  }, [confirmedParam, emailParam])
 
   const priceId =
     billing === 'monthly'
@@ -160,8 +158,39 @@ function SignupForm({
     e.preventDefault()
     const err = validateStep1()
     if (err) { setError(err); return }
-    setStep(2)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+
+    setLoading(true)
+    setError('')
+
+    // Sign up → Supabase sends confirmation email
+    const { data: authData, error: signUpErr } = await supabase.auth.signUp({
+      email: form.email,
+      password: form.password,
+      options: {
+        data: { full_name: form.name },
+        emailRedirectTo: `${window.location.origin}/signup?confirmed=1&email=${encodeURIComponent(form.email)}`,
+      },
+    })
+
+    if (signUpErr) {
+      if (
+        signUpErr.message.toLowerCase().includes('already registered') ||
+        signUpErr.message.toLowerCase().includes('already exists') ||
+        signUpErr.message.toLowerCase().includes('user already')
+      ) {
+        setError('An account with this email already exists. Please log in instead.')
+      } else {
+        setError(signUpErr.message)
+      }
+      setLoading(false)
+      return
+    }
+
+    // Immediately sign out — user must confirm email before paying
+    await supabase.auth.signOut()
+
+    setEmailSent(true)
+    setLoading(false)
   }
 
   async function handleStep2(e: React.FormEvent) {
@@ -174,47 +203,48 @@ function SignupForm({
     setError('')
 
     try {
-      // 1. Create Supabase auth user
-      const { data: authData, error: authErr } = await supabase.auth.signUp({
-        email: form.email,
-        password: form.password,
-        options: {
-          data: { full_name: form.name },
-        },
-      })
-      if (authErr) throw new Error(authErr.message)
-      if (!authData.user) throw new Error('No user returned from Supabase')
+      // User is already confirmed — get their session
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user) throw new Error('Session expired. Please log in.')
 
-      // 2. Update profile with full name (the trigger creates the row automatically)
+      const userId = session.user.id
+
+      // Update profile with name
       await supabase
         .from('profiles')
-        .update({ full_name: form.name, email: form.email })
-        .eq('id', authData.user.id)
+        .update({ full_name: form.name || session.user.user_metadata?.full_name, email: form.email })
+        .eq('id', userId)
 
-      // 3. Create Stripe PaymentMethod from card element
+      // Create Stripe PaymentMethod
       const { paymentMethod, error: pmErr } = await stripe.createPaymentMethod({
         type: 'card',
         card: cardElement,
-        billing_details: { name: form.name, email: form.email },
+        billing_details: {
+          name: form.name || session.user.user_metadata?.full_name,
+          email: form.email,
+        },
       })
       if (pmErr) throw new Error(pmErr.message ?? 'Card error')
 
-      // 4. Create Stripe subscription (trial, no charge today)
+      // Create subscription
       const res = await fetch('/api/create-subscription', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: form.email,
-          name: form.name,
+          name: form.name || session.user.user_metadata?.full_name,
           paymentMethodId: paymentMethod!.id,
           priceId,
           billing,
         }),
       })
-      const data = await res.json()
+
+      let data: any = {}
+      const text = await res.text()
+      if (text) { try { data = JSON.parse(text) } catch (_) {} }
       if (!res.ok) throw new Error(data.error ?? 'Subscription failed')
 
-      // 5. Confirm card payment if clientSecret returned (rare for trial)
+      // Confirm payment if needed
       if (data.clientSecret) {
         const { error: confirmErr } = await stripe.confirmCardPayment(data.clientSecret, {
           payment_method: paymentMethod!.id,
@@ -222,15 +252,14 @@ function SignupForm({
         if (confirmErr) throw new Error(confirmErr.message ?? 'Payment confirmation failed')
       }
 
-      // 6. Update profile with Stripe customer ID
+      // Link Stripe customer to profile
       if (data.customerId) {
         await supabase
           .from('profiles')
           .update({ stripe_customer_id: data.customerId })
-          .eq('id', authData.user.id)
+          .eq('id', userId)
       }
 
-      // 7. Go to onboarding (not dashboard — user needs to set up watchlist + trader type)
       window.location.href = '/onboarding'
     } catch (err: any) {
       setError(err.message ?? 'Unexpected error')
@@ -258,89 +287,141 @@ function SignupForm({
 
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
-      {/* BILLING TOGGLE — step 1 only */}
-      {step === 1 && (
-        <div className="fade-up" style={{ marginBottom: 28 }}>
-          <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 10 }}>
-            5 days free, then:
-          </div>
-          <div style={{ display: 'flex', background: T.bg2, border: `1px solid ${T.border2}`, padding: 3, gap: 3, width: 'fit-content' }}>
-            {(['monthly', 'annual'] as const).map(b => (
-              <div key={b} onClick={() => setBilling(b)}
-                style={{ padding: '9px 20px', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, cursor: 'pointer', background: billing === b ? T.bg4 : 'transparent', color: billing === b ? T.heading : T.text3, border: billing === b ? `1px solid ${T.border2}` : '1px solid transparent', transition: 'all .15s', display: 'flex', alignItems: 'center', gap: 8 }}>
-                {b === 'monthly' ? '$79.99/mo' : '$66.66/mo'}
-                {b === 'annual' && <span style={{ fontSize: 8, padding: '1px 5px', background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, color: T.gold }}>SAVE 17%</span>}
-              </div>
-            ))}
-          </div>
-          {billing === 'annual' && (
-            <div style={{ marginTop: 8, fontSize: 10, color: T.gold }}>Billed as $799.92/year — save $159.96</div>
-          )}
-        </div>
-      )}
 
-      {/* STEP 1: ACCOUNT */}
-      {step === 1 && (
-        <form onSubmit={handleStep1} className="fade-up">
-          <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 20 }}>Your account</div>
+      {/* ── STEP 1: CHECK EMAIL SCREEN ── */}
+      {step === 1 && emailSent && (
+        <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase' }}>
+            Confirm your email
+          </div>
+
+          {/* Big checkmark / envelope visual */}
+          <div style={{ background: T.checkBg, border: `1px solid ${T.checkBorder}`, padding: '28px 20px', textAlign: 'center' }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>📬</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: T.heading, marginBottom: 8 }}>
+              Check your email
+            </div>
+            <div style={{ fontSize: 11, color: T.text2, lineHeight: 1.7 }}>
+              We sent a confirmation link to{' '}
+              <strong style={{ color: T.gold }}>{form.email}</strong>.<br />
+              Click the link in that email to proceed to payment.
+            </div>
+          </div>
+
+          <div style={{ background: T.bg2, border: `1px solid ${T.border}`, padding: '10px 14px', fontSize: 10, color: T.text3, lineHeight: 1.6 }}>
+            💡 Check your spam or promotions folder if you don't see it within a minute.
+          </div>
 
           {error && (
-            <div style={{ background: T.errBg, border: `1px solid ${T.errBorder}`, color: T.red, padding: '10px 14px', fontSize: 11, marginBottom: 20 }}>
+            <div style={{ background: T.errBg, border: `1px solid ${T.errBorder}`, color: T.red, padding: '10px 14px', fontSize: 11 }}>
               ⚠ {error}
             </div>
           )}
 
-          <div style={{ marginBottom: 18 }}>
-            <label style={labelStyle}>Full Name</label>
-            <input style={inputStyle('name')} type="text" placeholder="Jane Smith" value={form.name}
-              onChange={e => set('name', e.target.value)} onFocus={() => setFocused('name')} onBlur={() => setFocused(null)} autoComplete="name" />
-          </div>
-          <div style={{ marginBottom: 18 }}>
-            <label style={labelStyle}>Email Address</label>
-            <input style={inputStyle('email')} type="email" placeholder="you@example.com" value={form.email}
-              onChange={e => set('email', e.target.value)} onFocus={() => setFocused('email')} onBlur={() => setFocused(null)} autoComplete="email" />
-          </div>
-          <div style={{ marginBottom: 28 }}>
-            <label style={labelStyle}>Password</label>
-            <div style={{ position: 'relative' }}>
-              <input style={{ ...inputStyle('password'), paddingRight: 44 }} type={showPass ? 'text' : 'password'} placeholder="Min. 8 characters" value={form.password}
-                onChange={e => set('password', e.target.value)} onFocus={() => setFocused('password')} onBlur={() => setFocused(null)} autoComplete="new-password" />
-              <button type="button" onClick={() => setShowPass(s => !s)}
-                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', background: 'none', border: 'none', padding: 4, display: 'flex', alignItems: 'center', opacity: 0.6 }}>
-                {showPass ? <EyeOff color={T.text2} /> : <EyeOpen color={T.text2} />}
-              </button>
+          <button
+            type="button"
+            onClick={() => { setEmailSent(false); setError('') }}
+            style={{ background: 'transparent', border: `1px solid ${T.border2}`, color: T.text3, padding: '10px', fontSize: 10, letterSpacing: '0.08em', cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase' }}
+          >
+            ← Use a different email
+          </button>
+        </div>
+      )}
+
+      {/* ── STEP 1: ACCOUNT FORM ── */}
+      {step === 1 && !emailSent && (
+        <>
+          {/* Billing toggle */}
+          <div className="fade-up" style={{ marginBottom: 28 }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 10 }}>
+              5 days free, then:
             </div>
-            {form.password && (
-              <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
-                {[1, 2, 3, 4].map(i => (
-                  <div key={i} style={{ flex: 1, height: 2, borderRadius: 1, background: form.password.length >= i * 3 ? (form.password.length >= 12 ? T.gold : T.amber) : T.border2, transition: 'background 0.2s' }} />
-                ))}
-                <span style={{ fontSize: 9, color: T.text3, marginLeft: 6, whiteSpace: 'nowrap' }}>
-                  {form.password.length < 8 ? 'Weak' : form.password.length < 12 ? 'Good' : 'Strong'}
-                </span>
-              </div>
+            <div style={{ display: 'flex', background: T.bg2, border: `1px solid ${T.border2}`, padding: 3, gap: 3, width: 'fit-content' }}>
+              {(['monthly', 'annual'] as const).map(b => (
+                <div key={b} onClick={() => setBilling(b)}
+                  style={{ padding: '9px 20px', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, cursor: 'pointer', background: billing === b ? T.bg4 : 'transparent', color: billing === b ? T.heading : T.text3, border: billing === b ? `1px solid ${T.border2}` : '1px solid transparent', transition: 'all .15s', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {b === 'monthly' ? '$79.99/mo' : '$66.66/mo'}
+                  {b === 'annual' && <span style={{ fontSize: 8, padding: '1px 5px', background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, color: T.gold }}>SAVE 17%</span>}
+                </div>
+              ))}
+            </div>
+            {billing === 'annual' && (
+              <div style={{ marginTop: 8, fontSize: 10, color: T.gold }}>Billed as $799.92/year — save $159.96</div>
             )}
           </div>
 
-          <button type="submit" style={{ width: '100%', background: T.gold, color: T.btnText, padding: '14px', fontWeight: 700, fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', border: 'none', cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace" }}>
-            Continue to Payment →
-          </button>
-          <div style={{ marginTop: 14, fontSize: 10, color: T.text3, lineHeight: 1.6, textAlign: 'center' }}>
-            By continuing, you agree to our{' '}
-            <Link href="/terms" style={{ color: T.text2, textDecoration: 'underline' }}>Terms</Link> and{' '}
-            <Link href="/privacy" style={{ color: T.text2, textDecoration: 'underline' }}>Privacy Policy</Link>.
-          </div>
-        </form>
+          <form onSubmit={handleStep1} className="fade-up">
+            <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 20 }}>Your account</div>
+
+            {error && (
+              <div style={{ background: T.errBg, border: `1px solid ${T.errBorder}`, color: T.red, padding: '10px 14px', fontSize: 11, marginBottom: 20 }}>
+                ⚠ {error}
+              </div>
+            )}
+
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Full Name</label>
+              <input style={inputStyle('name')} type="text" placeholder="Jane Smith" value={form.name}
+                onChange={e => set('name', e.target.value)} onFocus={() => setFocused('name')} onBlur={() => setFocused(null)} autoComplete="name" />
+            </div>
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Email Address</label>
+              <input style={inputStyle('email')} type="email" placeholder="you@example.com" value={form.email}
+                onChange={e => set('email', e.target.value)} onFocus={() => setFocused('email')} onBlur={() => setFocused(null)} autoComplete="email" />
+            </div>
+            <div style={{ marginBottom: 28 }}>
+              <label style={labelStyle}>Password</label>
+              <div style={{ position: 'relative' }}>
+                <input style={{ ...inputStyle('password'), paddingRight: 44 }} type={showPass ? 'text' : 'password'} placeholder="Min. 8 characters" value={form.password}
+                  onChange={e => set('password', e.target.value)} onFocus={() => setFocused('password')} onBlur={() => setFocused(null)} autoComplete="new-password" />
+                <button type="button" onClick={() => setShowPass(s => !s)}
+                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', background: 'none', border: 'none', padding: 4, display: 'flex', alignItems: 'center', opacity: 0.6 }}>
+                  {showPass ? <EyeOff color={T.text2} /> : <EyeOpen color={T.text2} />}
+                </button>
+              </div>
+              {form.password && (
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {[1, 2, 3, 4].map(i => (
+                    <div key={i} style={{ flex: 1, height: 2, borderRadius: 1, background: form.password.length >= i * 3 ? (form.password.length >= 12 ? T.gold : T.amber) : T.border2, transition: 'background 0.2s' }} />
+                  ))}
+                  <span style={{ fontSize: 9, color: T.text3, marginLeft: 6, whiteSpace: 'nowrap' }}>
+                    {form.password.length < 8 ? 'Weak' : form.password.length < 12 ? 'Good' : 'Strong'}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <button type="submit" disabled={loading}
+              style={{ width: '100%', background: loading ? T.goldDim : T.gold, color: T.btnText, padding: '14px', fontWeight: 700, fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', border: 'none', cursor: loading ? 'default' : 'pointer', fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              {loading ? (
+                <>
+                  <span style={{ width: 14, height: 14, border: `2px solid ${T.btnText}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
+                  Sending confirmation…
+                </>
+              ) : 'Continue to Payment →'}
+            </button>
+
+            <div style={{ marginTop: 14, fontSize: 10, color: T.text3, lineHeight: 1.6, textAlign: 'center' }}>
+              By continuing, you agree to our{' '}
+              <Link href="/terms" style={{ color: T.text2, textDecoration: 'underline' }}>Terms</Link> and{' '}
+              <Link href="/privacy" style={{ color: T.text2, textDecoration: 'underline' }}>Privacy Policy</Link>.
+            </div>
+          </form>
+        </>
       )}
 
-      {/* STEP 2: PAYMENT */}
+      {/* ── STEP 2: PAYMENT ── */}
       {step === 2 && (
         <form onSubmit={handleStep2} className="fade-up">
+          {/* Confirmed banner */}
+          <div style={{ background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.2)', padding: '10px 14px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 14 }}>✅</span>
+            <div style={{ fontSize: 11, color: '#4ade80' }}>
+              Email confirmed! Add your payment details to start your free trial.
+            </div>
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-            <button type="button" onClick={() => { setStep(1); setError('') }}
-              style={{ background: 'transparent', border: `1px solid ${T.border2}`, color: T.text3, padding: '5px 12px', fontSize: 10, letterSpacing: '0.08em', cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace" }}>
-              ← Back
-            </button>
             <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase' }}>Payment details</div>
           </div>
 
@@ -362,7 +443,6 @@ function SignupForm({
             </div>
           )}
 
-          {/* Real Stripe CardElement */}
           <div style={{ marginBottom: 28 }}>
             <label style={labelStyle}>Card Details</label>
             <div style={{ background: T.inputBg, border: `1px solid ${T.inputBorder}`, padding: '12px 14px' }}>
@@ -392,7 +472,7 @@ function SignupForm({
             {loading ? (
               <>
                 <span style={{ width: 14, height: 14, border: `2px solid ${T.btnText}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
-                Creating your account…
+                Setting up your trial…
               </>
             ) : (
               <>
@@ -416,17 +496,22 @@ function SignupForm({
   )
 }
 
-// ── Page wrapper — provides Elements context ──────────────────────
-export default function SignupPage() {
-  const [isDark, setIsDark] = useState(true)
+// ── Page wrapper ──────────────────────────────────────────────────
+function SignupPageInner() {
+  const { isDark } = useTheme()
   const T = isDark ? DARK : LIGHT
   const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
+  const searchParams = useSearchParams()
+  const confirmedParam = searchParams.get('confirmed') === '1'
 
   const price = billing === 'monthly' ? '79.99' : '66.66'
   const chargeDate = (() => {
     const d = new Date(); d.setDate(d.getDate() + 5)
     return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
   })()
+
+  // Which step to show in the step bar
+  const currentStep = confirmedParam ? 2 : 1
 
   return (
     <div style={{ background: T.pageBg, color: T.text, fontFamily: "'JetBrains Mono', monospace", minHeight: '100vh', transition: 'background 0.3s, color 0.3s' }}>
@@ -439,10 +524,7 @@ export default function SignupPage() {
         @keyframes spin{to{transform:rotate(360deg)}}
         .fade-up{animation:fadeUp 0.35s ease both}
         .StripeElement{width:100%}
-        @media(max-width:640px){
-          .layout{flex-direction:column!important}
-          .sidebar{display:none!important}
-        }
+        @media(max-width:640px){.layout{flex-direction:column!important}.sidebar{display:none!important}}
       `}</style>
 
       {/* NAV */}
@@ -452,10 +534,6 @@ export default function SignupPage() {
           <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontStyle: 'italic', color: T.gold, fontWeight: 700 }}>Monday</span>
         </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => setIsDark(d => !d)}
-            style={{ background: isDark ? '#1c1608' : '#e5dcc8', border: `1px solid ${T.border2}`, borderRadius: 24, padding: '5px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, color: T.text2, transition: 'all 0.3s' }}>
-            {isDark ? <SunIcon color={T.text2} /> : <MoonIcon color={T.text2} />}
-          </button>
           <span style={{ fontSize: 11, color: T.text3 }}>Already have an account?</span>
           <Link href="/login" style={{ textDecoration: 'none', fontSize: 10, fontWeight: 600, color: T.text2, padding: '6px 14px', border: `1px solid ${T.border2}`, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Log In</Link>
         </div>
@@ -466,19 +544,27 @@ export default function SignupPage() {
         {[{ n: 1, label: 'Account' }, { n: 2, label: 'Payment' }].map((s, i) => (
           <div key={s.n} style={{ display: 'flex', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: T.gold, border: `1px solid ${T.gold}`, fontSize: 10, fontWeight: 700, color: T.btnText }}>
-                {s.n}
+              <div style={{
+                width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: currentStep >= s.n ? T.gold : 'transparent',
+                border: `1px solid ${currentStep >= s.n ? T.gold : T.border2}`,
+                fontSize: 10, fontWeight: 700,
+                color: currentStep >= s.n ? T.btnText : T.text3,
+                transition: 'all 0.3s',
+              }}>
+                {currentStep > s.n ? '✓' : s.n}
               </div>
-              <span style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.gold }}>{s.label}</span>
+              <span style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: currentStep >= s.n ? T.gold : T.text3, transition: 'color 0.3s' }}>
+                {s.label}
+              </span>
             </div>
-            {i === 0 && <div style={{ width: 48, height: 1, background: T.border, margin: '0 12px' }} />}
+            {i === 0 && <div style={{ width: 48, height: 1, background: currentStep > 1 ? T.goldDim : T.border, margin: '0 12px', transition: 'background 0.3s' }} />}
           </div>
         ))}
       </div>
 
       {/* LAYOUT */}
       <div className="layout" style={{ maxWidth: 1000, margin: '0 auto', padding: '40px 24px', display: 'flex', gap: 40, alignItems: 'flex-start' }}>
-        {/* FORM */}
         <Elements stripe={stripePromise}>
           <SignupForm isDark={isDark} billing={billing} setBilling={setBilling} />
         </Elements>
@@ -527,8 +613,6 @@ export default function SignupPage() {
               </div>
             </div>
           </div>
-
-          {/* Testimonial */}
           <div style={{ marginTop: 16, background: T.bg2, border: `1px solid ${T.border}`, padding: '16px' }}>
             <div style={{ fontSize: 12, fontStyle: 'italic', color: T.text2, lineHeight: 1.7, fontFamily: "'Cormorant Garamond',serif", marginBottom: 10 }}>
               "The second CPI dropped, Monday explained the impact on my positions before I even opened a chart."
@@ -547,5 +631,13 @@ export default function SignupPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={<div style={{ background: '#0a0a08', minHeight: '100vh' }} />}>
+      <SignupPageInner />
+    </Suspense>
   )
 }
