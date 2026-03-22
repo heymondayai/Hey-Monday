@@ -229,10 +229,22 @@ export default function MarketingPage() {
       {/* ── NAVBAR ─────────────────────────────────────────────────────── */}
       <nav style={{ position:'sticky', top:0, zIndex:100, background:T.navBg, backdropFilter:'blur(16px)', borderBottom:`1px solid ${T.border}`, transition:'background 0.3s ease, border-color 0.3s ease' }}>
         <div style={{ maxWidth:1100, margin:'0 auto', padding:'0 24px', height:58, display:'flex', alignItems:'center' }}>
-          <div style={{ marginRight:36, flexShrink:0, cursor:'pointer' }} onClick={()=>window.scrollTo({top:0,behavior:'smooth'})}>
-            <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, fontStyle:'italic', color:T.heading, fontWeight:600, transition:'color 0.3s' }}>Hey </span>
-            <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, fontStyle:'italic', color:T.gold, fontWeight:700, transition:'color 0.3s' }}>Monday</span>
-          </div>
+          <div style={{ marginRight:36, flexShrink:0, cursor:'pointer', display:'flex', alignItems:'center', gap:10 }} onClick={()=>window.scrollTo({top:0,behavior:'smooth'})}>
+  <svg width="22" height="22" viewBox="0 0 340 340" xmlns="http://www.w3.org/2000/svg">
+    <g transform="translate(224,178)">
+      <rect x="-162" y="-12" width="20" height="50" rx="10" fill="#c9922a" opacity="0.20"/>
+      <rect x="-134" y="-46" width="20" height="110" rx="10" fill="#c9922a" opacity="0.38"/>
+      <rect x="-106" y="-80" width="20" height="172" rx="10" fill="#c9922a" opacity="0.60"/>
+      <rect x="-78" y="-58" width="20" height="116" rx="10" fill="#c9922a" opacity="0.68"/>
+      <rect x="-50" y="-100" width="20" height="210" rx="10" fill="#c9922a"/>
+      <rect x="-22" y="-72" width="20" height="148" rx="10" fill="#c9922a" opacity="0.72"/>
+      <rect x="6" y="-56" width="20" height="118" rx="10" fill="#c9922a" opacity="0.55"/>
+      <rect x="34" y="-28" width="20" height="68" rx="10" fill="#c9922a" opacity="0.35"/>
+    </g>
+  </svg>
+  <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, fontStyle:'italic', color:T.heading, fontWeight:600, transition:'color 0.3s' }}>Hey </span>
+  <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, fontStyle:'italic', color:T.gold, fontWeight:700, transition:'color 0.3s' }}>Monday</span>
+</div>
           <div className="hide-mobile" style={{ display:'flex', gap:28, marginRight:'auto' }}>
             {NAV_SECTIONS.map(s=>(
               <span key={s.id} onClick={()=>scrollTo(s.id)}
@@ -690,10 +702,22 @@ export default function MarketingPage() {
       <footer style={{ background:T.footerBg, borderTop:`1px solid ${isDark?T.border:'#3a2808'}`, transition:'background 0.3s ease' }}>
         <div className="footer-grid" style={{ maxWidth:1100, margin:'0 auto', padding:'52px 24px 36px', display:'grid', gridTemplateColumns:'1.6fr 1fr 1fr 1fr', gap:40 }}>
           <div>
-            <div style={{ marginBottom:14 }}>
-              <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, fontStyle:'italic', color:isDark?'#e8d5a0':'#f0e8d0', fontWeight:600 }}>Hey </span>
-              <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, fontStyle:'italic', color:isDark?'#c9922a':'#d4a030', fontWeight:700 }}>Monday</span>
-            </div>
+            <div style={{ marginBottom:14, display:'flex', alignItems:'center', gap:8 }}>
+  <svg width="18" height="18" viewBox="0 0 340 340" xmlns="http://www.w3.org/2000/svg">
+    <g transform="translate(224,178)">
+      <rect x="-162" y="-12" width="20" height="50" rx="10" fill="#c9922a" opacity="0.20"/>
+      <rect x="-134" y="-46" width="20" height="110" rx="10" fill="#c9922a" opacity="0.38"/>
+      <rect x="-106" y="-80" width="20" height="172" rx="10" fill="#c9922a" opacity="0.60"/>
+      <rect x="-78" y="-58" width="20" height="116" rx="10" fill="#c9922a" opacity="0.68"/>
+      <rect x="-50" y="-100" width="20" height="210" rx="10" fill="#c9922a"/>
+      <rect x="-22" y="-72" width="20" height="148" rx="10" fill="#c9922a" opacity="0.72"/>
+      <rect x="6" y="-56" width="20" height="118" rx="10" fill="#c9922a" opacity="0.55"/>
+      <rect x="34" y="-28" width="20" height="68" rx="10" fill="#c9922a" opacity="0.35"/>
+    </g>
+  </svg>
+  <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, fontStyle:'italic', color:isDark?'#e8d5a0':'#f0e8d0', fontWeight:600 }}>Hey </span>
+  <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, fontStyle:'italic', color:isDark?'#c9922a':'#d4a030', fontWeight:700 }}>Monday</span>
+</div>
             <p style={{ fontSize:12, color:T.footerText, lineHeight:1.7, maxWidth:250, marginBottom:16 }}>
               Your AI voice market analyst. Live prices, real-time intelligence, and spoken briefings — for every trader.
             </p>

@@ -1136,9 +1136,21 @@ export default function DashboardPage() {
           {/* ── LEFT SIDEBAR ── */}
           <div style={{ background: T.sideBg, borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', overflow: 'hidden', transition: 'background 0.35s' }}>
             <div style={{ padding: '20px 18px 16px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '21px', fontWeight: 600, fontStyle: 'italic', color: T.text }}>
-                Hey <span style={{ color: T.gold }}>Monday</span>
-              </div>
+              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '21px', fontWeight: 600, fontStyle: 'italic', color: T.text, display: 'flex', alignItems: 'center', gap: 8 }}>
+  <svg width="20" height="20" viewBox="0 0 340 340" xmlns="http://www.w3.org/2000/svg">
+    <g transform="translate(224,178)">
+      <rect x="-162" y="-12" width="20" height="50" rx="10" fill="#c9922a" opacity="0.20"/>
+      <rect x="-134" y="-46" width="20" height="110" rx="10" fill="#c9922a" opacity="0.38"/>
+      <rect x="-106" y="-80" width="20" height="172" rx="10" fill="#c9922a" opacity="0.60"/>
+      <rect x="-78" y="-58" width="20" height="116" rx="10" fill="#c9922a" opacity="0.68"/>
+      <rect x="-50" y="-100" width="20" height="210" rx="10" fill="#c9922a"/>
+      <rect x="-22" y="-72" width="20" height="148" rx="10" fill="#c9922a" opacity="0.72"/>
+      <rect x="6" y="-56" width="20" height="118" rx="10" fill="#c9922a" opacity="0.55"/>
+      <rect x="34" y="-28" width="20" height="68" rx="10" fill="#c9922a" opacity="0.35"/>
+    </g>
+  </svg>
+  Hey <span style={{ color: T.gold }}>Monday</span>
+</div>
               <div
   onClick={() => setWakeOn(!wakeOn)}
   style={{
