@@ -96,7 +96,6 @@ function ShieldIcon({ color }: { color: string }) {
   )
 }
 
-// ── Inner form ────────────────────────────────────────────────────
 function SignupForm({
   isDark,
   billing,
@@ -122,12 +121,10 @@ function SignupForm({
   const [focused, setFocused] = useState<Field | null>(null)
   const [form, setForm] = useState({ name: '', email: '', password: '' })
 
-  // When user returns from email confirmation link, auto-advance to step 2
   useEffect(() => {
     if (confirmedParam && emailParam) {
       setForm(f => ({ ...f, email: emailParam }))
       setStep(2)
-      // Clean URL so refresh doesn't re-trigger
       window.history.replaceState({}, '', '/signup')
     }
   }, [confirmedParam, emailParam])
@@ -137,7 +134,6 @@ function SignupForm({
       ? process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY!
       : process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL!
 
-  const price = billing === 'monthly' ? '79.99' : '66.66'
   const chargeDate = (() => {
     const d = new Date(); d.setDate(d.getDate() + 5)
     return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -162,8 +158,7 @@ function SignupForm({
     setLoading(true)
     setError('')
 
-    // Sign up → Supabase sends confirmation email
-    const { data: authData, error: signUpErr } = await supabase.auth.signUp({
+    const { error: signUpErr } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
       options: {
@@ -186,9 +181,7 @@ function SignupForm({
       return
     }
 
-    // Immediately sign out — user must confirm email before paying
     await supabase.auth.signOut()
-
     setEmailSent(true)
     setLoading(false)
   }
@@ -196,6 +189,7 @@ function SignupForm({
   async function handleStep2(e: React.FormEvent) {
     e.preventDefault()
     if (!stripe || !elements) { setError('Stripe not loaded — please refresh.'); return }
+    if (!form.password) { setError('Please enter your password to continue.'); return }
     const cardElement = elements.getElement(CardElement)
     if (!cardElement) { setError('Card input missing — please refresh.'); return }
 
@@ -203,26 +197,38 @@ function SignupForm({
     setError('')
 
     try {
-      // User is already confirmed — get their session
+      // Get or restore session
+      let userId: string
+      let userName: string
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user) throw new Error('Session expired. Please log in.')
 
-      const userId = session.user.id
+      if (session?.user) {
+        userId = session.user.id
+        userName = form.name || session.user.user_metadata?.full_name || ''
+      } else {
+        // Re-authenticate with password
+        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+          email: form.email,
+          password: form.password,
+        })
+        if (signInErr || !signInData.user) {
+          throw new Error('Incorrect password. Please try again.')
+        }
+        userId = signInData.user.id
+        userName = form.name || signInData.user.user_metadata?.full_name || ''
+      }
 
-      // Update profile with name
+      // Update profile
       await supabase
         .from('profiles')
-        .update({ full_name: form.name || session.user.user_metadata?.full_name, email: form.email })
+        .update({ full_name: userName, email: form.email })
         .eq('id', userId)
 
       // Create Stripe PaymentMethod
       const { paymentMethod, error: pmErr } = await stripe.createPaymentMethod({
         type: 'card',
         card: cardElement,
-        billing_details: {
-          name: form.name || session.user.user_metadata?.full_name,
-          email: form.email,
-        },
+        billing_details: { name: userName, email: form.email },
       })
       if (pmErr) throw new Error(pmErr.message ?? 'Card error')
 
@@ -232,7 +238,7 @@ function SignupForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: form.email,
-          name: form.name || session.user.user_metadata?.full_name,
+          name: userName,
           paymentMethodId: paymentMethod!.id,
           priceId,
           billing,
@@ -244,7 +250,6 @@ function SignupForm({
       if (text) { try { data = JSON.parse(text) } catch (_) {} }
       if (!res.ok) throw new Error(data.error ?? 'Subscription failed')
 
-      // Confirm payment if needed
       if (data.clientSecret) {
         const { error: confirmErr } = await stripe.confirmCardPayment(data.clientSecret, {
           payment_method: paymentMethod!.id,
@@ -252,7 +257,6 @@ function SignupForm({
         if (confirmErr) throw new Error(confirmErr.message ?? 'Payment confirmation failed')
       }
 
-      // Link Stripe customer to profile
       if (data.customerId) {
         await supabase
           .from('profiles')
@@ -288,50 +292,39 @@ function SignupForm({
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
 
-      {/* ── STEP 1: CHECK EMAIL SCREEN ── */}
+      {/* STEP 1: CHECK EMAIL */}
       {step === 1 && emailSent && (
         <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase' }}>
             Confirm your email
           </div>
-
-          {/* Big checkmark / envelope visual */}
           <div style={{ background: T.checkBg, border: `1px solid ${T.checkBorder}`, padding: '28px 20px', textAlign: 'center' }}>
             <div style={{ fontSize: 36, marginBottom: 12 }}>📬</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: T.heading, marginBottom: 8 }}>
-              Check your email
-            </div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: T.heading, marginBottom: 8 }}>Check your email</div>
             <div style={{ fontSize: 11, color: T.text2, lineHeight: 1.7 }}>
               We sent a confirmation link to{' '}
               <strong style={{ color: T.gold }}>{form.email}</strong>.<br />
               Click the link in that email to proceed to payment.
             </div>
           </div>
-
           <div style={{ background: T.bg2, border: `1px solid ${T.border}`, padding: '10px 14px', fontSize: 10, color: T.text3, lineHeight: 1.6 }}>
             💡 Check your spam or promotions folder if you don't see it within a minute.
           </div>
-
           {error && (
             <div style={{ background: T.errBg, border: `1px solid ${T.errBorder}`, color: T.red, padding: '10px 14px', fontSize: 11 }}>
               ⚠ {error}
             </div>
           )}
-
-          <button
-            type="button"
-            onClick={() => { setEmailSent(false); setError('') }}
-            style={{ background: 'transparent', border: `1px solid ${T.border2}`, color: T.text3, padding: '10px', fontSize: 10, letterSpacing: '0.08em', cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase' }}
-          >
+          <button type="button" onClick={() => { setEmailSent(false); setError('') }}
+            style={{ background: 'transparent', border: `1px solid ${T.border2}`, color: T.text3, padding: '10px', fontSize: 10, letterSpacing: '0.08em', cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase' }}>
             ← Use a different email
           </button>
         </div>
       )}
 
-      {/* ── STEP 1: ACCOUNT FORM ── */}
+      {/* STEP 1: ACCOUNT FORM */}
       {step === 1 && !emailSent && (
         <>
-          {/* Billing toggle */}
           <div className="fade-up" style={{ marginBottom: 28 }}>
             <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 10 }}>
               5 days free, then:
@@ -410,7 +403,7 @@ function SignupForm({
         </>
       )}
 
-      {/* ── STEP 2: PAYMENT ── */}
+      {/* STEP 2: PAYMENT */}
       {step === 2 && (
         <form onSubmit={handleStep2} className="fade-up">
           {/* Confirmed banner */}
@@ -421,8 +414,8 @@ function SignupForm({
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-            <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase' }}>Payment details</div>
+          <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 20 }}>
+            Payment details
           </div>
 
           {/* Trial reminder */}
@@ -443,6 +436,31 @@ function SignupForm({
             </div>
           )}
 
+          {/* Password re-entry */}
+          <div style={{ marginBottom: 18 }}>
+            <label style={labelStyle}>Confirm Password</label>
+            <div style={{ position: 'relative' }}>
+              <input
+                style={{ ...inputStyle('password'), paddingRight: 44 }}
+                type={showPass ? 'text' : 'password'}
+                placeholder="Re-enter your password"
+                value={form.password}
+                onChange={e => set('password', e.target.value)}
+                onFocus={() => setFocused('password')}
+                onBlur={() => setFocused(null)}
+                autoComplete="current-password"
+              />
+              <button type="button" onClick={() => setShowPass(s => !s)}
+                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', background: 'none', border: 'none', padding: 4, display: 'flex', alignItems: 'center', opacity: 0.6 }}>
+                {showPass ? <EyeOff color={T.text2} /> : <EyeOpen color={T.text2} />}
+              </button>
+            </div>
+            <div style={{ marginTop: 5, fontSize: 9, color: T.text3 }}>
+              Re-enter your password to confirm your identity
+            </div>
+          </div>
+
+          {/* Card details */}
           <div style={{ marginBottom: 28 }}>
             <label style={labelStyle}>Card Details</label>
             <div style={{ background: T.inputBg, border: `1px solid ${T.inputBorder}`, padding: '12px 14px' }}>
@@ -496,7 +514,6 @@ function SignupForm({
   )
 }
 
-// ── Page wrapper ──────────────────────────────────────────────────
 function SignupPageInner() {
   const { isDark } = useTheme()
   const T = isDark ? DARK : LIGHT
@@ -510,7 +527,6 @@ function SignupPageInner() {
     return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
   })()
 
-  // Which step to show in the step bar
   const currentStep = confirmedParam ? 2 : 1
 
   return (
@@ -527,7 +543,6 @@ function SignupPageInner() {
         @media(max-width:640px){.layout{flex-direction:column!important}.sidebar{display:none!important}}
       `}</style>
 
-      {/* NAV */}
       <nav style={{ borderBottom: `1px solid ${T.border}`, padding: '0 24px', height: 54, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: T.navBg }}>
         <Link href="/" style={{ textDecoration: 'none' }}>
           <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontStyle: 'italic', color: T.heading, fontWeight: 600 }}>Hey </span>
@@ -539,7 +554,6 @@ function SignupPageInner() {
         </div>
       </nav>
 
-      {/* STEP BAR */}
       <div style={{ borderBottom: `1px solid ${T.border}`, padding: '12px 24px', background: T.bg2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {[{ n: 1, label: 'Account' }, { n: 2, label: 'Payment' }].map((s, i) => (
           <div key={s.n} style={{ display: 'flex', alignItems: 'center' }}>
@@ -563,13 +577,11 @@ function SignupPageInner() {
         ))}
       </div>
 
-      {/* LAYOUT */}
       <div className="layout" style={{ maxWidth: 1000, margin: '0 auto', padding: '40px 24px', display: 'flex', gap: 40, alignItems: 'flex-start' }}>
         <Elements stripe={stripePromise}>
           <SignupForm isDark={isDark} billing={billing} setBilling={setBilling} />
         </Elements>
 
-        {/* SIDEBAR */}
         <div className="sidebar" style={{ width: 300, flexShrink: 0, position: 'sticky', top: 80 }}>
           <div style={{ background: T.cardBg, border: `1px solid ${T.cardBorder}`, overflow: 'hidden' }}>
             <div style={{ height: 2, background: `linear-gradient(90deg, transparent, ${T.gold}, transparent)` }} />
