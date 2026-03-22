@@ -177,50 +177,50 @@ export function useWakeWord({
           const wakeInput = new ort.Tensor('float32', embFlat, [1, embWindowSize, 96])
           const wakeResult = await wake.run({ [wake.inputNames[0]]: wakeInput })
           const score = (wakeResult[wake.outputNames[0]].data as Float32Array)[0]
-          console.log('[WakeWord] score:', score.toFixed(4))
+console.log('[WakeWord] score:', score.toFixed(4))
 
-          try {
-  const AudioCtx =
-    globalThis.AudioContext ||
-    (globalThis as any).webkitAudioContext
+// Only chime + fire onDetected when score exceeds threshold
+if (score > threshold) {
+  const now = Date.now()
+  if (now - lastDetectRef.current > COOLDOWN_MS) {
+    lastDetectRef.current = now
+    onDetected()
 
-  const actx = new AudioCtx()
+    try {
+      const AudioCtx = globalThis.AudioContext || (globalThis as any).webkitAudioContext
+      const actx = new AudioCtx()
+      if (actx.state === 'suspended') await actx.resume()
 
-  if (actx.state === 'suspended') {
-    await actx.resume()
+      const osc1 = actx.createOscillator()
+      const osc2 = actx.createOscillator()
+      const gain = actx.createGain()
+
+      osc1.type = 'sine'
+      osc2.type = 'sine'
+      osc1.frequency.setValueAtTime(440, actx.currentTime)
+      osc2.frequency.setValueAtTime(587, actx.currentTime + 0.12)
+
+      gain.gain.setValueAtTime(0.0, actx.currentTime)
+      gain.gain.linearRampToValueAtTime(0.18, actx.currentTime + 0.03)
+      gain.gain.setValueAtTime(0.18, actx.currentTime + 0.10)
+      gain.gain.linearRampToValueAtTime(0.0, actx.currentTime + 0.38)
+
+      osc1.connect(gain)
+      osc2.connect(gain)
+      gain.connect(actx.destination)
+
+      osc1.start(actx.currentTime)
+      osc1.stop(actx.currentTime + 0.14)
+      osc2.start(actx.currentTime + 0.12)
+      osc2.stop(actx.currentTime + 0.38)
+      osc2.onended = () => { void actx.close() }
+    } catch (err) {
+      console.error('Wake word chime failed:', err)
+    }
   }
-
-  const osc1 = actx.createOscillator()
-  const osc2 = actx.createOscillator()
-  const gain = actx.createGain()
-
-  osc1.type = 'sine'
-  osc2.type = 'sine'
-
-  osc1.frequency.setValueAtTime(440, actx.currentTime)
-  osc2.frequency.setValueAtTime(587, actx.currentTime + 0.12)
-
-  gain.gain.setValueAtTime(0.0, actx.currentTime)
-  gain.gain.linearRampToValueAtTime(0.18, actx.currentTime + 0.03)
-  gain.gain.setValueAtTime(0.18, actx.currentTime + 0.10)
-  gain.gain.linearRampToValueAtTime(0.0, actx.currentTime + 0.38)
-
-  osc1.connect(gain)
-  osc2.connect(gain)
-  gain.connect(actx.destination)
-
-  osc1.start(actx.currentTime)
-  osc1.stop(actx.currentTime + 0.14)
-
-  osc2.start(actx.currentTime + 0.12)
-  osc2.stop(actx.currentTime + 0.38)
-
-  osc2.onended = () => {
-    void actx.close()
-  }
-} catch (err) {
-  console.error('Wake word chime failed:', err)
 }
+
+// Keep embedding buffer from growing unboundedly
 
           // Keep embedding buffer from growing unboundedly
           if (embBufferRef.current.length > embWindowSize * 3) {

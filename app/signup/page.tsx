@@ -408,7 +408,7 @@ function SignupForm({
         <form onSubmit={handleStep2} className="fade-up">
           {/* Confirmed banner */}
           <div style={{ background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.2)', padding: '10px 14px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 14 }}>✅</span>
+            <span style={{ fontSize: 14 }}></span>
             <div style={{ fontSize: 11, color: '#4ade80' }}>
               Email confirmed! Add your payment details to start your free trial.
             </div>
