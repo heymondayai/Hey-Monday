@@ -165,7 +165,7 @@ function SignupForm({ isDark, billing, setBilling }: {
     setGoogleLoading(true); setError('')
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/confirm` },
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
     })
     if (error) { setError(error.message); setGoogleLoading(false) }
   }
