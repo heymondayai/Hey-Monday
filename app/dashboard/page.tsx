@@ -955,7 +955,11 @@ function startThinkingChimes(): () => void {
     await handleSendWithText(text, wasVoice)
   }
 
-  async function handleLogout() { await supabase.auth.signOut(); router.push('/login') }
+  async function handleLogout() {
+  await supabase.auth.signOut()
+  router.replace('/login')
+  router.refresh()
+}
 
   async function addToWatchlist(sym: string, name?: string) {
     const upper = sym.toUpperCase(); if (watchlist.some((w) => w.ticker === upper)) return; if (watchlist.length >= 20) return

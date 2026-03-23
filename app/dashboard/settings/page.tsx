@@ -609,53 +609,107 @@ function SettingsPageInner() {
                   </div>
                 </div>
 
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr auto',
-                  gap: 12,
-                  alignItems: 'center',
-                  padding: '14px 16px',
-                  border: `1px solid ${T.border}`,
-                  borderRadius: 6,
-                  background: T.panelBg2,
-                }}>
-                  <div>
-                    <div style={{ color: T.text2, fontWeight: 700, marginBottom: 4 }}>Wake word</div>
-                    <div style={{ color: T.text4, fontSize: 12 }}>Allow “Hey Monday” wake listening.</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={wakeWordEnabled}
-                    onChange={e => setWakeWordEnabled(e.target.checked)}
-                  />
-                </div>
+                {/* ── Wake word ── */}
+<div style={{
+  display: 'grid',
+  gridTemplateColumns: '1fr auto',
+  gap: 12,
+  alignItems: 'center',
+  padding: '14px 16px',
+  border: `1px solid ${T.border}`,
+  borderRadius: 6,
+  background: T.panelBg2,
+}}>
+  <div>
+    <div style={{ color: T.text2, fontWeight: 700, marginBottom: 4 }}>
+      Wake word
+    </div>
+    <div style={{ color: T.text4, fontSize: 12 }}>
+      Allow “Hey Monday” wake listening.
+    </div>
+  </div>
 
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr auto',
-                  gap: 12,
-                  alignItems: 'center',
-                  padding: '14px 16px',
-                  border: `1px solid ${T.border}`,
-                  borderRadius: 6,
-                  background: T.panelBg2,
-                }}>
-                  <div>
-                    <div style={{ color: T.text2, fontWeight: 700, marginBottom: 4 }}>Voice replies</div>
-                    <div style={{ color: T.text4, fontSize: 12 }}>Play spoken Monday responses when available.</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={voiceRepliesEnabled}
-                    onChange={e => setVoiceRepliesEnabled(e.target.checked)}
-                  />
-                </div>
+  <div
+    onClick={() => setWakeWordEnabled(!wakeWordEnabled)}
+    style={{
+      width: 42,
+      height: 24,
+      borderRadius: 999,
+      background: wakeWordEnabled ? 'rgba(201,146,42,0.15)' : T.inputBg,
+      border: `1px solid ${wakeWordEnabled ? T.gold : T.border}`,
+      display: 'flex',
+      alignItems: 'center',
+      padding: 2,
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+    }}
+  >
+    <div
+      style={{
+        width: 18,
+        height: 18,
+        borderRadius: '50%',
+        background: wakeWordEnabled ? T.gold : '#666',
+        transform: `translateX(${wakeWordEnabled ? '18px' : '0px'})`,
+        transition: 'all 0.2s ease',
+      }}
+    />
+  </div>
+</div>
 
-                <div>
-                  <button onClick={savePreferences} disabled={savingPrefs} style={actionBtn(true)}>
-                    {savingPrefs ? 'Saving...' : 'Save Preferences'}
-                  </button>
-                </div>
+{/* ── Voice replies ── */}
+<div style={{
+  display: 'grid',
+  gridTemplateColumns: '1fr auto',
+  gap: 12,
+  alignItems: 'center',
+  padding: '14px 16px',
+  border: `1px solid ${T.border}`,
+  borderRadius: 6,
+  background: T.panelBg2,
+}}>
+  <div>
+    <div style={{ color: T.text2, fontWeight: 700, marginBottom: 4 }}>
+      Voice replies
+    </div>
+    <div style={{ color: T.text4, fontSize: 12 }}>
+      Play spoken Monday responses when available.
+    </div>
+  </div>
+
+  <div
+    onClick={() => setVoiceRepliesEnabled(!voiceRepliesEnabled)}
+    style={{
+      width: 42,
+      height: 24,
+      borderRadius: 999,
+      background: wakeWordEnabled ? 'rgba(201,146,42,0.15)' : T.inputBg,
+      border: `1px solid ${wakeWordEnabled ? T.gold : T.border}`,
+      display: 'flex',
+      alignItems: 'center',
+      padding: 2,
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+    }}
+  >
+    <div
+      style={{
+        width: 18,
+        height: 18,
+        borderRadius: '50%',
+        background: wakeWordEnabled ? T.gold : '#666',
+        transform: `translateX(${voiceRepliesEnabled ? '18px' : '0px'})`,
+        transition: 'all 0.2s ease',
+      }}
+    />
+  </div>
+</div>
+
+<div>
+  <button onClick={savePreferences} disabled={savingPrefs} style={actionBtn(true)}>
+    {savingPrefs ? 'Saving...' : 'Save Preferences'}
+  </button>
+</div>
               </div>
             </div>
 
