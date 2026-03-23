@@ -87,11 +87,9 @@ function LoginPageContent() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [sendingReset, setSendingReset] = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
-  const [pendingEmail, setPendingEmail] = useState('')
-  const [screen, setScreen] = useState<'auth' | 'check-email'>('auth')
+  const [showPass, setShowPass] = useState(false)
   const [emailFocused, setEmailFocused] = useState(false)
   const [passFocused, setPassFocused] = useState(false)
-  const [showPass, setShowPass] = useState(false)
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -114,24 +112,71 @@ function LoginPageContent() {
     return ''
   }, [loginError])
 
-  function getResetRedirectTo() {
-    if (typeof window === 'undefined') return undefined
-    return `${window.location.origin}/reset-password`
-  }
+  // Route user based on profile state
+  async function routeUser(userId: string, userEmail: string) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('trader_type, onboarding_complete, stripe_subscription_id')
+      .eq('id', userId)
+      .maybeSingle()
 
-  function humanizeAuthError(message: string) {
-    const lower = message.toLowerCase()
-    if (lower.includes('email not confirmed')) return 'Your account is not confirmed yet. Check your email for the confirmation link.'
-    if (lower.includes('invalid login credentials')) return 'Incorrect email or password.'
-    if (lower.includes('password should be at least')) return 'Your password is too short.'
-    return message
+    if (!profile?.stripe_subscription_id) {
+      window.location.href = `/signup?confirmed=1&email=${encodeURIComponent(userEmail)}`
+      return
+    }
+    if (!profile?.trader_type || !profile?.onboarding_complete) {
+      window.location.href = '/onboarding'
+      return
+    }
+    window.location.href = '/dashboard'
   }
 
   useEffect(() => {
     let mounted = true
 
-    async function inspectCurrentSession() {
-      setCheckingSession(true)
+    async function init() {
+      // ── Handle Google OAuth implicit flow hash ──
+      // Supabase sends #access_token=... to the Site URL (this page)
+      if (typeof window !== 'undefined' && window.location.hash.includes('access_token')) {
+        setCheckingSession(false)
+        setGoogleLoading(true)
+
+        // Supabase SSR client auto-parses the hash on getSession()
+        // Try immediately, then retry once after a short delay
+        let session = (await supabase.auth.getSession()).data.session
+        if (!session) {
+          await new Promise(r => setTimeout(r, 800))
+          session = (await supabase.auth.getSession()).data.session
+        }
+
+        if (session?.user && mounted) {
+          await routeUser(session.user.id, session.user.email ?? '')
+          return
+        }
+
+        // Still no session — listen for auth state change
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          async (event, s) => {
+            if (s?.user && mounted) {
+              subscription.unsubscribe()
+              await routeUser(s.user.id, s.user.email ?? '')
+            }
+          }
+        )
+
+        // Timeout after 5s
+        setTimeout(() => {
+          if (mounted) {
+            subscription.unsubscribe()
+            setGoogleLoading(false)
+            setError('Google sign-in timed out. Please try again.')
+          }
+        }, 5000)
+
+        return
+      }
+
+      // ── Normal session check ──
       const timeout = setTimeout(() => { if (mounted) setCheckingSession(false) }, 3000)
 
       try {
@@ -145,19 +190,18 @@ function LoginPageContent() {
         if (!user.email_confirmed_at) {
           await supabase.auth.signOut()
           if (!mounted) return
-          setPendingEmail(user.email ?? '')
-          setScreen('check-email')
           setCheckingSession(false)
           return
         }
 
         const { data: profile } = await supabase
           .from('profiles')
-          .select('trader_type, onboarding_complete')
+          .select('trader_type, onboarding_complete, stripe_subscription_id')
           .eq('id', user.id)
           .maybeSingle()
 
         if (!mounted) return
+        if (!profile?.stripe_subscription_id) { router.replace(`/signup?confirmed=1&email=${encodeURIComponent(user.email ?? '')}`); return }
         if (!profile?.trader_type || !profile?.onboarding_complete) { router.replace('/onboarding'); return }
         router.replace('/dashboard')
       } catch {
@@ -166,16 +210,16 @@ function LoginPageContent() {
       }
     }
 
-    inspectCurrentSession()
+    init()
     return () => { mounted = false }
-  }, [supabase, router])
+  }, [])
 
   async function handleGoogleLogin() {
     setGoogleLoading(true); setError('')
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/login`,
       },
     })
     if (error) { setError(error.message); setGoogleLoading(false) }
@@ -186,28 +230,36 @@ function LoginPageContent() {
     setLoading(true); setError(''); setInfo('')
 
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-    if (error) { setError(humanizeAuthError(error.message)); setLoading(false); return }
+    if (error) {
+      const msg = error.message.toLowerCase()
+      if (msg.includes('invalid login credentials')) setError('Incorrect email or password.')
+      else if (msg.includes('email not confirmed')) setError('Please confirm your email first.')
+      else setError(error.message)
+      setLoading(false); return
+    }
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { await supabase.auth.signOut(); setError('Could not verify your session. Please try again.'); setLoading(false); return }
+    if (!user) { await supabase.auth.signOut(); setError('Could not verify session. Try again.'); setLoading(false); return }
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('trader_type, onboarding_complete')
+      .select('trader_type, onboarding_complete, stripe_subscription_id')
       .eq('id', user.id)
       .maybeSingle()
 
+    if (!profile?.stripe_subscription_id) { window.location.href = `/signup?confirmed=1&email=${encodeURIComponent(user.email ?? '')}`; return }
     if (!profile?.trader_type || !profile?.onboarding_complete) { window.location.href = '/onboarding'; return }
     window.location.href = '/dashboard'
   }
 
   async function handleForgotPassword() {
     const targetEmail = email.trim()
-    if (!targetEmail) { setError('Enter your email first, then click Forgot Password.'); setInfo(''); return }
+    if (!targetEmail) { setError('Enter your email first.'); return }
     setSendingReset(true); setError(''); setInfo('')
-
-    const { error } = await supabase.auth.resetPasswordForEmail(targetEmail, { redirectTo: getResetRedirectTo() })
-    if (error) { setError(humanizeAuthError(error.message)); setSendingReset(false); return }
+    const { error } = await supabase.auth.resetPasswordForEmail(targetEmail, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    if (error) { setError(error.message); setSendingReset(false); return }
     setInfo(`Password reset email sent to ${targetEmail}.`)
     setSendingReset(false)
   }
@@ -222,17 +274,17 @@ function LoginPageContent() {
     fontFamily: "'JetBrains Mono', monospace",
     outline: 'none',
     borderRadius: 4,
-    transition: 'border-color 0.15s, background 0.3s',
+    transition: 'border-color 0.15s',
   })
 
-  if (checkingSession) {
+  if (checkingSession || googleLoading) {
     return (
-      <div style={{ background: T.pageBg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'JetBrains Mono', monospace", color: T.gold, transition: 'background 0.3s' }}>
-        <style>{`@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600;1,700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');*{margin:0;padding:0;box-sizing:border-box}`}</style>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-          <span style={{ width: 14, height: 14, border: `2px solid ${T.gold}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
-          Loading…
-        </div>
+      <div style={{ background: T.pageBg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'JetBrains Mono', monospace", flexDirection: 'column', gap: 14, transition: 'background 0.3s' }}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600;1,700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');*{margin:0;padding:0;box-sizing:border-box}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <span style={{ width: 18, height: 18, border: `2px solid ${T.gold}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
+        <span style={{ fontSize: 11, color: T.gold, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+          {googleLoading ? 'Signing you in…' : 'Loading…'}
+        </span>
       </div>
     )
   }
@@ -249,28 +301,24 @@ function LoginPageContent() {
         @keyframes toggleSpin{from{transform:rotate(-20deg);opacity:0}to{transform:rotate(0);opacity:1}}
         .fade-up{animation:fadeUp 0.3s ease both}
         .toggle-icon{animation:toggleSpin 0.25s ease both}
-        .google-btn:hover{opacity:0.85!important}
-        .text-link:hover{opacity:0.8}
       `}</style>
 
-      {/* Grid bg */}
       <div style={{ position: 'fixed', inset: 0, backgroundImage: `linear-gradient(${T.gridLine} 1px, transparent 1px), linear-gradient(90deg, ${T.gridLine} 1px, transparent 1px)`, backgroundSize: '48px 48px', pointerEvents: 'none' }} />
 
       {/* NAV */}
       <nav style={{ borderBottom: `1px solid ${T.border}`, padding: '0 24px', height: 54, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: T.pageBg, position: 'relative', zIndex: 1, transition: 'background 0.3s, border-color 0.3s' }}>
         <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontStyle: 'italic', color: T.heading, fontWeight: 600, transition: 'color 0.3s' }}>Hey </span>
-          <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontStyle: 'italic', color: T.gold, fontWeight: 700, transition: 'color 0.3s' }}>Monday</span>
+          <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontStyle: 'italic', color: T.heading, fontWeight: 600 }}>Hey </span>
+          <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontStyle: 'italic', color: T.gold, fontWeight: 700 }}>Monday</span>
         </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={toggle}
-            style={{ background: T.bg2, border: `1px solid ${T.border2}`, borderRadius: 24, padding: '5px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, color: T.text2, transition: 'all 0.3s' }}>
+          <button onClick={toggle} style={{ background: T.bg2, border: `1px solid ${T.border2}`, borderRadius: 24, padding: '5px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, color: T.text2, transition: 'all 0.3s' }}>
             <span key={String(isDark)} className="toggle-icon">
               {isDark ? <SunIcon color={T.text2} /> : <MoonIcon color={T.text2} />}
             </span>
           </button>
           <span style={{ fontSize: 12, color: T.text3 }}>New here?</span>
-          <Link href="/signup" style={{ textDecoration: 'none', fontSize: 11, fontWeight: 600, color: T.text2, padding: '6px 14px', border: `1px solid ${T.border2}`, letterSpacing: '0.08em', textTransform: 'uppercase', borderRadius: 4, transition: 'all 0.3s' }}>
+          <Link href="/signup" style={{ textDecoration: 'none', fontSize: 11, fontWeight: 600, color: T.text2, padding: '6px 14px', border: `1px solid ${T.border2}`, letterSpacing: '0.08em', textTransform: 'uppercase', borderRadius: 4 }}>
             Start Free Trial
           </Link>
         </div>
@@ -280,22 +328,17 @@ function LoginPageContent() {
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 24px', position: 'relative', zIndex: 1 }}>
         <div style={{ width: '100%', maxWidth: 400 }}>
 
-          {/* LOGO */}
           <div style={{ textAlign: 'center', marginBottom: 36 }}>
             <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 42, fontStyle: 'italic', fontWeight: 700, lineHeight: 1.1, marginBottom: 8 }}>
               <span style={{ color: T.heading }}>Hey </span>
               <span style={{ color: T.gold }}>Monday</span>
             </div>
-            <div style={{ fontSize: 10, letterSpacing: '0.3em', textTransform: 'uppercase', color: T.text3 }}>
-              AI Market Intelligence
-            </div>
+            <div style={{ fontSize: 10, letterSpacing: '0.3em', textTransform: 'uppercase', color: T.text3 }}>AI Market Intelligence</div>
             <div style={{ width: 40, height: 1, background: T.divider, margin: '14px auto 0' }} />
           </div>
 
-          {/* CARD */}
           <div className="fade-up" style={{ background: T.bg2, border: `1px solid ${T.border}`, padding: '32px 28px', borderRadius: 8, transition: 'background 0.3s, border-color 0.3s' }}>
 
-            {/* Banners */}
             {confirmedBanner && (
               <div style={{ color: T.successText, fontSize: 12, padding: '10px 12px', marginBottom: 20, background: T.successBg, border: `1px solid ${T.successBorder}`, lineHeight: 1.5, borderRadius: 4 }}>
                 ✓ {confirmedBanner}
@@ -307,205 +350,90 @@ function LoginPageContent() {
               </div>
             )}
 
-            {screen === 'check-email' ? (
-              /* CHECK EMAIL */
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 24, fontStyle: 'italic', color: T.heading }}>
-                  Check your email
-                </div>
-                <div style={{ fontSize: 13, color: T.text2, lineHeight: 1.7 }}>
-                  We sent a confirmation link to <strong style={{ color: T.text }}>{pendingEmail}</strong>. Open that email, confirm your account, and then log in here.
-                </div>
-                <div style={{ fontSize: 11, color: T.infoText, background: T.infoBg, border: `1px solid ${T.infoBorder}`, padding: '10px 12px', lineHeight: 1.6, borderRadius: 4 }}>
-                  💡 Check spam or promotions if you don't see it within a minute.
-                </div>
-                <button onClick={() => { setScreen('auth'); setError(''); setInfo('') }}
-                  style={{ background: 'transparent', color: T.ghostColor, border: `1px solid ${T.ghostBorder}`, padding: '11px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.12em', textTransform: 'uppercase', width: '100%', borderRadius: 4, transition: 'all 0.15s' }}>
-                  ← Back to Login
-                </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.2em', textTransform: 'uppercase', color: T.text3, marginBottom: 20 }}>
+                Sign in to your account
               </div>
-            ) : (
-              /* LOGIN FORM */
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
 
-                <div style={{ fontSize: 10, letterSpacing: '0.2em', textTransform: 'uppercase', color: T.text3, marginBottom: 20 }}>
-                  Sign in to your account
-                </div>
+              {/* GOOGLE */}
+              <button onClick={handleGoogleLogin} disabled={loading || googleLoading}
+                style={{ width: '100%', background: T.googleBg, border: `1px solid ${T.googleBorder}`, color: T.googleText, padding: '12px 16px', fontSize: 14, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 4, marginBottom: 16, fontFamily: 'system-ui, -apple-system, sans-serif', transition: 'opacity 0.15s', opacity: googleLoading ? 0.7 : 1 }}>
+                <GoogleIcon />
+                Continue with Google
+              </button>
 
-                {/* GOOGLE BUTTON */}
-                <button
-                  className="google-btn"
-                  onClick={handleGoogleLogin}
-                  disabled={googleLoading || loading}
-                  style={{
-                    width: '100%',
-                    background: T.googleBg,
-                    border: `1px solid ${T.googleBorder}`,
-                    color: T.googleText,
-                    padding: '12px 16px',
-                    fontSize: 14,
-                    fontWeight: 500,
-                    cursor: googleLoading || loading ? 'default' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 10,
-                    borderRadius: 4,
-                    marginBottom: 16,
-                    transition: 'opacity 0.15s',
-                    fontFamily: 'system-ui, -apple-system, sans-serif',
-                    opacity: googleLoading ? 0.7 : 1,
-                  }}>
-                  {googleLoading ? (
-                    <>
-                      <span style={{ width: 14, height: 14, border: `2px solid ${T.text3}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
-                      Redirecting to Google…
-                    </>
-                  ) : (
-                    <>
-                      <GoogleIcon />
-                      Continue with Google
-                    </>
-                  )}
-                </button>
+              {/* DIVIDER */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+                <div style={{ flex: 1, height: 1, background: T.orDivider }} />
+                <span style={{ fontSize: 11, color: T.text3 }}>or</span>
+                <div style={{ flex: 1, height: 1, background: T.orDivider }} />
+              </div>
 
-                {/* DIVIDER */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-                  <div style={{ flex: 1, height: 1, background: T.orDivider }} />
-                  <span style={{ fontSize: 11, color: T.text3, letterSpacing: '0.05em' }}>or</span>
-                  <div style={{ flex: 1, height: 1, background: T.orDivider }} />
-                </div>
+              {/* EMAIL */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 12, color: T.text2, marginBottom: 6, fontWeight: 500 }}>Email address</label>
+                <input type="email" placeholder="you@example.com" value={email}
+                  onChange={e => { setEmail(e.target.value); setError('') }}
+                  onFocus={() => setEmailFocused(true)} onBlur={() => setEmailFocused(false)}
+                  style={inputStyle(emailFocused)} autoComplete="email" />
+              </div>
 
-                {/* EMAIL */}
-                <div style={{ marginBottom: 14 }}>
-                  <label style={{ display: 'block', fontSize: 12, color: T.text2, marginBottom: 6, fontWeight: 500 }}>
-                    Email address
-                  </label>
-                  <input
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={e => { setEmail(e.target.value); setError('') }}
-                    onFocus={() => setEmailFocused(true)}
-                    onBlur={() => setEmailFocused(false)}
-                    style={inputStyle(emailFocused)}
-                    autoComplete="email"
-                  />
-                </div>
-
-                {/* PASSWORD */}
-                <div style={{ marginBottom: 20 }}>
-                  <label style={{ display: 'block', fontSize: 12, color: T.text2, marginBottom: 6, fontWeight: 500 }}>
-                    Password
-                  </label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPass ? 'text' : 'password'}
-                      placeholder="Your password"
-                      value={password}
-                      onChange={e => { setPassword(e.target.value); setError('') }}
-                      onFocus={() => setPassFocused(true)}
-                      onBlur={() => setPassFocused(false)}
-                      onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                      style={{ ...inputStyle(passFocused), paddingRight: 44 }}
-                      autoComplete="current-password"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPass(s => !s)}
-                      style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', background: 'none', border: 'none', padding: 4, display: 'flex', alignItems: 'center', opacity: 0.5 }}>
-                      {showPass ? (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.text2} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-                          <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-                          <line x1="1" y1="1" x2="23" y2="23"/>
-                        </svg>
-                      ) : (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.text2} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* ERROR / INFO */}
-                {error && (
-                  <div style={{ color: T.red, fontSize: 12, padding: '10px 12px', background: T.errBg, border: `1px solid ${T.errBorder}`, lineHeight: 1.5, marginBottom: 16, borderRadius: 4 }}>
-                    ⚠ {error}
-                  </div>
-                )}
-                {info && (
-                  <div style={{ color: T.successText, fontSize: 12, padding: '10px 12px', background: T.successBg, border: `1px solid ${T.successBorder}`, lineHeight: 1.5, marginBottom: 16, borderRadius: 4 }}>
-                    ✓ {info}
-                  </div>
-                )}
-
-                {/* BUTTONS */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <button
-                    onClick={handleLogin}
-                    disabled={loading || sendingReset || googleLoading}
-                    style={{
-                      background: loading ? T.goldDim : T.gold,
-                      color: '#0a0a08',
-                      border: 'none',
-                      padding: '13px',
-                      fontSize: 13,
-                      fontWeight: 700,
-                      cursor: loading ? 'default' : 'pointer',
-                      fontFamily: "'JetBrains Mono', monospace",
-                      letterSpacing: '0.12em',
-                      textTransform: 'uppercase',
-                      opacity: loading || sendingReset || googleLoading ? 0.7 : 1,
-                      width: '100%',
-                      borderRadius: 4,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                      transition: 'background 0.2s',
-                    }}>
-                    {loading ? (
-                      <>
-                        <span style={{ width: 13, height: 13, border: '2px solid #0a0a08', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
-                        Logging in…
-                      </>
-                    ) : 'Log In →'}
-                  </button>
-
-                  <button
-                    onClick={handleForgotPassword}
-                    disabled={sendingReset || loading || googleLoading}
-                    style={{
-                      background: 'transparent',
-                      color: email.trim() ? T.ghostColor : T.text3,
-                      border: `1px solid ${T.ghostBorder}`,
-                      padding: '11px',
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: sendingReset || loading || !email.trim() ? 'default' : 'pointer',
-                      fontFamily: "'JetBrains Mono', monospace",
-                      letterSpacing: '0.1em',
-                      textTransform: 'uppercase',
-                      opacity: sendingReset ? 0.6 : 1,
-                      width: '100%',
-                      borderRadius: 4,
-                      transition: 'all 0.15s',
-                    }}>
-                    {sendingReset ? 'Sending…' : 'Forgot Password'}
+              {/* PASSWORD */}
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: 12, color: T.text2, marginBottom: 6, fontWeight: 500 }}>Password</label>
+                <div style={{ position: 'relative' }}>
+                  <input type={showPass ? 'text' : 'password'} placeholder="Your password" value={password}
+                    onChange={e => { setPassword(e.target.value); setError('') }}
+                    onFocus={() => setPassFocused(true)} onBlur={() => setPassFocused(false)}
+                    onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                    style={{ ...inputStyle(passFocused), paddingRight: 44 }} autoComplete="current-password" />
+                  <button type="button" onClick={() => setShowPass(s => !s)}
+                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', background: 'none', border: 'none', padding: 4, opacity: 0.5, display: 'flex', alignItems: 'center' }}>
+                    {showPass ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.text2} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                        <line x1="1" y1="1" x2="23" y2="23"/>
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.text2} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    )}
                   </button>
                 </div>
-
-                {/* SIGN UP LINK */}
-                <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 16, marginTop: 20, textAlign: 'center', fontSize: 12, color: T.text3 }}>
-                  Don't have an account?{' '}
-                  <Link href="/signup" style={{ color: T.gold, textDecoration: 'underline' }}>
-                    Start free trial →
-                  </Link>
-                </div>
               </div>
-            )}
+
+              {error && (
+                <div style={{ color: T.red, fontSize: 12, padding: '10px 12px', background: T.errBg, border: `1px solid ${T.errBorder}`, lineHeight: 1.5, marginBottom: 16, borderRadius: 4 }}>
+                  ⚠ {error}
+                </div>
+              )}
+              {info && (
+                <div style={{ color: T.successText, fontSize: 12, padding: '10px 12px', background: T.successBg, border: `1px solid ${T.successBorder}`, lineHeight: 1.5, marginBottom: 16, borderRadius: 4 }}>
+                  ✓ {info}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <button onClick={handleLogin} disabled={loading || googleLoading}
+                  style={{ background: loading ? T.goldDim : T.gold, color: '#0a0a08', border: 'none', padding: '13px', fontSize: 13, fontWeight: 700, cursor: loading ? 'default' : 'pointer', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.12em', textTransform: 'uppercase', opacity: loading || googleLoading ? 0.7 : 1, width: '100%', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'background 0.2s' }}>
+                  {loading ? (
+                    <><span style={{ width: 13, height: 13, border: '2px solid #0a0a08', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />Logging in…</>
+                  ) : 'Log In →'}
+                </button>
+
+                <button onClick={handleForgotPassword} disabled={sendingReset || loading || !email.trim()}
+                  style={{ background: 'transparent', color: email.trim() ? T.ghostColor : T.text3, border: `1px solid ${T.ghostBorder}`, padding: '11px', fontSize: 11, fontWeight: 600, cursor: !email.trim() ? 'default' : 'pointer', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.1em', textTransform: 'uppercase', opacity: sendingReset ? 0.6 : 1, width: '100%', borderRadius: 4 }}>
+                  {sendingReset ? 'Sending…' : 'Forgot Password'}
+                </button>
+              </div>
+
+              <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 16, marginTop: 20, textAlign: 'center', fontSize: 12, color: T.text3 }}>
+                Don't have an account?{' '}
+                <Link href="/signup" style={{ color: T.gold, textDecoration: 'underline' }}>Start free trial →</Link>
+              </div>
+            </div>
           </div>
 
           <div style={{ textAlign: 'center', marginTop: 24, fontSize: 9, color: T.text3, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
@@ -519,9 +447,9 @@ function LoginPageContent() {
 
 function LoginFallback() {
   return (
-    <div style={{ background: '#0a0a08', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c9922a', fontFamily: "'JetBrains Mono', monospace" }}>
+    <div style={{ background: '#0a0a08', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c9922a', fontFamily: "'JetBrains Mono', monospace", gap: 10 }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      <span style={{ width: 14, height: 14, border: '2px solid #c9922a', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block', marginRight: 10 }} />
+      <span style={{ width: 14, height: 14, border: '2px solid #c9922a', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
       Loading…
     </div>
   )
