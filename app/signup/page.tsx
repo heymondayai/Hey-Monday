@@ -162,13 +162,15 @@ function SignupForm({ isDark, billing, setBilling }: {
   }
 
   async function handleGoogleSignup() {
-    setGoogleLoading(true); setError('')
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    })
-    if (error) { setError(error.message); setGoogleLoading(false) }
-  }
+  setGoogleLoading(true); setError('')
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+    },
+  })
+  if (error) { setError(error.message); setGoogleLoading(false) }
+}
 
   async function handleStep1(e: React.FormEvent) {
     e.preventDefault()

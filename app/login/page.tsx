@@ -112,71 +112,11 @@ function LoginPageContent() {
     return ''
   }, [loginError])
 
-  // Route user based on profile state
-  async function routeUser(userId: string, userEmail: string) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('trader_type, onboarding_complete, stripe_subscription_id')
-      .eq('id', userId)
-      .maybeSingle()
-
-    if (!profile?.stripe_subscription_id) {
-      window.location.href = `/signup?confirmed=1&email=${encodeURIComponent(userEmail)}`
-      return
-    }
-    if (!profile?.trader_type || !profile?.onboarding_complete) {
-      window.location.href = '/onboarding'
-      return
-    }
-    window.location.href = '/dashboard'
-  }
-
+  // ── Check existing session on mount ──────────────────────────
   useEffect(() => {
     let mounted = true
 
-    async function init() {
-      // ── Handle Google OAuth implicit flow hash ──
-      // Supabase sends #access_token=... to the Site URL (this page)
-      if (typeof window !== 'undefined' && window.location.hash.includes('access_token')) {
-        setCheckingSession(false)
-        setGoogleLoading(true)
-
-        // Supabase SSR client auto-parses the hash on getSession()
-        // Try immediately, then retry once after a short delay
-        let session = (await supabase.auth.getSession()).data.session
-        if (!session) {
-          await new Promise(r => setTimeout(r, 800))
-          session = (await supabase.auth.getSession()).data.session
-        }
-
-        if (session?.user && mounted) {
-          await routeUser(session.user.id, session.user.email ?? '')
-          return
-        }
-
-        // Still no session — listen for auth state change
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(
-          async (event, s) => {
-            if (s?.user && mounted) {
-              subscription.unsubscribe()
-              await routeUser(s.user.id, s.user.email ?? '')
-            }
-          }
-        )
-
-        // Timeout after 5s
-        setTimeout(() => {
-          if (mounted) {
-            subscription.unsubscribe()
-            setGoogleLoading(false)
-            setError('Google sign-in timed out. Please try again.')
-          }
-        }, 5000)
-
-        return
-      }
-
-      // ── Normal session check ──
+    async function checkSession() {
       const timeout = setTimeout(() => { if (mounted) setCheckingSession(false) }, 3000)
 
       try {
@@ -187,7 +127,10 @@ function LoginPageContent() {
         if (!session?.user) { setCheckingSession(false); return }
 
         const user = session.user
-        if (!user.email_confirmed_at) {
+
+        // Email users must have confirmed their email
+        const isGoogleUser = user.app_metadata?.provider === 'google'
+        if (!isGoogleUser && !user.email_confirmed_at) {
           await supabase.auth.signOut()
           if (!mounted) return
           setCheckingSession(false)
@@ -201,8 +144,15 @@ function LoginPageContent() {
           .maybeSingle()
 
         if (!mounted) return
-        if (!profile?.stripe_subscription_id) { router.replace(`/signup?confirmed=1&email=${encodeURIComponent(user.email ?? '')}`); return }
-        if (!profile?.trader_type || !profile?.onboarding_complete) { router.replace('/onboarding'); return }
+
+        if (!profile?.stripe_subscription_id) {
+          router.replace(`/signup?confirmed=1&email=${encodeURIComponent(user.email ?? '')}`)
+          return
+        }
+        if (!profile?.trader_type || !profile?.onboarding_complete) {
+          router.replace('/onboarding')
+          return
+        }
         router.replace('/dashboard')
       } catch {
         clearTimeout(timeout)
@@ -210,36 +160,60 @@ function LoginPageContent() {
       }
     }
 
-    init()
+    checkSession()
     return () => { mounted = false }
   }, [])
 
+  // ── Google login — uses PKCE, redirects to /auth/callback ─────
   async function handleGoogleLogin() {
     setGoogleLoading(true); setError('')
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/login`,
+        redirectTo: `${window.location.origin}/auth/callback`,
       },
     })
     if (error) { setError(error.message); setGoogleLoading(false) }
   }
 
+  // ── Email/password login ──────────────────────────────────────
   async function handleLogin() {
     if (!email.trim() || !password.trim()) { setError('Enter your email and password.'); return }
     setLoading(true); setError(''); setInfo('')
 
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-    if (error) {
-      const msg = error.message.toLowerCase()
-      if (msg.includes('invalid login credentials')) setError('Incorrect email or password.')
-      else if (msg.includes('email not confirmed')) setError('Please confirm your email first.')
-      else setError(error.message)
-      setLoading(false); return
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    })
+
+    if (signInError) {
+      const msg = signInError.message.toLowerCase()
+      if (msg.includes('invalid login credentials')) {
+        setError('Incorrect email or password.')
+      } else if (msg.includes('email not confirmed')) {
+        setError('Please confirm your email first. Check your inbox.')
+      } else {
+        setError(signInError.message)
+      }
+      setLoading(false)
+      return
     }
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { await supabase.auth.signOut(); setError('Could not verify session. Try again.'); setLoading(false); return }
+    if (!user) {
+      await supabase.auth.signOut()
+      setError('Could not verify session. Please try again.')
+      setLoading(false)
+      return
+    }
+
+    // Block Google users from using password login
+    if (user.app_metadata?.provider === 'google') {
+      await supabase.auth.signOut()
+      setError('This account uses Google sign-in. Please use "Continue with Google" instead.')
+      setLoading(false)
+      return
+    }
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -247,11 +221,18 @@ function LoginPageContent() {
       .eq('id', user.id)
       .maybeSingle()
 
-    if (!profile?.stripe_subscription_id) { window.location.href = `/signup?confirmed=1&email=${encodeURIComponent(user.email ?? '')}`; return }
-    if (!profile?.trader_type || !profile?.onboarding_complete) { window.location.href = '/onboarding'; return }
+    if (!profile?.stripe_subscription_id) {
+      window.location.href = `/signup?confirmed=1&email=${encodeURIComponent(user.email ?? '')}`
+      return
+    }
+    if (!profile?.trader_type || !profile?.onboarding_complete) {
+      window.location.href = '/onboarding'
+      return
+    }
     window.location.href = '/dashboard'
   }
 
+  // ── Forgot password ───────────────────────────────────────────
   async function handleForgotPassword() {
     const targetEmail = email.trim()
     if (!targetEmail) { setError('Enter your email first.'); return }
@@ -277,14 +258,12 @@ function LoginPageContent() {
     transition: 'border-color 0.15s',
   })
 
-  if (checkingSession || googleLoading) {
+  if (checkingSession) {
     return (
       <div style={{ background: T.pageBg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'JetBrains Mono', monospace", flexDirection: 'column', gap: 14, transition: 'background 0.3s' }}>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600;1,700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');*{margin:0;padding:0;box-sizing:border-box}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
         <span style={{ width: 18, height: 18, border: `2px solid ${T.gold}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
-        <span style={{ fontSize: 11, color: T.gold, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
-          {googleLoading ? 'Signing you in…' : 'Loading…'}
-        </span>
+        <span style={{ fontSize: 11, color: T.gold, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Loading…</span>
       </div>
     )
   }
@@ -303,6 +282,7 @@ function LoginPageContent() {
         .toggle-icon{animation:toggleSpin 0.25s ease both}
       `}</style>
 
+      {/* Grid background */}
       <div style={{ position: 'fixed', inset: 0, backgroundImage: `linear-gradient(${T.gridLine} 1px, transparent 1px), linear-gradient(90deg, ${T.gridLine} 1px, transparent 1px)`, backgroundSize: '48px 48px', pointerEvents: 'none' }} />
 
       {/* NAV */}
@@ -328,6 +308,7 @@ function LoginPageContent() {
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 24px', position: 'relative', zIndex: 1 }}>
         <div style={{ width: '100%', maxWidth: 400 }}>
 
+          {/* LOGO */}
           <div style={{ textAlign: 'center', marginBottom: 36 }}>
             <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 42, fontStyle: 'italic', fontWeight: 700, lineHeight: 1.1, marginBottom: 8 }}>
               <span style={{ color: T.heading }}>Hey </span>
@@ -337,8 +318,10 @@ function LoginPageContent() {
             <div style={{ width: 40, height: 1, background: T.divider, margin: '14px auto 0' }} />
           </div>
 
+          {/* CARD */}
           <div className="fade-up" style={{ background: T.bg2, border: `1px solid ${T.border}`, padding: '32px 28px', borderRadius: 8, transition: 'background 0.3s, border-color 0.3s' }}>
 
+            {/* Banners */}
             {confirmedBanner && (
               <div style={{ color: T.successText, fontSize: 12, padding: '10px 12px', marginBottom: 20, background: T.successBg, border: `1px solid ${T.successBorder}`, lineHeight: 1.5, borderRadius: 4 }}>
                 ✓ {confirmedBanner}
@@ -355,11 +338,40 @@ function LoginPageContent() {
                 Sign in to your account
               </div>
 
-              {/* GOOGLE */}
-              <button onClick={handleGoogleLogin} disabled={loading || googleLoading}
-                style={{ width: '100%', background: T.googleBg, border: `1px solid ${T.googleBorder}`, color: T.googleText, padding: '12px 16px', fontSize: 14, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 4, marginBottom: 16, fontFamily: 'system-ui, -apple-system, sans-serif', transition: 'opacity 0.15s', opacity: googleLoading ? 0.7 : 1 }}>
-                <GoogleIcon />
-                Continue with Google
+              {/* GOOGLE BUTTON */}
+              <button
+                onClick={handleGoogleLogin}
+                disabled={googleLoading || loading}
+                style={{
+                  width: '100%',
+                  background: T.googleBg,
+                  border: `1px solid ${T.googleBorder}`,
+                  color: T.googleText,
+                  padding: '12px 16px',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: googleLoading || loading ? 'default' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                  borderRadius: 4,
+                  marginBottom: 16,
+                  fontFamily: 'system-ui, -apple-system, sans-serif',
+                  transition: 'opacity 0.15s',
+                  opacity: googleLoading ? 0.7 : 1,
+                }}>
+                {googleLoading ? (
+                  <>
+                    <span style={{ width: 14, height: 14, border: `2px solid ${T.text3}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
+                    Redirecting…
+                  </>
+                ) : (
+                  <>
+                    <GoogleIcon />
+                    Continue with Google
+                  </>
+                )}
               </button>
 
               {/* DIVIDER */}
@@ -372,21 +384,33 @@ function LoginPageContent() {
               {/* EMAIL */}
               <div style={{ marginBottom: 14 }}>
                 <label style={{ display: 'block', fontSize: 12, color: T.text2, marginBottom: 6, fontWeight: 500 }}>Email address</label>
-                <input type="email" placeholder="you@example.com" value={email}
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
                   onChange={e => { setEmail(e.target.value); setError('') }}
-                  onFocus={() => setEmailFocused(true)} onBlur={() => setEmailFocused(false)}
-                  style={inputStyle(emailFocused)} autoComplete="email" />
+                  onFocus={() => setEmailFocused(true)}
+                  onBlur={() => setEmailFocused(false)}
+                  style={inputStyle(emailFocused)}
+                  autoComplete="email"
+                />
               </div>
 
               {/* PASSWORD */}
               <div style={{ marginBottom: 20 }}>
                 <label style={{ display: 'block', fontSize: 12, color: T.text2, marginBottom: 6, fontWeight: 500 }}>Password</label>
                 <div style={{ position: 'relative' }}>
-                  <input type={showPass ? 'text' : 'password'} placeholder="Your password" value={password}
+                  <input
+                    type={showPass ? 'text' : 'password'}
+                    placeholder="Your password"
+                    value={password}
                     onChange={e => { setPassword(e.target.value); setError('') }}
-                    onFocus={() => setPassFocused(true)} onBlur={() => setPassFocused(false)}
+                    onFocus={() => setPassFocused(true)}
+                    onBlur={() => setPassFocused(false)}
                     onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                    style={{ ...inputStyle(passFocused), paddingRight: 44 }} autoComplete="current-password" />
+                    style={{ ...inputStyle(passFocused), paddingRight: 44 }}
+                    autoComplete="current-password"
+                  />
                   <button type="button" onClick={() => setShowPass(s => !s)}
                     style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', background: 'none', border: 'none', padding: 4, opacity: 0.5, display: 'flex', alignItems: 'center' }}>
                     {showPass ? (
@@ -404,6 +428,7 @@ function LoginPageContent() {
                 </div>
               </div>
 
+              {/* ERROR / INFO */}
               {error && (
                 <div style={{ color: T.red, fontSize: 12, padding: '10px 12px', background: T.errBg, border: `1px solid ${T.errBorder}`, lineHeight: 1.5, marginBottom: 16, borderRadius: 4 }}>
                   ⚠ {error}
@@ -415,23 +440,68 @@ function LoginPageContent() {
                 </div>
               )}
 
+              {/* BUTTONS */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <button onClick={handleLogin} disabled={loading || googleLoading}
-                  style={{ background: loading ? T.goldDim : T.gold, color: '#0a0a08', border: 'none', padding: '13px', fontSize: 13, fontWeight: 700, cursor: loading ? 'default' : 'pointer', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.12em', textTransform: 'uppercase', opacity: loading || googleLoading ? 0.7 : 1, width: '100%', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'background 0.2s' }}>
+                <button
+                  onClick={handleLogin}
+                  disabled={loading || googleLoading}
+                  style={{
+                    background: loading ? T.goldDim : T.gold,
+                    color: '#0a0a08',
+                    border: 'none',
+                    padding: '13px',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: loading ? 'default' : 'pointer',
+                    fontFamily: "'JetBrains Mono', monospace",
+                    letterSpacing: '0.12em',
+                    textTransform: 'uppercase',
+                    opacity: loading || googleLoading ? 0.7 : 1,
+                    width: '100%',
+                    borderRadius: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    transition: 'background 0.2s',
+                  }}>
                   {loading ? (
-                    <><span style={{ width: 13, height: 13, border: '2px solid #0a0a08', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />Logging in…</>
+                    <>
+                      <span style={{ width: 13, height: 13, border: '2px solid #0a0a08', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
+                      Logging in…
+                    </>
                   ) : 'Log In →'}
                 </button>
 
-                <button onClick={handleForgotPassword} disabled={sendingReset || loading || !email.trim()}
-                  style={{ background: 'transparent', color: email.trim() ? T.ghostColor : T.text3, border: `1px solid ${T.ghostBorder}`, padding: '11px', fontSize: 11, fontWeight: 600, cursor: !email.trim() ? 'default' : 'pointer', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.1em', textTransform: 'uppercase', opacity: sendingReset ? 0.6 : 1, width: '100%', borderRadius: 4 }}>
+                <button
+                  onClick={handleForgotPassword}
+                  disabled={sendingReset || loading || !email.trim()}
+                  style={{
+                    background: 'transparent',
+                    color: email.trim() ? T.ghostColor : T.text3,
+                    border: `1px solid ${T.ghostBorder}`,
+                    padding: '11px',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: !email.trim() || loading ? 'default' : 'pointer',
+                    fontFamily: "'JetBrains Mono', monospace",
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    opacity: sendingReset ? 0.6 : 1,
+                    width: '100%',
+                    borderRadius: 4,
+                    transition: 'all 0.15s',
+                  }}>
                   {sendingReset ? 'Sending…' : 'Forgot Password'}
                 </button>
               </div>
 
+              {/* SIGN UP LINK */}
               <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 16, marginTop: 20, textAlign: 'center', fontSize: 12, color: T.text3 }}>
                 Don't have an account?{' '}
-                <Link href="/signup" style={{ color: T.gold, textDecoration: 'underline' }}>Start free trial →</Link>
+                <Link href="/signup" style={{ color: T.gold, textDecoration: 'underline' }}>
+                  Start free trial →
+                </Link>
               </div>
             </div>
           </div>
