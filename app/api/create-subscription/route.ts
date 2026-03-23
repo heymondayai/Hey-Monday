@@ -1,130 +1,154 @@
-import { type EmailOtpType } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 
-export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url)
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
 
-  const token_hash = searchParams.get('token_hash')
-  const type = searchParams.get('type') as EmailOtpType | null
-  const code = searchParams.get('code')
-  const next = searchParams.get('next')
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
-  const loginUrl = new URL('/login', origin)
-  const dashboardUrl = new URL('/dashboard', origin)
-  const resetPasswordUrl = new URL('/reset-password', origin)
+type ExpandedInvoice = Stripe.Invoice & {
+  payment_intent?: Stripe.PaymentIntent | string | null
+}
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
 
-  // ── OAUTH / EMAIL CONFIRMATION CODE EXCHANGE ───────────────────
-  // Both Google OAuth and Supabase email confirmation use the `code` param
-  if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    const {
+      email,
+      name,
+      cardholderName,
+      zip,
+      paymentMethodId,
+      priceId,
+      billing,
+    } = body ?? {}
 
-    if (error) {
-      loginUrl.searchParams.set('error', 'oauth_failed')
-      return NextResponse.redirect(loginUrl)
+    if (!email || !paymentMethodId || !priceId) {
+      return NextResponse.json(
+        { error: 'Missing required payment fields.' },
+        { status: 400 }
+      )
     }
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const finalName =
+      String(cardholderName || '').trim() ||
+      String(name || '').trim() ||
+      String(email).split('@')[0]
 
-    if (user) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('trader_type, onboarding_complete, stripe_subscription_id')
-        .eq('id', user.id)
-        .maybeSingle()
+    const normalizedZip = String(zip || '').trim()
 
-      // No Stripe subscription yet → this is a fresh signup (email or Google)
-      // Send them to payment step
-      if (!profile?.stripe_subscription_id) {
-        const signupUrl = new URL('/signup', origin)
-        signupUrl.searchParams.set('confirmed', '1')
-        signupUrl.searchParams.set('email', user.email ?? '')
-        return NextResponse.redirect(signupUrl)
+    const existingCustomers = await stripe.customers.list({
+      email,
+      limit: 1,
+    })
+
+    const customer =
+      existingCustomers.data[0] ??
+      (await stripe.customers.create({
+        email,
+        name: finalName,
+        address: normalizedZip ? { postal_code: normalizedZip } : undefined,
+        metadata: { billing },
+      }))
+
+    try {
+      await stripe.paymentMethods.attach(paymentMethodId, {
+        customer: customer.id,
+      })
+    } catch (err: any) {
+      const alreadyAttached =
+        err?.code === 'resource_already_exists' ||
+        String(err?.message || '').toLowerCase().includes('already attached')
+
+      if (!alreadyAttached) {
+        throw err
       }
-
-      // Has subscription but hasn't finished onboarding
-      if (!profile?.trader_type || !profile?.onboarding_complete) {
-        return NextResponse.redirect(new URL('/onboarding', origin))
-      }
-
-      // Fully set up → dashboard
-      return NextResponse.redirect(dashboardUrl)
     }
 
-    loginUrl.searchParams.set('error', 'oauth_failed')
-    return NextResponse.redirect(loginUrl)
-  }
+    await stripe.customers.update(customer.id, {
+      name: finalName,
+      address: normalizedZip ? { postal_code: normalizedZip } : undefined,
+      invoice_settings: {
+        default_payment_method: paymentMethodId,
+      },
+    })
 
-  // ── EMAIL OTP (token_hash) — magic links, password reset, etc. ─
-  if (!token_hash || !type) {
-    loginUrl.searchParams.set('error', 'missing_confirmation_link')
-    return NextResponse.redirect(loginUrl)
-  }
+    const subscription = await stripe.subscriptions.create({
+      customer: customer.id,
+      items: [{ price: priceId }],
+      default_payment_method: paymentMethodId,
+      trial_period_days: 5,
+      payment_behavior: 'default_incomplete',
+      collection_method: 'charge_automatically',
+      payment_settings: {
+        save_default_payment_method: 'on_subscription',
+      },
+      expand: ['latest_invoice.payment_intent'],
+      metadata: {
+        billing,
+        email,
+        cardholderName: finalName,
+        zip: normalizedZip,
+      },
+    })
 
-  const { error } = await supabase.auth.verifyOtp({
-    token_hash,
-    type,
-  })
+    const expandedInvoice = subscription.latest_invoice as ExpandedInvoice | null
+    const paymentIntent =
+      expandedInvoice?.payment_intent &&
+      typeof expandedInvoice.payment_intent !== 'string'
+        ? expandedInvoice.payment_intent
+        : null
 
-  if (error) {
-    if (type === 'recovery') {
-      resetPasswordUrl.searchParams.set('error', 'recovery_link_invalid')
-      return NextResponse.redirect(resetPasswordUrl)
+    const { error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .update({
+        email,
+        full_name: finalName,
+        stripe_customer_id: customer.id,
+        stripe_subscription_id: subscription.id,
+        stripe_price_id: priceId,
+        billing_interval: billing,
+        subscription_status: subscription.status,
+        trial_ends_at: subscription.trial_end
+          ? new Date(subscription.trial_end * 1000).toISOString()
+          : null,
+        current_period_end:
+          subscription.items.data[0]?.current_period_end
+            ? new Date(subscription.items.data[0].current_period_end * 1000).toISOString()
+            : null,
+      })
+      .eq('email', email)
+
+    if (profileError) {
+      console.error('Profile update error:', profileError)
+      return NextResponse.json(
+        { error: 'Subscription created, but profile update failed.' },
+        { status: 500 }
+      )
     }
-    loginUrl.searchParams.set('error', 'confirmation_failed')
-    return NextResponse.redirect(loginUrl)
+
+    return NextResponse.json({
+      ok: true,
+      subscriptionId: subscription.id,
+      status: subscription.status,
+      clientSecret: paymentIntent?.client_secret ?? null,
+    })
+  } catch (err: any) {
+    console.error('create-subscription error:', {
+      message: err?.message,
+      type: err?.type,
+      code: err?.code,
+      decline_code: err?.decline_code,
+      raw: err,
+    })
+
+    return NextResponse.json(
+      { error: err?.message || 'Subscription creation failed.' },
+      { status: 500 }
+    )
   }
-
-  // Password reset
-  if (type === 'recovery') {
-    if (next) return NextResponse.redirect(new URL(next, origin))
-    return NextResponse.redirect(resetPasswordUrl)
-  }
-
-  // Magic link
-  if (type === 'magiclink') {
-    if (next) return NextResponse.redirect(new URL(next, origin))
-    return NextResponse.redirect(dashboardUrl)
-  }
-
-  // Email signup confirmation via token_hash (older flow)
-  if (type === 'signup' || type === 'email') {
-    // Get the user to check their subscription status
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (user) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('stripe_subscription_id, trader_type, onboarding_complete')
-        .eq('id', user.id)
-        .maybeSingle()
-
-      if (!profile?.stripe_subscription_id) {
-        const signupUrl = new URL('/signup', origin)
-        signupUrl.searchParams.set('confirmed', '1')
-        signupUrl.searchParams.set('email', user.email ?? '')
-        return NextResponse.redirect(signupUrl)
-      }
-
-      if (!profile?.trader_type || !profile?.onboarding_complete) {
-        return NextResponse.redirect(new URL('/onboarding', origin))
-      }
-
-      return NextResponse.redirect(dashboardUrl)
-    }
-
-    // Fallback — send to login with confirmed flag
-    const confirmedUrl = next ? new URL(next, origin) : loginUrl
-    confirmedUrl.searchParams.set('confirmed', '1')
-    return NextResponse.redirect(confirmedUrl)
-  }
-
-  // Catch-all
-  if (next) return NextResponse.redirect(new URL(next, origin))
-  return NextResponse.redirect(loginUrl)
 }

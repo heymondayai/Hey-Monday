@@ -68,7 +68,7 @@ const PLAN_FEATURES = [
   'Morning & EOD spoken briefings',
 ]
 
-type Field = 'email' | 'password' | 'name'
+type Field = 'email' | 'password' | 'name' | 'cardName' | 'zip'
 
 function GoogleIcon() {
   return (
@@ -135,7 +135,13 @@ function SignupForm({ isDark, billing, setBilling }: {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState('')
   const [focused, setFocused] = useState<Field | null>(null)
-  const [form, setForm] = useState({ name: '', email: '', password: '' })
+  const [form, setForm] = useState({
+  name: '',
+  email: '',
+  password: '',
+  cardName: '',
+  zip: '',
+})
   const [cardFocused, setCardFocused] = useState<string | null>(null)
 
   useEffect(() => {
@@ -159,124 +165,229 @@ function SignupForm({ isDark, billing, setBilling }: {
     setError(''); setForm(f => ({ ...f, [field]: val }))
   }
 
-  // Google signup — redirects to /login where the implicit hash is handled
+  // Google signup — redirects to /auth/callback
   async function handleGoogleSignup() {
-    setGoogleLoading(true); setError('')
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/login` },
-    })
-    if (error) { setError(error.message); setGoogleLoading(false) }
+  setGoogleLoading(true)
+  setError('')
+
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+    },
+  })
+
+  if (error) {
+    setError(error.message)
+    setGoogleLoading(false)
+  }
+}
+
+async function handleStep1(e: React.FormEvent) {
+  e.preventDefault()
+
+  if (!form.name.trim()) {
+    setError('Full name is required')
+    return
   }
 
-  async function handleStep1(e: React.FormEvent) {
-    e.preventDefault()
-    if (!form.name.trim()) { setError('Full name is required'); return }
-    if (!form.email.includes('@')) { setError('Valid email required'); return }
-    if (form.password.length < 8) { setError('Password must be at least 8 characters'); return }
+  if (!form.email.trim() || !form.email.includes('@')) {
+    setError('Valid email required')
+    return
+  }
 
-    setLoading(true); setError('')
+  if (form.password.length < 8) {
+    setError('Password must be at least 8 characters')
+    return
+  }
 
-    const { error: signUpErr } = await supabase.auth.signUp({
-      email: form.email,
-      password: form.password,
-      options: {
-        data: { full_name: form.name },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+  setLoading(true)
+  setError('')
+
+  const { error: signUpErr } = await supabase.auth.signUp({
+    email: form.email.trim(),
+    password: form.password,
+    options: {
+      data: {
+        full_name: form.name.trim(),
+      },
+      emailRedirectTo: `${window.location.origin}/auth/callback`,
+    },
+  })
+
+  if (signUpErr) {
+    const msg = signUpErr.message.toLowerCase()
+
+    if (msg.includes('already') || msg.includes('registered')) {
+      setError('An account with this email already exists. Please log in.')
+    } else {
+      setError(signUpErr.message)
+    }
+
+    setLoading(false)
+    return
+  }
+
+  await supabase.auth.signOut()
+  setEmailSent(true)
+  setLoading(false)
+}
+
+  async function handleStep2(e: React.FormEvent) {
+  e.preventDefault()
+
+  if (!stripe || !elements) {
+    setError('Stripe not loaded — please refresh.')
+    return
+  }
+
+  const cardNumber = elements.getElement(CardNumberElement)
+  if (!cardNumber) {
+    setError('Card input missing — please refresh.')
+    return
+  }
+
+  const typedCardName = form.cardName.trim()
+  const typedZip = form.zip.trim()
+
+  if (!typedCardName) {
+    setError('Name on card is required.')
+    return
+  }
+
+  if (!typedZip) {
+    setError('Billing ZIP code is required.')
+    return
+  }
+
+  const { data: { session } } = await supabase.auth.getSession()
+  const isGoogleUser = session?.user?.app_metadata?.provider === 'google'
+
+  if (!isGoogleUser && !form.password) {
+    setError('Please enter your password to continue.')
+    return
+  }
+
+  setLoading(true)
+  setError('')
+
+  try {
+    let userId: string
+    let userEmail: string
+    let userName: string
+
+    if (session?.user) {
+      userId = session.user.id
+      userEmail = session.user.email ?? form.email
+
+      userName =
+        form.name.trim() ||
+        session.user.user_metadata?.full_name ||
+        session.user.user_metadata?.name ||
+        [
+          session.user.user_metadata?.given_name,
+          session.user.user_metadata?.family_name,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .trim() ||
+        typedCardName
+    } else {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: form.email.trim(),
+        password: form.password,
+      })
+
+      if (error || !data.user) {
+        throw new Error('Incorrect password. Please try again.')
+      }
+
+      userId = data.user.id
+      userEmail = data.user.email ?? form.email
+
+      userName =
+        form.name.trim() ||
+        data.user.user_metadata?.full_name ||
+        data.user.user_metadata?.name ||
+        [
+          data.user.user_metadata?.given_name,
+          data.user.user_metadata?.family_name,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .trim() ||
+        typedCardName
+    }
+
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .upsert(
+        {
+          id: userId,
+          email: userEmail,
+          full_name: userName,
+          billing_zip: typedZip,
+        },
+        { onConflict: 'id' }
+      )
+
+    if (profileError) {
+      console.error('Profile upsert error:', profileError.message)
+    }
+
+    const { paymentMethod, error: pmErr } = await stripe.createPaymentMethod({
+      type: 'card',
+      card: cardNumber,
+      billing_details: {
+        name: typedCardName,
+        email: userEmail,
+        address: {
+          postal_code: typedZip,
+        },
       },
     })
 
-    if (signUpErr) {
-      const msg = signUpErr.message.toLowerCase()
-      if (msg.includes('already') || msg.includes('registered')) {
-        setError('An account with this email already exists. Please log in.')
-      } else {
-        setError(signUpErr.message)
-      }
-      setLoading(false); return
+    if (pmErr || !paymentMethod) {
+      throw new Error(pmErr?.message ?? 'Card error')
     }
 
-    await supabase.auth.signOut()
-    setEmailSent(true); setLoading(false)
+    const res = await fetch('/api/create-subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: userEmail,
+        name: userName,
+        cardholderName: typedCardName,
+        zip: typedZip,
+        paymentMethodId: paymentMethod.id,
+        priceId,
+        billing,
+      }),
+    })
+
+    const data = await res.json().catch(() => ({}))
+
+    if (!res.ok) {
+      throw new Error(data.error ?? 'Subscription failed')
+    }
+
+    if (data.clientSecret) {
+      const { error: confirmErr } = await stripe.confirmCardPayment(
+        data.clientSecret,
+        { payment_method: paymentMethod.id }
+      )
+
+      if (confirmErr) {
+        throw new Error(confirmErr.message ?? 'Payment confirmation failed')
+      }
+    }
+
+    window.location.href = '/onboarding'
+  } catch (err: any) {
+    setError(err.message ?? 'Unexpected error')
+    setLoading(false)
   }
-
-  async function handleStep2(e: React.FormEvent) {
-    e.preventDefault()
-    if (!stripe || !elements) { setError('Stripe not loaded — please refresh.'); return }
-
-    const cardNumber = elements.getElement(CardNumberElement)
-    if (!cardNumber) { setError('Card input missing — please refresh.'); return }
-
-    // Google users don't need password — check session directly
-    const { data: { session } } = await supabase.auth.getSession()
-    const isGoogleUser = session?.user?.app_metadata?.provider === 'google'
-
-    if (!isGoogleUser && !form.password) {
-      setError('Please enter your password to continue.'); return
-    }
-
-    setLoading(true); setError('')
-
-    try {
-      let userId: string
-      let userEmail: string
-      let userName: string
-
-      if (session?.user) {
-        userId = session.user.id
-        userEmail = session.user.email ?? form.email
-        userName = form.name || session.user.user_metadata?.full_name || ''
-      } else {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: form.email, password: form.password,
-        })
-        if (error || !data.user) throw new Error('Incorrect password. Please try again.')
-        userId = data.user.id
-        userEmail = data.user.email ?? form.email
-        userName = form.name || data.user.user_metadata?.full_name || ''
-      }
-
-      if (userName || form.email) {
-        await supabase.from('profiles')
-          .update({ full_name: userName || undefined, email: userEmail })
-          .eq('id', userId)
-      }
-
-      const { paymentMethod, error: pmErr } = await stripe.createPaymentMethod({
-        type: 'card',
-        card: cardNumber,
-        billing_details: { name: userName || userEmail, email: userEmail },
-      })
-      if (pmErr) throw new Error(pmErr.message ?? 'Card error')
-
-      const res = await fetch('/api/create-subscription', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: userEmail,
-          name: userName,
-          paymentMethodId: paymentMethod!.id,
-          priceId,
-          billing,
-        }),
-      })
-
-      const data = await res.text().then(t => { try { return JSON.parse(t) } catch { return {} } })
-      if (!res.ok) throw new Error(data.error ?? 'Subscription failed')
-
-      if (data.clientSecret) {
-        const { error: confirmErr } = await stripe.confirmCardPayment(data.clientSecret, {
-          payment_method: paymentMethod!.id,
-        })
-        if (confirmErr) throw new Error(confirmErr.message ?? 'Payment confirmation failed')
-      }
-
-      window.location.href = '/onboarding'
-    } catch (err: any) {
-      setError(err.message ?? 'Unexpected error')
-      setLoading(false)
-    }
-  }
+}
 
   const stripeElementStyle = {
     style: {
@@ -465,6 +576,35 @@ function SignupForm({ isDark, billing, setBilling }: {
               </div>
             </div>
           )}
+
+          <div>
+  <label style={labelStyle}>Name on card</label>
+  <input
+    style={inputStyle('cardName')}
+    type="text"
+    placeholder="Jane Smith"
+    value={form.cardName}
+    onChange={e => set('cardName', e.target.value)}
+    onFocus={() => setFocused('cardName')}
+    onBlur={() => setFocused(null)}
+    autoComplete="cc-name"
+  />
+</div>
+
+<div>
+  <label style={labelStyle}>Billing ZIP code</label>
+  <input
+    style={inputStyle('zip')}
+    type="text"
+    inputMode="numeric"
+    placeholder="85016"
+    value={form.zip}
+    onChange={e => set('zip', e.target.value)}
+    onFocus={() => setFocused('zip')}
+    onBlur={() => setFocused(null)}
+    autoComplete="postal-code"
+  />
+</div>
 
           <div>
             <label style={labelStyle}>Card number</label>

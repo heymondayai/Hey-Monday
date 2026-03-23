@@ -14,19 +14,21 @@ export async function GET(request: NextRequest) {
   const loginUrl = new URL('/login', origin)
   const resetPasswordUrl = new URL('/reset-password', origin)
 
-  // ── Create SSR Supabase client (required for PKCE code exchange) ──
   const cookieStore = await cookies()
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return cookieStore.getAll() },
+        getAll() {
+          return cookieStore.getAll()
+        },
         setAll(cookiesToSet) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
+            cookiesToSet.forEach(({ name, value, options }) => {
               cookieStore.set(name, value, options)
-            )
+            })
           } catch {}
         },
       },
@@ -40,7 +42,6 @@ export async function GET(request: NextRequest) {
       .eq('id', userId)
       .maybeSingle()
 
-    // No subscription → go to payment
     if (!profile?.stripe_subscription_id) {
       const url = new URL('/signup', origin)
       url.searchParams.set('confirmed', '1')
@@ -48,21 +49,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    // Has subscription but no onboarding
     if (!profile?.trader_type || !profile?.onboarding_complete) {
       return NextResponse.redirect(new URL('/onboarding', origin))
     }
 
-    // Fully set up → dashboard
     return NextResponse.redirect(new URL('/dashboard', origin))
   }
 
-  // ── GOOGLE OAUTH — PKCE code exchange ─────────────────────────
   if (code) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (error || !data.user) {
-      console.error('OAuth code exchange error:', error?.message)
+      console.error('OAuth/code exchange error:', error?.message)
       loginUrl.searchParams.set('error', 'oauth_failed')
       return NextResponse.redirect(loginUrl)
     }
@@ -70,25 +68,29 @@ export async function GET(request: NextRequest) {
     return routeUser(data.user.id, data.user.email ?? '')
   }
 
-  // ── EMAIL OTP — token_hash (email confirmation + password reset) ──
   if (token_hash && type) {
     if (type === 'recovery') {
       const { error } = await supabase.auth.verifyOtp({ token_hash, type })
+
       if (error) {
         resetPasswordUrl.searchParams.set('error', 'recovery_link_invalid')
         return NextResponse.redirect(resetPasswordUrl)
       }
+
       return NextResponse.redirect(next ? new URL(next, origin) : resetPasswordUrl)
     }
 
-    // Email signup confirmation
     const { error } = await supabase.auth.verifyOtp({ token_hash, type })
+
     if (error) {
       loginUrl.searchParams.set('error', 'confirmation_failed')
       return NextResponse.redirect(loginUrl)
     }
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
     if (!user) {
       loginUrl.searchParams.set('error', 'confirmation_failed')
       return NextResponse.redirect(loginUrl)
@@ -97,7 +99,6 @@ export async function GET(request: NextRequest) {
     return routeUser(user.id, user.email ?? '')
   }
 
-  // Fallback
   loginUrl.searchParams.set('error', 'missing_confirmation_link')
   return NextResponse.redirect(loginUrl)
 }
