@@ -7,7 +7,9 @@ import { createClient } from '@supabase/supabase-js'
 import { loadStripe } from '@stripe/stripe-js'
 import {
   Elements,
-  CardElement,
+  CardNumberElement,
+  CardExpiryElement,
+  CardCvcElement,
   useStripe,
   useElements,
 } from '@stripe/react-stripe-js'
@@ -17,7 +19,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
-
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
 
 const DARK = {
@@ -28,13 +29,16 @@ const DARK = {
   text: '#d4c5a0', text2: '#a08040', text3: '#6a6050',
   heading: '#e8d5a0',
   badgeBg: 'rgba(201,146,42,.08)', badgeBorder: 'rgba(201,146,42,.2)',
-  inputBg: '#0d0b07', inputBorder: '#2a2618', inputFocus: 'rgba(201,146,42,.4)',
+  inputBg: '#0d0b07', inputBorder: '#2a2618', inputFocus: 'rgba(201,146,42,.5)',
   btnText: '#0a0a08',
   cardBg: '#120f07', cardBorder: 'rgba(201,146,42,.2)',
-  trustBg: 'rgba(201,146,42,.04)', trustBorder: 'rgba(201,146,42,.12)',
+  trustBg: 'rgba(74,156,106,.06)', trustBorder: 'rgba(74,156,106,.2)',
   errBg: 'rgba(201,66,66,.08)', errBorder: 'rgba(201,66,66,.25)',
-  navBg: '#0a0a08',
-  checkBg: 'rgba(201,146,42,.06)', checkBorder: 'rgba(201,146,42,.18)',
+  successBg: 'rgba(74,222,128,.06)', successBorder: 'rgba(74,222,128,.2)', successText: '#4ade80',
+  dividerBg: 'rgba(201,146,42,.15)',
+  googleBg: '#120f07', googleBorder: '#3a3420', googleText: '#d4c5a0',
+  stripeFieldBg: '#0d0b07', stripeFieldBorder: '#2a2618',
+  checkBg: 'rgba(201,146,42,.04)', checkBorder: 'rgba(201,146,42,.15)',
 }
 
 const LIGHT = {
@@ -45,13 +49,16 @@ const LIGHT = {
   text: '#2a1f0e', text2: '#6b4c20', text3: '#8a7050',
   heading: '#1a1008',
   badgeBg: 'rgba(160,104,24,.08)', badgeBorder: 'rgba(160,104,24,.25)',
-  inputBg: '#faf7f0', inputBorder: '#c8b898', inputFocus: 'rgba(160,104,24,.4)',
+  inputBg: '#faf7f0', inputBorder: '#c8b898', inputFocus: 'rgba(160,104,24,.5)',
   btnText: '#f5f0e8',
   cardBg: '#faf7f0', cardBorder: 'rgba(160,104,24,.3)',
-  trustBg: 'rgba(160,104,24,.05)', trustBorder: 'rgba(160,104,24,.15)',
+  trustBg: 'rgba(46,125,82,.05)', trustBorder: 'rgba(46,125,82,.2)',
   errBg: 'rgba(184,50,50,.06)', errBorder: 'rgba(184,50,50,.3)',
-  navBg: '#f5f0e8',
-  checkBg: 'rgba(160,104,24,.05)', checkBorder: 'rgba(160,104,24,.2)',
+  successBg: 'rgba(74,222,128,.06)', successBorder: 'rgba(74,222,128,.3)', successText: '#15803d',
+  dividerBg: 'rgba(160,104,24,.2)',
+  googleBg: '#faf7f0', googleBorder: '#c8b898', googleText: '#2a1f0e',
+  stripeFieldBg: '#faf7f0', stripeFieldBorder: '#c8b898',
+  checkBg: 'rgba(160,104,24,.04)', checkBorder: 'rgba(160,104,24,.18)',
 }
 
 const PLAN_FEATURES = [
@@ -65,6 +72,33 @@ const PLAN_FEATURES = [
 
 type Field = 'email' | 'password' | 'name'
 
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24">
+      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+    </svg>
+  )
+}
+
+function LockIcon({ color }: { color: string }) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+    </svg>
+  )
+}
+
+function ShieldIcon({ color }: { color: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>
+  )
+}
+
 function EyeOpen({ color }: { color: string }) {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -72,6 +106,7 @@ function EyeOpen({ color }: { color: string }) {
     </svg>
   )
 }
+
 function EyeOff({ color }: { color: string }) {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -81,26 +116,8 @@ function EyeOff({ color }: { color: string }) {
     </svg>
   )
 }
-function LockIcon({ color }: { color: string }) {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6, flexShrink: 0 }}>
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-    </svg>
-  )
-}
-function ShieldIcon({ color }: { color: string }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-    </svg>
-  )
-}
 
-function SignupForm({
-  isDark,
-  billing,
-  setBilling,
-}: {
+function SignupForm({ isDark, billing, setBilling }: {
   isDark: boolean
   billing: 'monthly' | 'annual'
   setBilling: (b: 'monthly' | 'annual') => void
@@ -117,9 +134,11 @@ function SignupForm({
   const [emailSent, setEmailSent] = useState(false)
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState('')
   const [focused, setFocused] = useState<Field | null>(null)
   const [form, setForm] = useState({ name: '', email: '', password: '' })
+  const [cardFocused, setCardFocused] = useState<string | null>(null)
 
   useEffect(() => {
     if (confirmedParam && emailParam) {
@@ -129,10 +148,9 @@ function SignupForm({
     }
   }, [confirmedParam, emailParam])
 
-  const priceId =
-    billing === 'monthly'
-      ? process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY!
-      : process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL!
+  const priceId = billing === 'monthly'
+    ? process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY!
+    : process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL!
 
   const chargeDate = (() => {
     const d = new Date(); d.setDate(d.getDate() + 5)
@@ -143,20 +161,22 @@ function SignupForm({
     setError(''); setForm(f => ({ ...f, [field]: val }))
   }
 
-  function validateStep1() {
-    if (!form.name.trim()) return 'Full name is required'
-    if (!form.email.includes('@')) return 'Valid email required'
-    if (form.password.length < 8) return 'Password must be at least 8 characters'
-    return ''
+  async function handleGoogleSignup() {
+    setGoogleLoading(true); setError('')
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/confirm` },
+    })
+    if (error) { setError(error.message); setGoogleLoading(false) }
   }
 
   async function handleStep1(e: React.FormEvent) {
     e.preventDefault()
-    const err = validateStep1()
-    if (err) { setError(err); return }
+    if (!form.name.trim()) { setError('Full name is required'); return }
+    if (!form.email.includes('@')) { setError('Valid email required'); return }
+    if (form.password.length < 8) { setError('Password must be at least 8 characters'); return }
 
-    setLoading(true)
-    setError('')
+    setLoading(true); setError('')
 
     const { error: signUpErr } = await supabase.auth.signUp({
       email: form.email,
@@ -168,86 +188,67 @@ function SignupForm({
     })
 
     if (signUpErr) {
-      if (
-        signUpErr.message.toLowerCase().includes('already registered') ||
-        signUpErr.message.toLowerCase().includes('already exists') ||
-        signUpErr.message.toLowerCase().includes('user already')
-      ) {
-        setError('An account with this email already exists. Please log in instead.')
+      const msg = signUpErr.message.toLowerCase()
+      if (msg.includes('already') || msg.includes('registered')) {
+        setError('An account with this email already exists. Please log in.')
       } else {
         setError(signUpErr.message)
       }
-      setLoading(false)
-      return
+      setLoading(false); return
     }
 
     await supabase.auth.signOut()
-    setEmailSent(true)
-    setLoading(false)
+    setEmailSent(true); setLoading(false)
   }
 
   async function handleStep2(e: React.FormEvent) {
     e.preventDefault()
     if (!stripe || !elements) { setError('Stripe not loaded — please refresh.'); return }
     if (!form.password) { setError('Please enter your password to continue.'); return }
-    const cardElement = elements.getElement(CardElement)
-    if (!cardElement) { setError('Card input missing — please refresh.'); return }
 
-    setLoading(true)
-    setError('')
+    const cardNumber = elements.getElement(CardNumberElement)
+    if (!cardNumber) { setError('Card input missing — please refresh.'); return }
+
+    setLoading(true); setError('')
 
     try {
-      // Get or restore session
       let userId: string
-      let userName: string
       const { data: { session } } = await supabase.auth.getSession()
 
       if (session?.user) {
         userId = session.user.id
-        userName = form.name || session.user.user_metadata?.full_name || ''
       } else {
-        // Re-authenticate with password
-        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
-          email: form.email,
-          password: form.password,
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: form.email, password: form.password,
         })
-        if (signInErr || !signInData.user) {
-          throw new Error('Incorrect password. Please try again.')
-        }
-        userId = signInData.user.id
-        userName = form.name || signInData.user.user_metadata?.full_name || ''
+        if (error || !data.user) throw new Error('Incorrect password. Please try again.')
+        userId = data.user.id
       }
 
-      // Update profile
-      await supabase
-        .from('profiles')
-        .update({ full_name: userName, email: form.email })
+      await supabase.from('profiles')
+        .update({ full_name: form.name, email: form.email })
         .eq('id', userId)
 
-      // Create Stripe PaymentMethod
       const { paymentMethod, error: pmErr } = await stripe.createPaymentMethod({
         type: 'card',
-        card: cardElement,
-        billing_details: { name: userName, email: form.email },
+        card: cardNumber,
+        billing_details: { name: form.name, email: form.email },
       })
       if (pmErr) throw new Error(pmErr.message ?? 'Card error')
 
-      // Create subscription
       const res = await fetch('/api/create-subscription', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: form.email,
-          name: userName,
+          name: form.name,
           paymentMethodId: paymentMethod!.id,
           priceId,
           billing,
         }),
       })
 
-      let data: any = {}
-      const text = await res.text()
-      if (text) { try { data = JSON.parse(text) } catch (_) {} }
+      const data = await res.text().then(t => { try { return JSON.parse(t) } catch { return {} } })
       if (!res.ok) throw new Error(data.error ?? 'Subscription failed')
 
       if (data.clientSecret) {
@@ -257,13 +258,6 @@ function SignupForm({
         if (confirmErr) throw new Error(confirmErr.message ?? 'Payment confirmation failed')
       }
 
-      if (data.customerId) {
-        await supabase
-          .from('profiles')
-          .update({ stripe_customer_id: data.customerId })
-          .eq('id', userId)
-      }
-
       window.location.href = '/onboarding'
     } catch (err: any) {
       setError(err.message ?? 'Unexpected error')
@@ -271,98 +265,131 @@ function SignupForm({
     }
   }
 
+  // Stripe element styles — split fields like real Stripe checkout
+  const stripeElementStyle = {
+    style: {
+      base: {
+        color: T.text,
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: '14px',
+        fontWeight: '400',
+        '::placeholder': { color: T.text3 },
+        iconColor: T.text2,
+      },
+      invalid: { color: T.red, iconColor: T.red },
+    },
+  }
+
   const inputStyle = (field: Field): React.CSSProperties => ({
     width: '100%',
     background: T.inputBg,
     border: `1px solid ${focused === field ? T.inputFocus : T.inputBorder}`,
     color: T.text,
-    padding: '11px 14px',
-    fontSize: 13,
+    padding: '12px 14px',
+    fontSize: 14,
     fontFamily: "'JetBrains Mono', monospace",
     outline: 'none',
+    borderRadius: 4,
     transition: 'border-color 0.15s',
-    WebkitAppearance: 'none',
+  })
+
+  const stripeFieldStyle = (name: string): React.CSSProperties => ({
+    background: T.stripeFieldBg,
+    border: `1px solid ${cardFocused === name ? T.inputFocus : T.stripeFieldBorder}`,
+    padding: '12px 14px',
+    borderRadius: 4,
+    transition: 'border-color 0.15s',
   })
 
   const labelStyle: React.CSSProperties = {
-    display: 'block', fontSize: 9, letterSpacing: '0.18em',
-    textTransform: 'uppercase', color: T.text3, marginBottom: 6,
+    display: 'block',
+    fontSize: 12,
+    fontWeight: 500,
+    color: T.text2,
+    marginBottom: 6,
+    letterSpacing: '0.02em',
   }
 
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
-
-      {/* STEP 1: CHECK EMAIL */}
+      {/* CHECK EMAIL SCREEN */}
       {step === 1 && emailSent && (
         <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase' }}>
-            Confirm your email
-          </div>
-          <div style={{ background: T.checkBg, border: `1px solid ${T.checkBorder}`, padding: '28px 20px', textAlign: 'center' }}>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>📬</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: T.heading, marginBottom: 8 }}>Check your email</div>
-            <div style={{ fontSize: 11, color: T.text2, lineHeight: 1.7 }}>
-              We sent a confirmation link to{' '}
+          <div style={{ background: T.checkBg, border: `1px solid ${T.checkBorder}`, padding: '32px 24px', textAlign: 'center', borderRadius: 8 }}>
+            <div style={{ fontSize: 40, marginBottom: 14 }}>📬</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: T.heading, marginBottom: 8 }}>Check your email</div>
+            <div style={{ fontSize: 13, color: T.text2, lineHeight: 1.7 }}>
+              Confirmation link sent to{' '}
               <strong style={{ color: T.gold }}>{form.email}</strong>.<br />
-              Click the link in that email to proceed to payment.
+              Click it to proceed to payment.
             </div>
           </div>
-          <div style={{ background: T.bg2, border: `1px solid ${T.border}`, padding: '10px 14px', fontSize: 10, color: T.text3, lineHeight: 1.6 }}>
-            💡 Check your spam or promotions folder if you don't see it within a minute.
+          <div style={{ background: T.bg2, border: `1px solid ${T.border}`, padding: '12px 16px', fontSize: 12, color: T.text3, lineHeight: 1.6, borderRadius: 4 }}>
+            💡 Check spam if you don't see it within a minute.
           </div>
-          {error && (
-            <div style={{ background: T.errBg, border: `1px solid ${T.errBorder}`, color: T.red, padding: '10px 14px', fontSize: 11 }}>
-              ⚠ {error}
-            </div>
-          )}
-          <button type="button" onClick={() => { setEmailSent(false); setError('') }}
-            style={{ background: 'transparent', border: `1px solid ${T.border2}`, color: T.text3, padding: '10px', fontSize: 10, letterSpacing: '0.08em', cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase' }}>
+          <button onClick={() => { setEmailSent(false); setError('') }}
+            style={{ background: 'transparent', border: `1px solid ${T.border2}`, color: T.text3, padding: '11px', fontSize: 12, cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace", borderRadius: 4 }}>
             ← Use a different email
           </button>
         </div>
       )}
 
-      {/* STEP 1: ACCOUNT FORM */}
+      {/* STEP 1: ACCOUNT */}
       {step === 1 && !emailSent && (
-        <>
-          <div className="fade-up" style={{ marginBottom: 28 }}>
-            <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 10 }}>
-              5 days free, then:
+        <div className="fade-up">
+          {/* Billing toggle */}
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ fontSize: 11, letterSpacing: '0.18em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 10 }}>
+              Choose your plan
             </div>
-            <div style={{ display: 'flex', background: T.bg2, border: `1px solid ${T.border2}`, padding: 3, gap: 3, width: 'fit-content' }}>
+            <div style={{ display: 'flex', background: T.bg2, border: `1px solid ${T.border2}`, padding: 3, gap: 3, borderRadius: 6 }}>
               {(['monthly', 'annual'] as const).map(b => (
                 <div key={b} onClick={() => setBilling(b)}
-                  style={{ padding: '9px 20px', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, cursor: 'pointer', background: billing === b ? T.bg4 : 'transparent', color: billing === b ? T.heading : T.text3, border: billing === b ? `1px solid ${T.border2}` : '1px solid transparent', transition: 'all .15s', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  style={{ flex: 1, padding: '10px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: billing === b ? T.bg4 : 'transparent', color: billing === b ? T.heading : T.text3, border: billing === b ? `1px solid ${T.border2}` : '1px solid transparent', borderRadius: 4, transition: 'all .15s', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                   {b === 'monthly' ? '$79.99/mo' : '$66.66/mo'}
-                  {b === 'annual' && <span style={{ fontSize: 8, padding: '1px 5px', background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, color: T.gold }}>SAVE 17%</span>}
+                  {b === 'annual' && <span style={{ fontSize: 9, padding: '1px 6px', background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, color: T.gold, borderRadius: 3 }}>SAVE 17%</span>}
                 </div>
               ))}
             </div>
             {billing === 'annual' && (
-              <div style={{ marginTop: 8, fontSize: 10, color: T.gold }}>Billed as $799.92/year — save $159.96</div>
+              <div style={{ marginTop: 8, fontSize: 11, color: T.gold }}>Billed as $799.92/year — save $159.96</div>
             )}
           </div>
 
-          <form onSubmit={handleStep1} className="fade-up">
-            <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 20 }}>Your account</div>
+          {/* Google button */}
+          <button onClick={handleGoogleSignup} disabled={googleLoading}
+            style={{ width: '100%', background: T.googleBg, border: `1px solid ${T.googleBorder}`, color: T.googleText, padding: '12px 16px', fontSize: 14, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 4, marginBottom: 16, transition: 'all 0.15s', fontFamily: 'system-ui, sans-serif', opacity: googleLoading ? 0.7 : 1 }}>
+            <GoogleIcon />
+            {googleLoading ? 'Redirecting…' : 'Continue with Google'}
+          </button>
 
+          {/* Divider */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+            <div style={{ flex: 1, height: 1, background: T.border }} />
+            <span style={{ fontSize: 12, color: T.text3 }}>or sign up with email</span>
+            <div style={{ flex: 1, height: 1, background: T.border }} />
+          </div>
+
+          <form onSubmit={handleStep1} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {error && (
-              <div style={{ background: T.errBg, border: `1px solid ${T.errBorder}`, color: T.red, padding: '10px 14px', fontSize: 11, marginBottom: 20 }}>
+              <div style={{ background: T.errBg, border: `1px solid ${T.errBorder}`, color: T.red, padding: '11px 14px', fontSize: 13, borderRadius: 4 }}>
                 ⚠ {error}
               </div>
             )}
 
-            <div style={{ marginBottom: 18 }}>
-              <label style={labelStyle}>Full Name</label>
+            <div>
+              <label style={labelStyle}>Full name</label>
               <input style={inputStyle('name')} type="text" placeholder="Jane Smith" value={form.name}
                 onChange={e => set('name', e.target.value)} onFocus={() => setFocused('name')} onBlur={() => setFocused(null)} autoComplete="name" />
             </div>
-            <div style={{ marginBottom: 18 }}>
-              <label style={labelStyle}>Email Address</label>
+
+            <div>
+              <label style={labelStyle}>Email address</label>
               <input style={inputStyle('email')} type="email" placeholder="you@example.com" value={form.email}
                 onChange={e => set('email', e.target.value)} onFocus={() => setFocused('email')} onBlur={() => setFocused(null)} autoComplete="email" />
             </div>
-            <div style={{ marginBottom: 28 }}>
+
+            <div>
               <label style={labelStyle}>Password</label>
               <div style={{ position: 'relative' }}>
                 <input style={{ ...inputStyle('password'), paddingRight: 44 }} type={showPass ? 'text' : 'password'} placeholder="Min. 8 characters" value={form.password}
@@ -373,11 +400,11 @@ function SignupForm({
                 </button>
               </div>
               {form.password && (
-                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 3 }}>
                   {[1, 2, 3, 4].map(i => (
-                    <div key={i} style={{ flex: 1, height: 2, borderRadius: 1, background: form.password.length >= i * 3 ? (form.password.length >= 12 ? T.gold : T.amber) : T.border2, transition: 'background 0.2s' }} />
+                    <div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: form.password.length >= i * 3 ? (form.password.length >= 12 ? T.gold : T.amber) : T.border2, transition: 'background 0.2s' }} />
                   ))}
-                  <span style={{ fontSize: 9, color: T.text3, marginLeft: 6, whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 10, color: T.text3, marginLeft: 6 }}>
                     {form.password.length < 8 ? 'Weak' : form.password.length < 12 ? 'Good' : 'Strong'}
                   </span>
                 </div>
@@ -385,60 +412,56 @@ function SignupForm({
             </div>
 
             <button type="submit" disabled={loading}
-              style={{ width: '100%', background: loading ? T.goldDim : T.gold, color: T.btnText, padding: '14px', fontWeight: 700, fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', border: 'none', cursor: loading ? 'default' : 'pointer', fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              style={{ width: '100%', background: loading ? T.goldDim : T.gold, color: T.btnText, padding: '13px', fontWeight: 700, fontSize: 14, border: 'none', cursor: loading ? 'default' : 'pointer', fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 4, marginTop: 4, transition: 'background 0.2s' }}>
               {loading ? (
                 <>
                   <span style={{ width: 14, height: 14, border: `2px solid ${T.btnText}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
                   Sending confirmation…
                 </>
-              ) : 'Continue to Payment →'}
+              ) : 'Continue →'}
             </button>
 
-            <div style={{ marginTop: 14, fontSize: 10, color: T.text3, lineHeight: 1.6, textAlign: 'center' }}>
-              By continuing, you agree to our{' '}
+            <div style={{ fontSize: 12, color: T.text3, lineHeight: 1.6, textAlign: 'center' }}>
+              By continuing you agree to our{' '}
               <Link href="/terms" style={{ color: T.text2, textDecoration: 'underline' }}>Terms</Link> and{' '}
               <Link href="/privacy" style={{ color: T.text2, textDecoration: 'underline' }}>Privacy Policy</Link>.
             </div>
           </form>
-        </>
+        </div>
       )}
 
-      {/* STEP 2: PAYMENT */}
+      {/* STEP 2: PAYMENT — Stripe-style split card fields */}
       {step === 2 && (
-        <form onSubmit={handleStep2} className="fade-up">
+        <form onSubmit={handleStep2} className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
           {/* Confirmed banner */}
-          <div style={{ background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.2)', padding: '10px 14px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 14 }}></span>
-            <div style={{ fontSize: 11, color: '#4ade80' }}>
-              Email confirmed! Add your payment details to start your free trial.
+          <div style={{ background: T.successBg, border: `1px solid ${T.successBorder}`, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, borderRadius: 4 }}>
+            <span style={{ fontSize: 16 }}>✅</span>
+            <div style={{ fontSize: 13, color: T.successText, fontWeight: 500 }}>
+              Email confirmed! Add your payment details below.
             </div>
           </div>
 
-          <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 20 }}>
-            Payment details
-          </div>
-
-          {/* Trial reminder */}
-          <div style={{ background: T.trustBg, border: `1px solid ${T.trustBorder}`, padding: '12px 16px', marginBottom: 24, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-            <ShieldIcon color={T.gold} />
+          {/* Trial shield */}
+          <div style={{ background: T.trustBg, border: `1px solid ${T.trustBorder}`, padding: '14px 16px', display: 'flex', gap: 12, alignItems: 'flex-start', borderRadius: 4 }}>
+            <ShieldIcon color="#4a9c6a" />
             <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: T.heading, marginBottom: 3 }}>Your card won't be charged today</div>
-              <div style={{ fontSize: 11, color: T.text2, lineHeight: 1.6 }}>
-                5-day free trial starts now. Your {billing === 'monthly' ? '$79.99/month' : '$66.66/month'} subscription begins on{' '}
-                <strong style={{ color: T.gold }}>{chargeDate}</strong>. Cancel anytime before then.
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.heading, marginBottom: 2 }}>Your card won't be charged today</div>
+              <div style={{ fontSize: 12, color: T.text2, lineHeight: 1.6 }}>
+                5-day free trial. {billing === 'monthly' ? '$79.99/month' : '$66.66/month'} starts <strong style={{ color: T.gold }}>{chargeDate}</strong>. Cancel anytime.
               </div>
             </div>
           </div>
 
           {error && (
-            <div style={{ background: T.errBg, border: `1px solid ${T.errBorder}`, color: T.red, padding: '10px 14px', fontSize: 11, marginBottom: 20 }}>
+            <div style={{ background: T.errBg, border: `1px solid ${T.errBorder}`, color: T.red, padding: '11px 14px', fontSize: 13, borderRadius: 4 }}>
               ⚠ {error}
             </div>
           )}
 
-          {/* Password re-entry */}
-          <div style={{ marginBottom: 18 }}>
-            <label style={labelStyle}>Confirm Password</label>
+          {/* Password confirm */}
+          <div>
+            <label style={labelStyle}>Confirm your password</label>
             <div style={{ position: 'relative' }}>
               <input
                 style={{ ...inputStyle('password'), paddingRight: 44 }}
@@ -455,38 +478,47 @@ function SignupForm({
                 {showPass ? <EyeOff color={T.text2} /> : <EyeOpen color={T.text2} />}
               </button>
             </div>
-            <div style={{ marginTop: 5, fontSize: 9, color: T.text3 }}>
-              Re-enter your password to confirm your identity
-            </div>
           </div>
 
-          {/* Card details */}
-          <div style={{ marginBottom: 28 }}>
-            <label style={labelStyle}>Card Details</label>
-            <div style={{ background: T.inputBg, border: `1px solid ${T.inputBorder}`, padding: '12px 14px' }}>
-              <CardElement
-                options={{
-                  style: {
-                    base: {
-                      color: T.text,
-                      fontFamily: "'JetBrains Mono', monospace",
-                      fontSize: '13px',
-                      '::placeholder': { color: T.text3 },
-                      iconColor: T.text2,
-                    },
-                    invalid: { color: T.red, iconColor: T.red },
-                  },
-                }}
-                onChange={e => { if (e.error) setError(e.error.message ?? 'Card error'); else setError('') }}
+          {/* Card number — full width */}
+          <div>
+            <label style={labelStyle}>Card number</label>
+            <div style={stripeFieldStyle('number')}>
+              <CardNumberElement
+                options={{ ...stripeElementStyle, showIcon: true }}
+                onFocus={() => setCardFocused('number')}
+                onBlur={() => setCardFocused(null)}
               />
             </div>
-            <div style={{ marginTop: 6, fontSize: 9, color: T.text3 }}>
-              Secured by Stripe · 256-bit SSL encryption
+          </div>
+
+          {/* Expiry + CVC side by side — exactly like Stripe */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={labelStyle}>Expiry date</label>
+              <div style={stripeFieldStyle('expiry')}>
+                <CardExpiryElement
+                  options={stripeElementStyle}
+                  onFocus={() => setCardFocused('expiry')}
+                  onBlur={() => setCardFocused(null)}
+                />
+              </div>
+            </div>
+            <div>
+              <label style={labelStyle}>CVC</label>
+              <div style={stripeFieldStyle('cvc')}>
+                <CardCvcElement
+                  options={stripeElementStyle}
+                  onFocus={() => setCardFocused('cvc')}
+                  onBlur={() => setCardFocused(null)}
+                />
+              </div>
             </div>
           </div>
 
+          {/* Submit */}
           <button type="submit" disabled={loading || !stripe}
-            style={{ width: '100%', background: loading ? T.goldDim : T.gold, color: T.btnText, padding: '15px', fontWeight: 700, fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', border: 'none', cursor: loading ? 'default' : 'pointer', fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, transition: 'background 0.2s' }}>
+            style={{ width: '100%', background: loading ? T.goldDim : T.gold, color: T.btnText, padding: '14px', fontWeight: 700, fontSize: 14, border: 'none', cursor: loading ? 'default' : 'pointer', fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 4, transition: 'background 0.2s', marginTop: 4 }}>
             {loading ? (
               <>
                 <span style={{ width: 14, height: 14, border: `2px solid ${T.btnText}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
@@ -500,9 +532,10 @@ function SignupForm({
             )}
           </button>
 
-          <div style={{ marginTop: 16, display: 'flex', justifyContent: 'center', gap: 24, flexWrap: 'wrap' }}>
-            {['256-bit SSL', 'Cancel anytime', 'Secured by Stripe'].map((t, i) => (
-              <div key={i} style={{ fontSize: 9, color: T.text3, letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: 5 }}>
+          {/* Trust row */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 20, flexWrap: 'wrap' }}>
+            {['256-bit SSL', 'Cancel anytime', 'Powered by Stripe'].map((t, i) => (
+              <div key={i} style={{ fontSize: 11, color: T.text3, display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span style={{ width: 3, height: 3, borderRadius: '50%', background: T.goldDim, display: 'inline-block' }} />
                 {t}
               </div>
@@ -520,6 +553,7 @@ function SignupPageInner() {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
   const searchParams = useSearchParams()
   const confirmedParam = searchParams.get('confirmed') === '1'
+  const currentStep = confirmedParam ? 2 : 1
 
   const price = billing === 'monthly' ? '79.99' : '66.66'
   const chargeDate = (() => {
@@ -527,15 +561,12 @@ function SignupPageInner() {
     return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
   })()
 
-  const currentStep = confirmedParam ? 2 : 1
-
   return (
     <div style={{ background: T.pageBg, color: T.text, fontFamily: "'JetBrains Mono', monospace", minHeight: '100vh', transition: 'background 0.3s, color 0.3s' }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600;1,700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
         *{margin:0;padding:0;box-sizing:border-box}
-        input:-webkit-autofill{-webkit-box-shadow:0 0 0 100px #0d0b07 inset!important;-webkit-text-fill-color:#d4c5a0!important;caret-color:#d4c5a0}
-        @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(201,146,42,.4)}50%{opacity:.8;box-shadow:0 0 0 5px rgba(201,146,42,0)}}
+        input:-webkit-autofill{-webkit-box-shadow:0 0 0 100px ${T.inputBg} inset!important;-webkit-text-fill-color:${T.text}!important}
         @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
         @keyframes spin{to{transform:rotate(360deg)}}
         .fade-up{animation:fadeUp 0.35s ease both}
@@ -543,112 +574,93 @@ function SignupPageInner() {
         @media(max-width:640px){.layout{flex-direction:column!important}.sidebar{display:none!important}}
       `}</style>
 
-      <nav style={{ borderBottom: `1px solid ${T.border}`, padding: '0 24px', height: 54, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: T.navBg }}>
-        <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10 }}>
-  <svg width="20" height="20" viewBox="0 0 340 340" xmlns="http://www.w3.org/2000/svg">
-    <g transform="translate(224,178)">
-      <rect x="-162" y="-12" width="20" height="50" rx="10" fill="#c9922a" opacity="0.20"/>
-      <rect x="-134" y="-46" width="20" height="110" rx="10" fill="#c9922a" opacity="0.38"/>
-      <rect x="-106" y="-80" width="20" height="172" rx="10" fill="#c9922a" opacity="0.60"/>
-      <rect x="-78" y="-58" width="20" height="116" rx="10" fill="#c9922a" opacity="0.68"/>
-      <rect x="-50" y="-100" width="20" height="210" rx="10" fill="#c9922a"/>
-      <rect x="-22" y="-72" width="20" height="148" rx="10" fill="#c9922a" opacity="0.72"/>
-      <rect x="6" y="-56" width="20" height="118" rx="10" fill="#c9922a" opacity="0.55"/>
-      <rect x="34" y="-28" width="20" height="68" rx="10" fill="#c9922a" opacity="0.35"/>
-    </g>
-  </svg>
-  <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontStyle: 'italic', color: T.heading, fontWeight: 600 }}>Hey </span>
-  <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontStyle: 'italic', color: T.gold, fontWeight: 700 }}>Monday</span>
-</Link>
+      {/* NAV */}
+      <nav style={{ borderBottom: `1px solid ${T.border}`, padding: '0 24px', height: 54, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: T.bg2 }}>
+        <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontStyle: 'italic', color: T.heading, fontWeight: 600 }}>Hey </span>
+          <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontStyle: 'italic', color: T.gold, fontWeight: 700 }}>Monday</span>
+        </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 11, color: T.text3 }}>Already have an account?</span>
-          <Link href="/login" style={{ textDecoration: 'none', fontSize: 10, fontWeight: 600, color: T.text2, padding: '6px 14px', border: `1px solid ${T.border2}`, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Log In</Link>
+          <span style={{ fontSize: 12, color: T.text3 }}>Already have an account?</span>
+          <Link href="/login" style={{ textDecoration: 'none', fontSize: 11, fontWeight: 600, color: T.text2, padding: '6px 14px', border: `1px solid ${T.border2}`, letterSpacing: '0.08em', borderRadius: 4 }}>Log In</Link>
         </div>
       </nav>
 
-      <div style={{ borderBottom: `1px solid ${T.border}`, padding: '12px 24px', background: T.bg2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {/* STEP PROGRESS */}
+      <div style={{ borderBottom: `1px solid ${T.border}`, padding: '14px 24px', background: T.bg2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
         {[{ n: 1, label: 'Account' }, { n: 2, label: 'Payment' }].map((s, i) => (
           <div key={s.n} style={{ display: 'flex', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{
-                width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: currentStep >= s.n ? T.gold : 'transparent',
-                border: `1px solid ${currentStep >= s.n ? T.gold : T.border2}`,
-                fontSize: 10, fontWeight: 700,
-                color: currentStep >= s.n ? T.btnText : T.text3,
-                transition: 'all 0.3s',
-              }}>
+              <div style={{ width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: currentStep >= s.n ? T.gold : 'transparent', border: `1px solid ${currentStep >= s.n ? T.gold : T.border2}`, fontSize: 11, fontWeight: 700, color: currentStep >= s.n ? T.btnText : T.text3, transition: 'all 0.3s' }}>
                 {currentStep > s.n ? '✓' : s.n}
               </div>
-              <span style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: currentStep >= s.n ? T.gold : T.text3, transition: 'color 0.3s' }}>
-                {s.label}
-              </span>
+              <span style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: currentStep >= s.n ? T.gold : T.text3 }}>{s.label}</span>
             </div>
-            {i === 0 && <div style={{ width: 48, height: 1, background: currentStep > 1 ? T.goldDim : T.border, margin: '0 12px', transition: 'background 0.3s' }} />}
+            {i === 0 && <div style={{ width: 48, height: 1, background: currentStep > 1 ? T.goldDim : T.border, margin: '0 14px' }} />}
           </div>
         ))}
       </div>
 
-      <div className="layout" style={{ maxWidth: 1000, margin: '0 auto', padding: '40px 24px', display: 'flex', gap: 40, alignItems: 'flex-start' }}>
+      {/* BODY */}
+      <div className="layout" style={{ maxWidth: 1000, margin: '0 auto', padding: '48px 24px', display: 'flex', gap: 48, alignItems: 'flex-start' }}>
         <Elements stripe={stripePromise}>
           <SignupForm isDark={isDark} billing={billing} setBilling={setBilling} />
         </Elements>
 
+        {/* SIDEBAR */}
         <div className="sidebar" style={{ width: 300, flexShrink: 0, position: 'sticky', top: 80 }}>
-          <div style={{ background: T.cardBg, border: `1px solid ${T.cardBorder}`, overflow: 'hidden' }}>
+          <div style={{ background: T.cardBg, border: `1px solid ${T.cardBorder}`, overflow: 'hidden', borderRadius: 8 }}>
             <div style={{ height: 2, background: `linear-gradient(90deg, transparent, ${T.gold}, transparent)` }} />
-            <div style={{ padding: '20px' }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 8, letterSpacing: '0.18em', color: T.gold, background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, padding: '3px 10px', marginBottom: 16, textTransform: 'uppercase' }}>
+            <div style={{ padding: '22px' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 9, letterSpacing: '0.18em', color: T.gold, background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, padding: '3px 10px', marginBottom: 16, textTransform: 'uppercase', borderRadius: 3 }}>
                 <span style={{ width: 4, height: 4, borderRadius: '50%', background: T.gold, display: 'inline-block', animation: 'pulse 2s ease infinite' }} />
                 Pro Plan · 5-Day Free Trial
               </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, marginBottom: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginBottom: 4 }}>
                 <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 48, fontWeight: 700, color: T.gold, lineHeight: 1 }}>${price.split('.')[0]}</span>
                 <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: T.goldDim }}>.{price.split('.')[1]}</span>
-                <span style={{ fontSize: 10, color: T.text3 }}>/mo</span>
+                <span style={{ fontSize: 11, color: T.text3 }}>/mo</span>
               </div>
-              <div style={{ fontSize: 10, color: T.text2, marginBottom: 18, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 11, color: T.text2, marginBottom: 18 }}>
                 {billing === 'annual' ? 'Billed as $799.92 annually' : 'Billed monthly, cancel anytime'}
               </div>
-              <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 16, marginBottom: 4 }}>
-                <div style={{ fontSize: 9, letterSpacing: '0.15em', color: T.text3, textTransform: 'uppercase', marginBottom: 12 }}>What's included</div>
+              <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 16, marginBottom: 16 }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.15em', color: T.text3, textTransform: 'uppercase', marginBottom: 12 }}>What's included</div>
                 {PLAN_FEATURES.map((f, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 8, padding: '5px 0', borderBottom: i < PLAN_FEATURES.length - 1 ? `1px solid ${T.border}` : 'none' }}>
-                    <span style={{ color: T.gold, fontSize: 10, flexShrink: 0, marginTop: 2 }}>✓</span>
-                    <span style={{ fontSize: 11, color: T.text2 }}>{f}</span>
+                  <div key={i} style={{ display: 'flex', gap: 8, padding: '6px 0', borderBottom: i < PLAN_FEATURES.length - 1 ? `1px solid ${T.border}` : 'none' }}>
+                    <span style={{ color: T.gold, fontSize: 11, flexShrink: 0, marginTop: 1 }}>✓</span>
+                    <span style={{ fontSize: 12, color: T.text2 }}>{f}</span>
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: 16, background: 'rgba(201,146,42,.05)', border: `1px solid rgba(201,146,42,.15)`, padding: '10px 12px' }}>
-                <div style={{ fontSize: 10, fontWeight: 600, color: T.gold, marginBottom: 4 }}>Trial: 5 voice/chat replies/day</div>
-                <div style={{ fontSize: 10, color: T.text3, lineHeight: 1.6 }}>Full features, limited replies. Unlimited after trial.</div>
+              <div style={{ background: 'rgba(201,146,42,.05)', border: `1px solid rgba(201,146,42,.15)`, padding: '10px 12px', borderRadius: 4 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: T.gold, marginBottom: 3 }}>Trial: 5 voice/chat replies/day</div>
+                <div style={{ fontSize: 11, color: T.text3, lineHeight: 1.6 }}>Full features. Unlimited after trial.</div>
               </div>
-              <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 7 }}>
-                {[
-                  { text: 'No charge for 5 days' },
-                  { text: `Cancel before ${chargeDate} — free` },
-                  { text: 'Secured by Stripe' },
-                ].map((b, i) => (
+              <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {[`No charge for 5 days`, `Cancel before ${chargeDate} — free`, 'Secured by Stripe'].map((b, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 10, color: T.goldDim }}>✓</span>
-                    <span style={{ fontSize: 10, color: T.text3 }}>{b.text}</span>
+                    <span style={{ fontSize: 11, color: T.goldDim }}>✓</span>
+                    <span style={{ fontSize: 11, color: T.text3 }}>{b}</span>
                   </div>
                 ))}
               </div>
             </div>
           </div>
-          <div style={{ marginTop: 16, background: T.bg2, border: `1px solid ${T.border}`, padding: '16px' }}>
-            <div style={{ fontSize: 12, fontStyle: 'italic', color: T.text2, lineHeight: 1.7, fontFamily: "'Cormorant Garamond',serif", marginBottom: 10 }}>
+
+          {/* Testimonial */}
+          <div style={{ marginTop: 16, background: T.bg2, border: `1px solid ${T.border}`, padding: '16px', borderRadius: 8 }}>
+            <div style={{ fontSize: 13, fontStyle: 'italic', color: T.text2, lineHeight: 1.7, fontFamily: "'Cormorant Garamond',serif", marginBottom: 10 }}>
               "The second CPI dropped, Monday explained the impact on my positions before I even opened a chart."
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 22, height: 22, borderRadius: '50%', background: T.bg4, border: `1px solid ${T.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Cormorant Garamond',serif", fontSize: 12, fontStyle: 'italic', color: T.gold }}>S</div>
+              <div style={{ width: 24, height: 24, borderRadius: '50%', background: T.bg4, border: `1px solid ${T.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Cormorant Garamond',serif", fontSize: 13, fontStyle: 'italic', color: T.gold }}>S</div>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: T.heading }}>Sarah K.</div>
-                <div style={{ fontSize: 9, color: T.text3, letterSpacing: '0.08em' }}>Options Trader</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: T.heading }}>Sarah K.</div>
+                <div style={{ fontSize: 10, color: T.text3 }}>Options Trader</div>
               </div>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 2 }}>
-                {[1, 2, 3, 4, 5].map(i => <span key={i} style={{ color: T.gold, fontSize: 10 }}>★</span>)}
+                {[1,2,3,4,5].map(i => <span key={i} style={{ color: T.gold, fontSize: 11 }}>★</span>)}
               </div>
             </div>
           </div>
