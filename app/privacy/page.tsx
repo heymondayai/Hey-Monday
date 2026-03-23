@@ -220,7 +220,7 @@ export default function PrivacyPage() {
             </li>
           ))}
         </ul>
-        <p style={pStyle}>To exercise any of these rights, email us at <a href="mailto:legal@heymonday.store">legal@heymonday.store</a>. We will respond within 30 days.</p>
+        <p style={pStyle}>To exercise any of these rights, email us at <a href="mailto:support@heymonday.store">support@heymonday.store</a>. We will respond within 30 days.</p>
 
         {/* 7 */}
         <h2 style={h2Style}>7. Cookies</h2>
@@ -228,7 +228,7 @@ export default function PrivacyPage() {
 
         {/* 8 */}
         <h2 style={h2Style}>8. Children's Privacy</h2>
-        <p style={pStyle}>Hey Monday is intended for users who are 18 years of age or older. We do not knowingly collect personal data from anyone under 18. If you believe a minor has created an account, please contact us at <a href="mailto:legal@heymonday.store">legal@heymonday.store</a> and we will promptly delete it.</p>
+        <p style={pStyle}>Hey Monday is intended for users who are 18 years of age or older. We do not knowingly collect personal data from anyone under 18. If you believe a minor has created an account, please contact us at <a href="mailto:support@heymonday.store">support@heymonday.store</a> and we will promptly delete it.</p>
 
         {/* 9 */}
         <h2 style={h2Style}>9. Changes to This Policy</h2>
@@ -241,7 +241,7 @@ export default function PrivacyPage() {
           <p style={{ fontSize: 13, color: T.text2, lineHeight: 1.9, marginBottom: 0 }}>
             Expedition Way Ventures LLC d/b/a Hey Monday<br />
             Arizona, United States<br />
-            <a href="mailto:legal@heymonday.store">legal@heymonday.store</a>
+            <a href="mailto:support@heymonday.store">support@heymonday.store</a>
           </p>
         </div>
 

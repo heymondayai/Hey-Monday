@@ -123,7 +123,7 @@ export default function TermsPage() {
 
         {/* 3 */}
         <h2 style={h2Style}>3. Account Registration</h2>
-        <p style={pStyle}>You must create an account to access Hey Monday. You agree to provide accurate, complete, and current information during registration and to keep your account information updated. You are responsible for maintaining the confidentiality of your login credentials and for all activity that occurs under your account. Notify us immediately at <a href="mailto:legal@heymonday.store">legal@heymonday.store</a> if you suspect unauthorized access to your account.</p>
+        <p style={pStyle}>You must create an account to access Hey Monday. You agree to provide accurate, complete, and current information during registration and to keep your account information updated. You are responsible for maintaining the confidentiality of your login credentials and for all activity that occurs under your account. Notify us immediately at <a href="mailto:support@heymonday.store">support@heymonday.store</a> if you suspect unauthorized access to your account.</p>
         <p style={pStyle}>You may not share your account with others, create multiple accounts, or use another user's account.</p>
 
         {/* 4 */}
@@ -135,7 +135,7 @@ export default function TermsPage() {
         <h3 style={h3Style}>4.3 Automatic Renewal</h3>
         <p style={pStyle}>Subscriptions automatically renew at the end of each billing period. By subscribing you authorize Hey Monday to charge your payment method on a recurring basis until you cancel.</p>
         <h3 style={h3Style}>4.4 Cancellation</h3>
-        <p style={pStyle}>You may cancel your subscription at any time through your account settings or by contacting us at <a href="mailto:legal@heymonday.store">legal@heymonday.store</a>. Cancellation takes effect at the end of the current billing period. We do not provide refunds for partial billing periods.</p>
+        <p style={pStyle}>You may cancel your subscription at any time through your account settings or by contacting us at <a href="mailto:support@heymonday.store">support@heymonday.store</a>. Cancellation takes effect at the end of the current billing period. We do not provide refunds for partial billing periods.</p>
         <h3 style={h3Style}>4.5 Payment Processing</h3>
         <p style={pStyle}>All payments are processed by Stripe, Inc. By providing your payment information you agree to Stripe's terms of service. Hey Monday does not store your full credit card details.</p>
         <h3 style={h3Style}>4.6 Price Changes</h3>
@@ -243,11 +243,11 @@ export default function TermsPage() {
 
         {/* 15 */}
         <h2 style={h2Style}>15. Contact</h2>
-        <p style={pStyle}>Questions about these Terms? Contact us at <a href="mailto:legal@heymonday.store">legal@heymonday.store</a>.</p>
+        <p style={pStyle}>Questions about these Terms? Contact us at <a href="mailto:support@heymonday.store">support@heymonday.store</a>.</p>
         <div style={{ background: T.goldFaint, border: `1px solid ${T.goldBorder}`, padding: '16px 20px', marginTop: 8 }}>
           <p style={{ fontSize: 12, color: T.text3, lineHeight: 1.7, marginBottom: 0 }}>
             Expedition Way Ventures LLC d/b/a Hey Monday · Arizona, United States<br />
-            <a href="mailto:legal@heymonday.store">legal@heymonday.store</a>
+            <a href="mailto:support@heymonday.store">support@heymonday.store</a>
           </p>
         </div>
 
