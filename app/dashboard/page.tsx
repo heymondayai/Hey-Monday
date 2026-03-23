@@ -1131,54 +1131,6 @@ function startThinkingChimes(): () => void {
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
       <div style={{ background: T.pageBg, height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif", color: T.text, transition: 'background 0.35s, color 0.35s' }}>
 
-        {/* ── Settings modal ── */}
-        {showSettings && (
-          <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div onClick={() => setShowSettings(false)} style={{ position: 'absolute', inset: 0, background: T.backdropBlur, backdropFilter: 'blur(4px)' }} />
-            <div style={{ position: 'relative', zIndex: 1, background: T.overlayBg, border: `1px solid ${T.border}`, width: '100%', maxWidth: '580px', padding: '32px', margin: '0 20px' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '28px' }}>
-                <div>
-                  <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '22px', fontStyle: 'italic', fontWeight: 500, color: T.text, marginBottom: '4px' }}>Trading Style</div>
-                  <div style={{ fontSize: '14px', color: T.text5 }}>Your dashboard and AI are personalized to your style</div>
-                </div>
-                <div onClick={() => setShowSettings(false)} style={{ fontSize: '18px', color: T.text6, cursor: 'pointer', padding: '4px' }}>✕</div>
-              </div>
-              <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ fontSize: '13px', color: T.text5, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Currently active</div>
-                <div style={{ fontSize: '13px', padding: '3px 10px', background: activeTrader.bgColor, border: `1px solid ${activeTrader.borderColor}`, color: activeTrader.color, fontWeight: 600 }}>{activeTrader.icon} {activeTrader.label}</div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '28px' }}>
-                {TRADER_TYPES.map((type) => {
-                  const isSel = settingsType === type.id; const isCur = traderType === type.id
-                  return (
-                    <div key={type.id} onClick={() => setSettingsType(type.id)} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', background: isSel ? type.bgColor : T.inputBg, border: `1px solid ${isSel ? type.borderColor : T.borderItem}`, cursor: 'pointer' }}>
-                      <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: `1px solid ${isSel ? type.color : T.text6}`, background: isSel ? type.color : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        {isSel && <div style={{ fontSize: '9px', color: '#080808', fontWeight: 700 }}>✓</div>}
-                      </div>
-                      <div style={{ fontSize: '20px', flexShrink: 0 }}>{type.icon}</div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '16px', fontWeight: 600, color: isSel ? type.color : T.text4, marginBottom: '2px' }}>{type.label}</div>
-                        <div style={{ fontSize: '13px', color: T.text5 }}>
-                          {type.id === 'day' && 'Intraday focus · Options flow · Same-day price targets'}
-                          {type.id === 'swing' && '3-day to 3-month setups · Earnings plays · Sector rotation'}
-                          {type.id === 'longterm' && 'Fundamentals · 12-month outlook · Macro thesis'}
-                        </div>
-                      </div>
-                      {isCur && <div style={{ fontSize: '10px', color: type.color, background: type.bgColor, border: `1px solid ${type.borderColor}`, padding: '2px 7px', letterSpacing: '0.1em', textTransform: 'uppercase', flexShrink: 0 }}>Active</div>}
-                    </div>
-                  )
-                })}
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <div onClick={saveTraderType} style={{ flex: 1, padding: '12px', textAlign: 'center', background: settingsType !== traderType ? T.goldFaint2 : T.inputBg, border: `1px solid ${settingsType !== traderType ? T.goldFaint9 : T.borderItem}`, color: settingsType !== traderType ? T.gold : T.text6, fontSize: '15px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', fontFamily: "'DM Mono', monospace" }}>
-                  {savingType ? 'Saving...' : settingsType === traderType ? 'No Changes' : 'Save Changes'}
-                </div>
-                <div onClick={() => setShowSettings(false)} style={{ padding: '12px 20px', border: `1px solid ${T.borderItem}`, color: T.text5, fontSize: '15px', cursor: 'pointer' }}>Cancel</div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* ── Ticker bar ── */}
         <div style={{ background: T.tickerBg, borderBottom: `1px solid ${T.border}`, height: '32px', display: 'flex', alignItems: 'center', overflow: 'hidden', flexShrink: 0, position: 'relative', transition: 'background 0.35s' }}>
           <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '50px', background: `linear-gradient(90deg,${T.tickerBg},transparent)`, zIndex: 2 }} />
@@ -1255,7 +1207,7 @@ function startThinkingChimes(): () => void {
     {wakeOn ? 'Hey Monday' : 'Wake Word Off'}
   </span>
 </div>
-              <div onClick={() => setShowSettings(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginTop: '10px', padding: '5px 11px', background: activeTrader.bgColor, border: `1px solid ${activeTrader.borderColor}`, cursor: 'pointer' }}>
+              <div onClick={() => router.push('/dashboard/settings')} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginTop: '10px', padding: '5px 11px', background: activeTrader.bgColor, border: `1px solid ${activeTrader.borderColor}`, cursor: 'pointer' }}>
                 <span style={{ fontSize: '14px' }}>{activeTrader.icon}</span>
                 <span style={{ fontSize: '11px', color: activeTrader.color, fontWeight: 600, letterSpacing: '0.08em' }}>{activeTrader.label}</span>
                 <span style={{ fontSize: '10px', color: T.text6, marginLeft: '2px' }}>✎</span>
