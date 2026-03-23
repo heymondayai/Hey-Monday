@@ -1,6 +1,7 @@
 import { type EmailOtpType } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
@@ -10,13 +11,27 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type') as EmailOtpType | null
   const next = searchParams.get('next')
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-
   const loginUrl = new URL('/login', origin)
   const resetPasswordUrl = new URL('/reset-password', origin)
+
+  // ── Create SSR Supabase client (required for PKCE code exchange) ──
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll() },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {}
+        },
+      },
+    }
+  )
 
   async function routeUser(userId: string, userEmail: string) {
     const { data: profile } = await supabase
@@ -38,28 +53,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL('/onboarding', origin))
     }
 
-    // Fully set up
+    // Fully set up → dashboard
     return NextResponse.redirect(new URL('/dashboard', origin))
   }
 
-  // ── GOOGLE OAUTH (code exchange) ───────────────────────────────
+  // ── GOOGLE OAUTH — PKCE code exchange ─────────────────────────
   if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-    if (error) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+
+    if (error || !data.user) {
+      console.error('OAuth code exchange error:', error?.message)
       loginUrl.searchParams.set('error', 'oauth_failed')
       return NextResponse.redirect(loginUrl)
     }
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      loginUrl.searchParams.set('error', 'oauth_failed')
-      return NextResponse.redirect(loginUrl)
-    }
-    return routeUser(user.id, user.email ?? '')
+
+    return routeUser(data.user.id, data.user.email ?? '')
   }
 
-  // ── EMAIL OTP (token_hash) ─────────────────────────────────────
+  // ── EMAIL OTP — token_hash (email confirmation + password reset) ──
   if (token_hash && type) {
-    // Password reset
     if (type === 'recovery') {
       const { error } = await supabase.auth.verifyOtp({ token_hash, type })
       if (error) {
@@ -69,17 +81,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(next ? new URL(next, origin) : resetPasswordUrl)
     }
 
-    // Email confirmation (signup)
+    // Email signup confirmation
     const { error } = await supabase.auth.verifyOtp({ token_hash, type })
     if (error) {
       loginUrl.searchParams.set('error', 'confirmation_failed')
       return NextResponse.redirect(loginUrl)
     }
+
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       loginUrl.searchParams.set('error', 'confirmation_failed')
       return NextResponse.redirect(loginUrl)
     }
+
     return routeUser(user.id, user.email ?? '')
   }
 
