@@ -761,29 +761,27 @@ function SettingsPageInner() {
                   overflow: 'hidden',
                 }}>
                   {[
-                    ['Plan', 'Hey Monday Pro'],
-                    ['Billing interval', profile?.billing_interval || '—'],
-                    ['Trial ends', fmtDate(profile?.trial_ends_at || null)],
-                    ['Renews / current period end', fmtDate(profile?.current_period_end || null)],
-                    ['Billing ZIP', profile?.billing_zip || '—'],
-                    ['Subscription ID', profile?.stripe_subscription_id || '—'],
-                    ['Customer ID', profile?.stripe_customer_id || '—'],
-                    ['Price ID', profile?.stripe_price_id || '—'],
-                  ].map(([label, value], i) => (
-                    <div
-                      key={label}
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: '170px 1fr',
-                        gap: 12,
-                        padding: '12px 14px',
-                        borderBottom: i === 7 ? 'none' : `1px solid ${T.border}`,
-                      }}
-                    >
-                      <div style={{ color: T.text4, fontSize: 12 }}>{label}</div>
-                      <div style={{ color: T.text2, fontSize: 13, wordBreak: 'break-word' }}>{value}</div>
-                    </div>
-                  ))}
+  ['Plan', 'Hey Monday Pro'],
+  ['Status', subscriptionMeta.label],
+  ['Billing interval', profile?.billing_interval || '—'],
+  ['Trial ends', fmtDate(profile?.trial_ends_at || null)],
+  ['Renews / current period end', fmtDate(profile?.current_period_end || null)],
+  ['Billing ZIP', profile?.billing_zip || '—'],
+].map(([label, value], i, arr) => (
+  <div
+    key={label}
+    style={{
+      display: 'grid',
+      gridTemplateColumns: '170px 1fr',
+      gap: 12,
+      padding: '12px 14px',
+      borderBottom: i === arr.length - 1 ? 'none' : `1px solid ${T.border}`,
+    }}
+  >
+    <div style={{ color: T.text4, fontSize: 12 }}>{label}</div>
+    <div style={{ color: T.text2, fontSize: 13, wordBreak: 'break-word' }}>{value}</div>
+  </div>
+))}
                 </div>
 
                 {profile?.cancel_at_period_end ? (
@@ -815,23 +813,18 @@ function SettingsPageInner() {
                     {billingLoading ? 'Opening...' : 'Manage Billing'}
                   </button>
 
-                  <button onClick={toggleCancelAtPeriodEnd} disabled={billingLoading || !profile?.stripe_subscription_id} style={actionBtn(false)}>
-                    {profile?.cancel_at_period_end ? 'Reactivate Subscription' : 'Cancel Free Trial'}
-                  </button>
+                  <button
+  onClick={toggleCancelAtPeriodEnd}
+  disabled={billingLoading || !profile?.stripe_subscription_id}
+  style={actionBtn(false)}
+>
+  {profile?.cancel_at_period_end
+    ? 'Reactivate Subscription'
+    : profile?.subscription_status === 'trialing'
+    ? 'Cancel Free Trial'
+    : 'Cancel Subscription'}
+</button>
                 </div>
-              </div>
-            </div>
-
-            <div style={sectionCard}>
-              <div style={{ color: T.text, fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Production checklist</div>
-              <div style={{ color: T.text4, fontSize: 13, lineHeight: 1.65 }}>
-                This page is ready for production UI, but the two billing buttons expect backend routes:
-                <br />
-                <span style={{ color: T.text3 }}>/api/billing/portal</span>
-                <br />
-                <span style={{ color: T.text3 }}>/api/billing/cancel</span>
-                <br /><br />
-                Once those are added, trial cancellation and Stripe billing management will be fully live.
               </div>
             </div>
           </div>
