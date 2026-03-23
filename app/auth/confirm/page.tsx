@@ -20,48 +20,32 @@ export default function AuthConfirmPage() {
         router.replace(`/signup?confirmed=1&email=${encodeURIComponent(userEmail)}`)
         return
       }
-
       if (!profile?.trader_type || !profile?.onboarding_complete) {
         router.replace('/onboarding')
         return
       }
-
       router.replace('/dashboard')
     }
 
-    // First try: check if session already exists (handles page refresh)
+    // onAuthStateChange is the ONLY reliable way to catch implicit flow tokens
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session?.user) {
+          subscription.unsubscribe()
+          await routeUser(session.user.id, session.user.email ?? '')
+        }
+      }
+    )
+
+    // Also check immediately in case session already exists
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
+        subscription.unsubscribe()
         routeUser(session.user.id, session.user.email ?? '')
-        return
-      }
-
-      // Second try: listen for the auth event (handles fresh OAuth redirect)
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        async (event, session) => {
-          if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
-            subscription.unsubscribe()
-            await routeUser(session.user.id, session.user.email ?? '')
-          }
-        }
-      )
-
-      // Timeout fallback — if nothing fires in 5 seconds, try getSession one more time
-      const timeout = setTimeout(async () => {
-        subscription.unsubscribe()
-        const { data: { session } } = await supabase.auth.getSession()
-        if (session?.user) {
-          await routeUser(session.user.id, session.user.email ?? '')
-        } else {
-          router.replace('/login?error=oauth_failed')
-        }
-      }, 5000)
-
-      return () => {
-        clearTimeout(timeout)
-        subscription.unsubscribe()
       }
     })
+
+    return () => subscription.unsubscribe()
   }, [])
 
   return (
