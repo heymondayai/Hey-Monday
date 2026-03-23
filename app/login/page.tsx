@@ -2,9 +2,17 @@
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { createClient as createVanillaClient } from '@supabase/supabase-js'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTheme } from '@/app/context/theme-context'
 import Link from 'next/link'
+
+// Vanilla client specifically for parsing implicit OAuth hash
+// @supabase/ssr's createBrowserClient does NOT auto-parse hash fragments
+const vanillaSupabase = createVanillaClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 const DARK = {
   pageBg: '#0a0a08', bg2: '#120f07',
@@ -129,9 +137,10 @@ function LoginPageContent() {
     }
   }
 
-  // ── Handle Google OAuth implicit flow hash ──────────────────────
-  // Supabase (implicit flow) always redirects to Site URL with #access_token
-  // This catches it and routes the user correctly
+  // ── HANDLE GOOGLE OAUTH IMPLICIT FLOW HASH ──────────────────────
+  // Supabase implicit flow sends #access_token to the Site URL (this page).
+  // @supabase/ssr createBrowserClient does NOT auto-parse the hash fragment.
+  // The vanilla @supabase/supabase-js client DOES — it fires SIGNED_IN on init.
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!window.location.hash.includes('access_token')) return
@@ -139,41 +148,28 @@ function LoginPageContent() {
     setCheckingSession(false)
     setGoogleLoading(true)
 
-    async function handleOAuthHash() {
-      // Supabase JS parses the hash automatically — just call getSession
-      // Give it a tick to process
-      await new Promise(r => setTimeout(r, 200))
-
-      let session = (await supabase.auth.getSession()).data.session
-
-      // Retry once if not ready yet
-      if (!session) {
-        await new Promise(r => setTimeout(r, 600))
-        session = (await supabase.auth.getSession()).data.session
-      }
-
-      if (session?.user) {
-        await routeUser(session.user.id, session.user.email ?? '')
-        return
-      }
-
-      // Last resort: listen for auth state change
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
-        if (s?.user) {
+    // vanillaSupabase is initialized at module level with the vanilla client.
+    // It auto-detects the hash and fires SIGNED_IN immediately.
+    const { data: { subscription } } = vanillaSupabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'SIGNED_IN' && session?.user) {
           subscription.unsubscribe()
-          await routeUser(s.user.id, s.user.email ?? '')
+          clearTimeout(timeout)
+          await routeUser(session.user.id, session.user.email ?? '')
         }
-      })
+      }
+    )
 
-      // Timeout after 6s
-      setTimeout(() => {
-        subscription.unsubscribe()
-        setGoogleLoading(false)
-        setError('Sign-in timed out. Please try again.')
-      }, 6000)
+    const timeout = setTimeout(() => {
+      subscription.unsubscribe()
+      setGoogleLoading(false)
+      setError('Sign-in timed out. Please try again.')
+    }, 8000)
+
+    return () => {
+      clearTimeout(timeout)
+      subscription.unsubscribe()
     }
-
-    handleOAuthHash()
   }, [])
 
   // ── Normal session check on mount ──────────────────────────────
