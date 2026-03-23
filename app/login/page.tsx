@@ -2,17 +2,12 @@
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { createClient as createVanillaClient } from '@supabase/supabase-js'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTheme } from '@/app/context/theme-context'
 import Link from 'next/link'
 
 // Vanilla client specifically for parsing implicit OAuth hash
 // @supabase/ssr's createBrowserClient does NOT auto-parse hash fragments
-const vanillaSupabase = createVanillaClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 const DARK = {
   pageBg: '#0a0a08', bg2: '#120f07',
@@ -141,41 +136,11 @@ function LoginPageContent() {
   // Supabase implicit flow sends #access_token to the Site URL (this page).
   // @supabase/ssr createBrowserClient does NOT auto-parse the hash fragment.
   // The vanilla @supabase/supabase-js client DOES — it fires SIGNED_IN on init.
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (!window.location.hash.includes('access_token')) return
-
-    setCheckingSession(false)
-    setGoogleLoading(true)
-
-    // vanillaSupabase is initialized at module level with the vanilla client.
-    // It auto-detects the hash and fires SIGNED_IN immediately.
-    const { data: { subscription } } = vanillaSupabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'SIGNED_IN' && session?.user) {
-          subscription.unsubscribe()
-          clearTimeout(timeout)
-          await routeUser(session.user.id, session.user.email ?? '')
-        }
-      }
-    )
-
-    const timeout = setTimeout(() => {
-      subscription.unsubscribe()
-      setGoogleLoading(false)
-      setError('Sign-in timed out. Please try again.')
-    }, 8000)
-
-    return () => {
-      clearTimeout(timeout)
-      subscription.unsubscribe()
-    }
-  }, [])
+  
 
   // ── Normal session check on mount ──────────────────────────────
   useEffect(() => {
     // Skip if we're handling an OAuth hash
-    if (typeof window !== 'undefined' && window.location.hash.includes('access_token')) return
 
     let mounted = true
     const timeout = setTimeout(() => { if (mounted) setCheckingSession(false) }, 3000)
@@ -222,7 +187,7 @@ function LoginPageContent() {
     setGoogleLoading(true); setError('')
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/login` },
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
     })
     if (error) { setError(error.message); setGoogleLoading(false) }
   }
