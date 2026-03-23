@@ -19,9 +19,7 @@ export const metadata: Metadata = {
   title: 'Hey Monday',
   description: 'AI Market Intelligence',
   icons: {
-    icon: [
-      { url: '/favicon.svg', type: 'image/svg+xml' },
-    ],
+    icon: '/favicon.ico',
   },
 }
 
