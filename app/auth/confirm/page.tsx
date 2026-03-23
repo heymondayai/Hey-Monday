@@ -9,27 +9,15 @@ export default function AuthConfirmPage() {
   const supabase = createClient()
 
   useEffect(() => {
-    async function handle() {
-      // Wait a tick for Supabase to parse the hash and set the session
-      await new Promise(r => setTimeout(r, 500))
-
-      const { data: { session } } = await supabase.auth.getSession()
-
-      if (!session?.user) {
-        router.replace('/login?error=oauth_failed')
-        return
-      }
-
-      const user = session.user
-
+    async function routeUser(userId: string, userEmail: string) {
       const { data: profile } = await supabase
         .from('profiles')
         .select('trader_type, onboarding_complete, stripe_subscription_id')
-        .eq('id', user.id)
+        .eq('id', userId)
         .maybeSingle()
 
       if (!profile?.stripe_subscription_id) {
-        router.replace(`/signup?confirmed=1&email=${encodeURIComponent(user.email ?? '')}`)
+        router.replace(`/signup?confirmed=1&email=${encodeURIComponent(userEmail)}`)
         return
       }
 
@@ -41,7 +29,39 @@ export default function AuthConfirmPage() {
       router.replace('/dashboard')
     }
 
-    handle()
+    // First try: check if session already exists (handles page refresh)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        routeUser(session.user.id, session.user.email ?? '')
+        return
+      }
+
+      // Second try: listen for the auth event (handles fresh OAuth redirect)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
+            subscription.unsubscribe()
+            await routeUser(session.user.id, session.user.email ?? '')
+          }
+        }
+      )
+
+      // Timeout fallback — if nothing fires in 5 seconds, try getSession one more time
+      const timeout = setTimeout(async () => {
+        subscription.unsubscribe()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          await routeUser(session.user.id, session.user.email ?? '')
+        } else {
+          router.replace('/login?error=oauth_failed')
+        }
+      }, 5000)
+
+      return () => {
+        clearTimeout(timeout)
+        subscription.unsubscribe()
+      }
+    })
   }, [])
 
   return (
