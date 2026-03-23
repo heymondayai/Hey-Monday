@@ -432,7 +432,7 @@ function SignupForm({ isDark, billing, setBilling }: {
       {step === 2 && (
         <form onSubmit={handleStep2} className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <div style={{ background: T.successBg, border: `1px solid ${T.successBorder}`, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, borderRadius: 4 }}>
-            <span style={{ fontSize: 16 }}>✅</span>
+            <span style={{ fontSize: 16 }}></span>
             <div style={{ fontSize: 13, color: T.successText, fontWeight: 500 }}>
               {isGoogleUser ? 'Google account connected! Add payment details below.' : 'Email confirmed! Add your payment details below.'}
             </div>
