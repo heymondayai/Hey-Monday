@@ -148,21 +148,26 @@ function SignupForm({
   }
 
   async function handleGoogleSignup() {
-    setGoogleLoading(true)
-    setError('')
+  setGoogleLoading(true)
+  setError('')
 
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+  await supabase.auth.signOut()
+
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+      queryParams: {
+        prompt: 'select_account',
       },
-    })
+    },
+  })
 
-    if (error) {
-      setError(error.message)
-      setGoogleLoading(false)
-    }
+  if (error) {
+    setError(error.message)
+    setGoogleLoading(false)
   }
+}
 
   async function handleStep1(e: React.FormEvent) {
     e.preventDefault()

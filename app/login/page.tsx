@@ -96,6 +96,7 @@ function LoginPageContent() {
   const confirmed = searchParams.get('confirmed') === '1'
   const reset = searchParams.get('reset') === '1'
   const loginError = searchParams.get('error')
+  const forceAccountChooser = searchParams.get('switch') === '1'
 
   const confirmedBanner = useMemo(() => {
     if (confirmed) return 'Your account has been confirmed. Log in to continue.'
@@ -147,20 +148,26 @@ function LoginPageContent() {
         if (!mounted) return
 
         if (!session?.user) {
-          setCheckingSession(false)
-          return
-        }
+  setCheckingSession(false)
+  return
+}
 
-        const user = session.user
-        const isGoogle = user.app_metadata?.provider === 'google'
+if (forceAccountChooser) {
+  await supabase.auth.signOut()
+  if (mounted) setCheckingSession(false)
+  return
+}
 
-        if (!isGoogle && !user.email_confirmed_at) {
-          await supabase.auth.signOut()
-          if (mounted) setCheckingSession(false)
-          return
-        }
+const user = session.user
+const isGoogle = user.app_metadata?.provider === 'google'
 
-        await routeUser(user.id, user.email ?? '')
+if (!isGoogle && !user.email_confirmed_at) {
+  await supabase.auth.signOut()
+  if (mounted) setCheckingSession(false)
+  return
+}
+
+await routeUser(user.id, user.email ?? '')
       })
       .catch(() => {
         clearTimeout(timeout)
@@ -174,19 +181,26 @@ function LoginPageContent() {
   }, [supabase])
 
   async function handleGoogleLogin() {
-    setGoogleLoading(true)
-    setError('')
+  setGoogleLoading(true)
+  setError('')
 
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    })
+  await supabase.auth.signOut()
 
-    if (error) {
-      setError(error.message)
-      setGoogleLoading(false)
-    }
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+      queryParams: {
+        prompt: 'select_account',
+      },
+    },
+  })
+
+  if (error) {
+    setError(error.message)
+    setGoogleLoading(false)
   }
+}
 
   async function handleLogin() {
     if (!email.trim() || !password.trim()) {
