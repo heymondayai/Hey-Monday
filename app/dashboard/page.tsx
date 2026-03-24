@@ -246,10 +246,17 @@ function tickerType(sym: string): 'crypto' | 'etf' | 'stock' {
   return 'stock'
 }
 
-function makeWlItem(ticker: string): { ticker: string; bars: number[] } {
+function makeWlItem(
+  ticker: string,
+  companyName?: string
+): { ticker: string; company_name?: string; bars: number[] } {
   const seed = ticker.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
   const bars = Array.from({ length: 7 }, (_, i) => 20 + ((seed * (i + 3) * 17) % 80))
-  return { ticker: ticker.toUpperCase(), bars }
+  return {
+    ticker: ticker.toUpperCase(),
+    company_name: companyName,
+    bars,
+  }
 }
 
 const DEFAULT_TICKER_DATA = [
@@ -730,7 +737,10 @@ const [newsTab, setNewsTab] = useState<'watchlist' | 'general'>(() => {
       if (profile?.trader_type) { setTraderType(profile.trader_type); setSettingsType(profile.trader_type) }
       const { data: wlRows } = await supabase.from('watchlist').select('ticker, company_name, added_at').eq('user_id', user.id).order('added_at', { ascending: true })
       let resolvedWl: typeof watchlist
-      if (wlRows?.length) { resolvedWl = wlRows.map((r) => makeWlItem(r.ticker)); setWatchlist(resolvedWl) }
+      if (wlRows?.length) {
+      resolvedWl = wlRows.map((r) => makeWlItem(r.ticker, r.company_name))
+      setWatchlist(resolvedWl)
+      }
       else {
         resolvedWl = watchlist
         const seedRows = resolvedWl.map((w, i) => ({ user_id: user.id, ticker: w.ticker, company_name: w.ticker, added_at: new Date(Date.now() + i).toISOString() }))
@@ -1033,7 +1043,8 @@ function startThinkingChimes(): () => void {
 
   async function addToWatchlist(sym: string, name?: string) {
     const upper = sym.toUpperCase(); if (watchlist.some((w) => w.ticker === upper)) return; if (watchlist.length >= 20) return
-    const newItem = makeWlItem(upper); setWatchlist((prev) => [...prev, newItem])
+    const newItem = makeWlItem(upper, name ?? upper)
+    setWatchlist((prev) => [...prev, newItem])
     await supabase.from('watchlist').insert({ user_id: user?.id, ticker: upper, company_name: name ?? upper, added_at: new Date().toISOString() })
     try { const res = await fetch(`/api/prices?tickers=${upper}`); const data = await res.json(); if (data.tickers?.length) { const live = data.tickers.find((t: any) => t.sym === upper); if (live) setWatchlist((prev) => prev.map((w) => (w.ticker === upper ? { ...w, price: live.price, change: live.change, up: live.up } : w))) } } catch {}
   }

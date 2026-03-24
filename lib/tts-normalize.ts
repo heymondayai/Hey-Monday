@@ -2,45 +2,111 @@
  * tts-normalize.ts
  *
  * Pre-processes text before sending to ElevenLabs so it reads naturally aloud.
- * Run this on any string before passing it to the ElevenLabs TTS API.
- *
- * Usage:
- *   import { normalizeTTS } from '@/lib/tts-normalize'
- *   const spokenText = normalizeTTS(atlasReply)
- *   // then send spokenText to ElevenLabs
  */
 
-// ── TICKER PRONUNCIATIONS ─────────────────────────────────────────────────────
-const TICKER_MAP: Record<string, string> = {
-  NVDA: 'Nvidia',
+type NormalizeTTSOptions = {
+  tickerMap?: Record<string, string>
+}
+
+// ── BUILT-IN TICKER PRONUNCIATIONS ────────────────────────────────────────────
+// These are your common-name defaults. Dynamic watchlist names will override them.
+const BUILTIN_TICKER_MAP: Record<string, string> = {
   AAPL: 'Apple',
-  TSLA: 'Tesla',
-  MSFT: 'Microsoft',
-  META: 'Meta',
-  AMZN: 'Amazon',
-  GOOGL: 'Alphabet',
+  ABBV: 'AbbVie',
+  ABNB: 'Airbnb',
+  ADBE: 'Adobe',
   AMD: 'A M D',
-  SPY: 'S P Y',
-  QQQ: 'Q Q Q',
-  IWM: 'I W M',
-  GLD: 'G L D',
-  OIL: 'oil',
-  BTC: 'Bitcoin',
-  ETH: 'Ethereum',
-  GC: 'gold futures',
+  AMGN: 'Amgen',
+  AMZN: 'Amazon',
+  AVGO: 'Broadcom',
+  BA: 'Boeing',
+  BAC: 'Bank of America',
+  BABA: 'Alibaba',
+  BRK: 'Berkshire Hathaway',
+  C: 'Citigroup',
+  CAT: 'Caterpillar',
   CL: 'crude oil futures',
-  NQ: 'Nasdaq futures',
+  COIN: 'Coinbase',
+  COST: 'Costco',
+  CRM: 'Salesforce',
+  CRWD: 'CrowdStrike',
+  CVX: 'Chevron',
+  DIA: 'D I A',
+  DIS: 'Disney',
+  DKNG: 'DraftKings',
+  ELF: 'e l f Beauty',
   ES: 'S and P futures',
-  XLK: 'X L K tech',
-  XLE: 'X L E energy',
-  XLF: 'X L F financials',
-  XLV: 'X L V healthcare',
-  XLRE: 'X L R E real estate',
-  XLI: 'X L I industrials',
-  XLU: 'X L U utilities',
-  XLB: 'X L B materials',
-  XLY: 'X L Y consumer discretionary',
-  XLP: 'X L P consumer staples',
+  ETH: 'Ethereum',
+  F: 'Ford',
+  FDX: 'FedEx',
+  GDX: 'gold miners',
+  GLD: 'gold',
+  GOOGL: 'Alphabet',
+  GS: 'Goldman Sachs',
+  HIMS: 'Hims and Hers',
+  HOOD: 'Robinhood',
+  IBM: 'I B M',
+  INTC: 'Intel',
+  IWM: 'I W M',
+  JNJ: 'Johnson and Johnson',
+  JPM: 'J P Morgan',
+  KO: 'Coca-Cola',
+  LLY: 'Eli Lilly',
+  LULU: 'Lululemon',
+  MCD: 'McDonald’s',
+  META: 'Meta',
+  MS: 'Morgan Stanley',
+  MSFT: 'Microsoft',
+  MU: 'Micron',
+  NEE: 'NextEra Energy',
+  NFLX: 'Netflix',
+  NKE: 'Nike',
+  NQ: 'Nasdaq futures',
+  NVDA: 'Nvidia',
+  OXY: 'Occidental',
+  PANW: 'Palo Alto Networks',
+  PDD: 'P D D',
+  PEP: 'Pepsi',
+  PLTR: 'Palantir',
+  PYPL: 'PayPal',
+  QCOM: 'Qualcomm',
+  QQQ: 'Q Q Q',
+  RBLX: 'Roblox',
+  RIOT: 'Riot Platforms',
+  RIVN: 'Rivian',
+  ROKU: 'Roku',
+  SHOP: 'Shopify',
+  SMCI: 'Super Micro',
+  SNAP: 'Snap',
+  SNOW: 'Snowflake',
+  SOFI: 'SoFi',
+  SPOT: 'Spotify',
+  SPY: 'S P Y',
+  SQ: 'Block',
+  TLT: 'T L T',
+  TMO: 'Thermo Fisher',
+  TSLA: 'Tesla',
+  UAL: 'United Airlines',
+  UNH: 'UnitedHealth',
+  V: 'Visa',
+  VRT: 'Vertiv',
+  WFC: 'Wells Fargo',
+  XLE: 'energy sector',
+  XLF: 'financials sector',
+  XLK: 'technology sector',
+  XLP: 'consumer staples sector',
+  XLRE: 'real estate sector',
+  XLU: 'utilities sector',
+  XLV: 'healthcare sector',
+  XLY: 'consumer discretionary sector',
+  XOM: 'Exxon',
+  ZM: 'Zoom',
+  ZS: 'Zscaler',
+
+  BTC: 'Bitcoin',
+  GC: 'gold futures',
+  OIL: 'oil',
+
   FOMC: 'the Fed',
   CPI: 'C P I',
   GDP: 'G D P',
@@ -58,13 +124,13 @@ const TICKER_MAP: Record<string, string> = {
 
 // ── TIME ZONES ────────────────────────────────────────────────────────────────
 const TIMEZONE_MAP: Record<string, string> = {
-  ET:  'Eastern time',
+  ET: 'Eastern time',
   EST: 'Eastern Standard Time',
   EDT: 'Eastern Daylight Time',
-  CT:  'Central time',
+  CT: 'Central time',
   CST: 'Central Standard Time',
-  MT:  'Mountain time',
-  PT:  'Pacific time',
+  MT: 'Mountain time',
+  PT: 'Pacific time',
   PST: 'Pacific Standard Time',
   PDT: 'Pacific Daylight Time',
   UTC: 'U T C',
@@ -76,18 +142,17 @@ function stripCommas(num: string): string {
   return num.replace(/,/g, '')
 }
 
-/**
- * Convert a plain integer into spoken English words.
- * 70600  → "seventy thousand six hundred"
- * 71000  → "seventy-one thousand"
- * 1000000 → "one million"
- */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 function spokenInteger(n: number): string {
   if (n === 0) return 'zero'
 
   const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
     'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen',
     'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen']
+
   const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty',
     'sixty', 'seventy', 'eighty', 'ninety']
 
@@ -107,9 +172,9 @@ function spokenInteger(n: number): string {
   const parts: string[] = []
   const scales = [
     { value: 1_000_000_000_000, name: 'trillion' },
-    { value: 1_000_000_000,     name: 'billion'  },
-    { value: 1_000_000,         name: 'million'  },
-    { value: 1_000,             name: 'thousand' },
+    { value: 1_000_000_000, name: 'billion' },
+    { value: 1_000_000, name: 'million' },
+    { value: 1_000, name: 'thousand' },
   ]
 
   let remaining = n
@@ -125,30 +190,18 @@ function spokenInteger(n: number): string {
   return parts.join(' ')
 }
 
-/**
- * Expand a numeric string (may include commas and decimals) into spoken form.
- * "70,600"  → "seventy thousand six hundred"
- * "70600"   → "seventy thousand six hundred"
- * "3.21"    → "three point 21"
- * "891.40"  → "eight hundred ninety-one point 40"
- */
 function expandDecimal(numStr: string): string {
   const clean = stripCommas(numStr)
   const [wholePart, fracPart] = clean.split('.')
   const wholeNum = parseInt(wholePart, 10)
   const wholeSpoken = spokenInteger(wholeNum)
+
   if (!fracPart) return wholeSpoken
+
   const trimmedFrac = fracPart.replace(/0+$/, '') || '0'
   return `${wholeSpoken} point ${trimmedFrac}`
 }
 
-/**
- * Expand a money expression — currency label always goes at the END.
- * "$70,600"  → "seventy thousand six hundred dollars"
- * "$70K"     → "seventy thousand dollars"
- * "$21.1B"   → "twenty-one point 1 billion dollars"
- * "48.2M"    → "forty-eight point 2 million"   (no $ = no "dollars")
- */
 function expandMoney(
   _match: string,
   dollar: string,
@@ -162,9 +215,11 @@ function expandMoney(
     M: 'million',
     K: 'thousand',
   }
+
   const suffixWord = suffix ? (suffixMap[suffix.toUpperCase()] ?? '') : ''
   const spoken = expandDecimal(numRaw)
   const full = suffixWord ? `${spoken} ${suffixWord}` : spoken
+
   return hasDollar ? `${full} dollars` : full
 }
 
@@ -172,6 +227,7 @@ function expandTime(match: string, h: string, m: string, period?: string): strin
   let hour = parseInt(h, 10)
   const minute = m ? parseInt(m, 10) : 0
   let ampm: string
+
   if (period) {
     ampm = period.toUpperCase().replace('AM', 'A M').replace('PM', 'P M')
   } else {
@@ -179,6 +235,7 @@ function expandTime(match: string, h: string, m: string, period?: string): strin
     if (hour > 12) hour -= 12
     if (hour === 0) hour = 12
   }
+
   const minuteStr = minute === 0 ? '' : ` ${minute < 10 ? 'oh ' + minute : minute}`
   return `${hour}${minuteStr} ${ampm}`
 }
@@ -191,79 +248,100 @@ function expandPercent(_match: string, sign: string, numRaw: string): string {
   return `${spoken} percent`
 }
 
+function buildMergedTickerMap(dynamicTickerMap?: Record<string, string>) {
+  return {
+    ...BUILTIN_TICKER_MAP,
+    ...(dynamicTickerMap || {}),
+  }
+}
+
 // ── MAIN NORMALIZER ───────────────────────────────────────────────────────────
 
-export function normalizeTTS(text: string): string {
+export function normalizeTTS(text: string, options: NormalizeTTSOptions = {}): string {
   let s = text
 
-  // 1. Expand known tickers — whole word only, before anything else
+  const TICKER_MAP = buildMergedTickerMap(options.tickerMap)
+
+  // 1. Convert numeric ranges to spoken "to" BEFORE any other number expansion
+  // ex: 50,000 - 60,000  -> fifty thousand to sixty thousand
+  s = s.replace(
+    /\b(\$?\d[\d,]*\.?\d*[TBMK]?)\s*[-–—]\s*(\$?\d[\d,]*\.?\d*[TBMK]?)\b/g,
+    (_match, left, right) => {
+      const expandSide = (value: string) => {
+        const m = value.match(/^(\$?)(\d[\d,]*\.?\d*)([TBMK]?)$/i)
+        if (!m) return value
+        const [, dollar, numRaw, suffix] = m
+        return expandMoney(value, dollar, numRaw, suffix)
+      }
+
+      return `${expandSide(left)} to ${expandSide(right)}`
+    }
+  )
+
+  // 2. Expand known tickers / watchlist names — whole word only
   for (const [ticker, spoken] of Object.entries(TICKER_MAP)) {
-    const re = new RegExp(`\\b${ticker}\\b`, 'g')
+    const re = new RegExp(`\\b${escapeRegExp(ticker)}\\b`, 'g')
     s = s.replace(re, spoken)
   }
 
-  // 2. Expand time zones — whole word
+  // 3. Expand time zones
   for (const [tz, spoken] of Object.entries(TIMEZONE_MAP)) {
-    const re = new RegExp(`\\b${tz}\\b`, 'g')
+    const re = new RegExp(`\\b${escapeRegExp(tz)}\\b`, 'g')
     s = s.replace(re, spoken)
   }
 
-  // 3. Normalize ± symbol
-  s = s.replace(/±/g, '±')
-
-  // 4. Expand percentages FIRST (before dollar/number passes)
+  // 4. Expand percentages first
   s = s.replace(/([+\-±]?)(\d[\d,]*\.?\d*)%/g, (match, sign, num) =>
     expandPercent(match, sign, num)
   )
 
-  // 5. Expand $amount with T/B/M/K suffix: $21.1B  $70K  $2.19T
+  // 5. Expand suffix money: $21.1B / $70K / 48.2M
   s = s.replace(/(\$?)(\d[\d,]*\.?\d*)([TBMK])\b/gi, (match, dollar, num, suffix) =>
     expandMoney(match, dollar, num, suffix)
   )
 
-  // 6. Expand $amount with commas: $70,600  $1,234,567.89
-  //    MUST be before plain $number so "$70,600" isn't matched as "$70" + ",600"
+  // 6. Expand comma-formatted dollar amounts
   s = s.replace(/\$(\d{1,3}(?:,\d{3})+(?:\.\d+)?)/g, (_match, num) =>
     `${expandDecimal(num)} dollars`
   )
 
-  // 7. Expand plain $decimal: $891.40  $5.59
+  // 7. Expand plain dollar decimals
   s = s.replace(/\$(\d+\.\d+)/g, (_match, num) => `${expandDecimal(num)} dollars`)
 
-  // 8. Expand plain $integer: $70  $100
+  // 8. Expand plain dollar integers
   s = s.replace(/\$(\d+)\b/g, (_match, num) => `${expandDecimal(num)} dollars`)
 
-  // 9. Expand comma-formatted standalone numbers not preceded by $: 70,600
+  // 9. Expand comma-formatted standalone numbers
   s = s.replace(/(?<!\$)\b(\d{1,3}(?:,\d{3})+)\b/g, (_match, num) =>
     expandDecimal(num)
   )
 
-  // 10. Expand 24-hour times: 14:00, 09:30 (not followed by AM/PM)
+  // 10. Expand 24-hour times
   s = s.replace(/\b([01]?\d|2[0-3]):([0-5]\d)(?!\s*[AaPp][Mm])\b/g, (match, h, m) =>
     expandTime(match, h, m)
   )
 
-  // 11. Expand 12-hour times with AM/PM: 9:30 AM, 2:00 PM
+  // 11. Expand 12-hour times
   s = s.replace(/\b(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)\b/g, (match, h, m, period) =>
     expandTime(match, h, m, period)
   )
 
-  // 12. Expand bare hour + AM/PM: "7 AM" → "7 A M"
+  // 12. Expand bare hour + AM/PM
   s = s.replace(/\b(\d{1,2})\s*(AM|PM)\b/g, (_, h, period) => {
     const spoken = period.toUpperCase().replace('AM', 'A M').replace('PM', 'P M')
     return `${h} ${spoken}`
   })
 
-  // 13. Expand basis points: 49bp / 49bps
+  // 13. Basis points
   s = s.replace(/\b(\d+)\s*bps?\b/gi, (_, n) => `${n} basis points`)
 
-  // 14. Arrow symbols to words
+  // 14. Arrow symbols
   s = s.replace(/▲/g, 'up')
   s = s.replace(/▼/g, 'down')
   s = s.replace(/→/g, '')
   s = s.replace(/←/g, '')
 
-  // 15. Clean up double spaces
+  // 15. Cleanup
   s = s.replace(/  +/g, ' ').trim()
 
   return s

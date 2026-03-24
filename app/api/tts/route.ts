@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server'
 import { normalizeTTS } from '@/lib/tts-normalize'
 
+type WatchlistItem = {
+  ticker?: string
+  company_name?: string
+}
+
 export async function POST(req: Request) {
   try {
-    const { text } = await req.json()
+    const { text, watchlist = [] } = await req.json()
 
     if (!text || typeof text !== 'string') {
       return NextResponse.json({ error: 'Missing text' }, { status: 400 })
@@ -20,9 +25,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing ELEVENLABS_VOICE_ID' }, { status: 500 })
     }
 
+    const dynamicTickerMap = Object.fromEntries(
+      (watchlist as WatchlistItem[])
+        .filter((w) => w?.ticker && w?.company_name)
+        .map((w) => [String(w.ticker).toUpperCase(), String(w.company_name)])
+    )
+
     // Normalize BEFORE trimming so normalizeTTS sees the full context,
     // then trim + cap length after.
-    const normalized = normalizeTTS(text)
+    const normalized = normalizeTTS(text, {
+      tickerMap: dynamicTickerMap,
+    })
     const trimmed = normalized.trim().slice(0, 2500)
 
     const elevenRes = await fetch(
@@ -36,13 +49,10 @@ export async function POST(req: Request) {
         },
         body: JSON.stringify({
           text: trimmed,
-          // eleven_turbo_v2_5 handles numbers and decimals better than flash
           model_id: 'eleven_turbo_v2_5',
           output_format: 'mp3_44100_128',
           voice_settings: {
             stability: 0.5,
-            // Lowered from 0.8 → 0.65: high similarity boost causes ElevenLabs
-            // to "stylize" delivery in ways that mangle numbers and abbreviations.
             similarity_boost: 0.65,
             style: 0.2,
             use_speaker_boost: true,
