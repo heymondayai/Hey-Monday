@@ -178,7 +178,7 @@ await routeUser(user.id, user.email ?? '')
       mounted = false
       clearTimeout(timeout)
     }
-  }, [supabase])
+  }, [supabase, forceAccountChooser])
 
   async function handleGoogleLogin() {
   setGoogleLoading(true)

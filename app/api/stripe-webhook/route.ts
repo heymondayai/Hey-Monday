@@ -53,6 +53,7 @@ await admin
     trial_ends_at: toIso(stripeSub.trial_end),
     current_period_end: toIso(stripeSub.current_period_end),
     cancel_at_period_end: stripeSub.cancel_at_period_end,
+    trial_used: true,
   })
   .eq('id', supabaseUserId)
 }

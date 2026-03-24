@@ -37,9 +37,11 @@ export async function POST(req: NextRequest) {
 
     const { data: profile, error: profileError } = await admin
       .from('profiles')
-      .select('id, email, full_name, stripe_customer_id, trader_type, onboarding_complete')
+      .select('id, email, full_name, stripe_customer_id, trader_type, onboarding_complete, trial_used')
       .eq('id', user.id)
       .maybeSingle()
+
+    const hasUsedTrial = !!profile?.trial_used
 
     if (profileError) {
       return NextResponse.json({ error: profileError.message }, { status: 500 })
@@ -111,10 +113,10 @@ export async function POST(req: NextRequest) {
         enabled: false,
       },
       subscription_data: {
-        trial_period_days: 5,
+      ...(hasUsedTrial ? {} : { trial_period_days: 5 }),
         metadata: {
-          supabase_user_id: user.id,
-          billing,
+        supabase_user_id: user.id,
+        billing,
         },
       },
       metadata: {
