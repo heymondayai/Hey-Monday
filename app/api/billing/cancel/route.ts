@@ -47,21 +47,23 @@ export async function POST(req: NextRequest) {
       profile.stripe_subscription_id
     )
 
+    const stripeSub = subscription as any
+
     const currentPeriodEnd =
-      subscription.current_period_end
-        ? new Date(subscription.current_period_end * 1000).toISOString()
+      stripeSub.current_period_end
+        ? new Date(stripeSub.current_period_end * 1000).toISOString()
         : null
 
     const trialEndsAt =
-      subscription.trial_end
-        ? new Date(subscription.trial_end * 1000).toISOString()
+      stripeSub.trial_end
+        ? new Date(stripeSub.trial_end * 1000).toISOString()
         : null
 
     const { error: updateError } = await admin
       .from('profiles')
       .update({
-        subscription_status: subscription.status,
-        cancel_at_period_end: subscription.cancel_at_period_end,
+        subscription_status: stripeSub.status,
+        cancel_at_period_end: stripeSub.cancel_at_period_end,
         current_period_end: currentPeriodEnd,
         trial_ends_at: trialEndsAt,
       })
@@ -73,8 +75,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      cancel_at_period_end: subscription.cancel_at_period_end,
-      subscription_status: subscription.status,
+      cancel_at_period_end: stripeSub.cancel_at_period_end,
+      subscription_status: stripeSub.status,
       current_period_end: currentPeriodEnd,
       trial_ends_at: trialEndsAt,
     })
