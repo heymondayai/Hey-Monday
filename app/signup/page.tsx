@@ -630,7 +630,7 @@ function SignupPageInner() {
         </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 12, color: T.text3 }}>Already have an account?</span>
-          <Link href="/login" style={{ textDecoration: 'none', fontSize: 11, fontWeight: 600, color: T.text2, padding: '6px 14px', border: `1px solid ${T.border2}`, letterSpacing: '0.08em', borderRadius: 4 }}>Log In</Link>
+          <Link href="/login?switch=1" style={{ textDecoration: 'none', fontSize: 11, fontWeight: 600, color: T.text2, padding: '6px 14px', border: `1px solid ${T.border2}`, letterSpacing: '0.08em', borderRadius: 4 }}>Log In</Link>
         </div>
       </nav>
 
