@@ -22,18 +22,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const billing = String(body?.billing || 'monthly')
 
-    const monthlyPriceId = process.env.STRIPE_PRICE_MONTHLY_ID
-    const annualPriceId = process.env.STRIPE_PRICE_ANNUAL_ID
+    const monthlyPriceId = process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY
+    const annualPriceId = process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL
 
     if (!monthlyPriceId || !annualPriceId) {
-      return NextResponse.json(
-        { error: 'Stripe price IDs are not configured.' },
-        { status: 500 }
-      )
+  return NextResponse.json(
+    { error: 'Stripe price IDs are not configured.' },
+    { status: 500 }
+  )
     }
 
     const priceId =
-      billing === 'annual' ? annualPriceId : monthlyPriceId
+    billing === 'annual' ? annualPriceId : monthlyPriceId
 
     const { data: profile, error: profileError } = await admin
       .from('profiles')
