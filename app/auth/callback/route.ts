@@ -36,25 +36,29 @@ export async function GET(request: NextRequest) {
   )
 
   async function routeUser(userId: string, userEmail: string) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('trader_type, onboarding_complete, stripe_subscription_id')
-      .eq('id', userId)
-      .maybeSingle()
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('trader_type, onboarding_complete, stripe_subscription_id, subscription_status')
+    .eq('id', userId)
+    .maybeSingle()
 
-    if (!profile?.stripe_subscription_id) {
-      const url = new URL('/signup', origin)
-      url.searchParams.set('confirmed', '1')
-      url.searchParams.set('email', userEmail)
-      return NextResponse.redirect(url)
-    }
+  const hasPaidAccess =
+    !!profile?.stripe_subscription_id &&
+    ['trialing', 'active'].includes(profile?.subscription_status ?? '')
 
-    if (!profile?.trader_type || !profile?.onboarding_complete) {
-      return NextResponse.redirect(new URL('/onboarding', origin))
-    }
-
-    return NextResponse.redirect(new URL('/dashboard', origin))
+  if (!hasPaidAccess) {
+    const url = new URL('/signup', origin)
+    url.searchParams.set('confirmed', '1')
+    url.searchParams.set('email', userEmail)
+    return NextResponse.redirect(url)
   }
+
+  if (!profile?.trader_type || !profile?.onboarding_complete) {
+    return NextResponse.redirect(new URL('/onboarding', origin))
+  }
+
+  return NextResponse.redirect(new URL('/dashboard', origin))
+}
 
   if (code) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code)

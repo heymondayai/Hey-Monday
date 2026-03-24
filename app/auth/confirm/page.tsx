@@ -10,22 +10,28 @@ export default function AuthConfirmPage() {
 
   useEffect(() => {
     async function routeUser(userId: string, userEmail: string) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('trader_type, onboarding_complete, stripe_subscription_id')
-        .eq('id', userId)
-        .maybeSingle()
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('trader_type, onboarding_complete, stripe_subscription_id, subscription_status')
+    .eq('id', userId)
+    .maybeSingle()
 
-      if (!profile?.stripe_subscription_id) {
-        router.replace(`/signup?confirmed=1&email=${encodeURIComponent(userEmail)}`)
-        return
-      }
-      if (!profile?.trader_type || !profile?.onboarding_complete) {
-        router.replace('/onboarding')
-        return
-      }
-      router.replace('/dashboard')
-    }
+  const hasPaidAccess =
+    !!profile?.stripe_subscription_id &&
+    ['trialing', 'active'].includes(profile?.subscription_status ?? '')
+
+  if (!hasPaidAccess) {
+    router.replace(`/signup?confirmed=1&email=${encodeURIComponent(userEmail)}`)
+    return
+  }
+
+  if (!profile?.trader_type || !profile?.onboarding_complete) {
+    router.replace('/onboarding')
+    return
+  }
+
+  router.replace('/dashboard')
+}
 
     // onAuthStateChange is the ONLY reliable way to catch implicit flow tokens
     const { data: { subscription } } = supabase.auth.onAuthStateChange(

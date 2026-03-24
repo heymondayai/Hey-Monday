@@ -111,24 +111,28 @@ function LoginPageContent() {
   }, [loginError])
 
   async function routeUser(userId: string, userEmail: string) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('trader_type, onboarding_complete, stripe_subscription_id')
-      .eq('id', userId)
-      .maybeSingle()
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('trader_type, onboarding_complete, stripe_subscription_id, subscription_status')
+    .eq('id', userId)
+    .maybeSingle()
 
-    if (!profile?.stripe_subscription_id) {
-      window.location.href = `/signup?confirmed=1&email=${encodeURIComponent(userEmail)}`
-      return
-    }
+  const hasPaidAccess =
+    !!profile?.stripe_subscription_id &&
+    ['trialing', 'active'].includes(profile?.subscription_status ?? '')
 
-    if (!profile?.trader_type || !profile?.onboarding_complete) {
-      window.location.href = '/onboarding'
-      return
-    }
-
-    window.location.href = '/dashboard'
+  if (!hasPaidAccess) {
+    window.location.href = `/signup?confirmed=1&email=${encodeURIComponent(userEmail)}`
+    return
   }
+
+  if (!profile?.trader_type || !profile?.onboarding_complete) {
+    window.location.href = '/onboarding'
+    return
+  }
+
+  window.location.href = '/dashboard'
+}
 
   useEffect(() => {
     let mounted = true
