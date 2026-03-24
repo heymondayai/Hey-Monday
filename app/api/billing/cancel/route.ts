@@ -39,16 +39,17 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const subscription = await stripe.subscriptions.update(
-      profile.stripe_subscription_id,
-      {
-        cancel_at_period_end: cancelAtPeriodEnd,
-      }
+    await stripe.subscriptions.update(profile.stripe_subscription_id, {
+      cancel_at_period_end: cancelAtPeriodEnd,
+    })
+
+    const subscription = await stripe.subscriptions.retrieve(
+      profile.stripe_subscription_id
     )
 
     const currentPeriodEnd =
-      subscription.items.data[0]?.current_period_end
-        ? new Date(subscription.items.data[0].current_period_end * 1000).toISOString()
+      subscription.current_period_end
+        ? new Date(subscription.current_period_end * 1000).toISOString()
         : null
 
     const trialEndsAt =

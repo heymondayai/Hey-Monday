@@ -4,20 +4,9 @@ import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { loadStripe } from '@stripe/stripe-js'
-import {
-  Elements,
-  CardNumberElement,
-  CardExpiryElement,
-  CardCvcElement,
-  useStripe,
-  useElements,
-} from '@stripe/react-stripe-js'
 import { useTheme } from '@/app/context/theme-context'
 
 const supabase = createClient()
-
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
 
 const DARK = {
   pageBg: '#0a0a08', bg2: '#120f07', bg3: '#181208', bg4: '#1c1608',
@@ -34,7 +23,6 @@ const DARK = {
   errBg: 'rgba(201,66,66,.08)', errBorder: 'rgba(201,66,66,.25)',
   successBg: 'rgba(74,222,128,.06)', successBorder: 'rgba(74,222,128,.2)', successText: '#4ade80',
   googleBg: '#120f07', googleBorder: '#3a3420', googleText: '#d4c5a0',
-  stripeFieldBg: '#0d0b07', stripeFieldBorder: '#2a2618',
   checkBg: 'rgba(201,146,42,.04)', checkBorder: 'rgba(201,146,42,.15)',
 }
 
@@ -53,7 +41,6 @@ const LIGHT = {
   errBg: 'rgba(184,50,50,.06)', errBorder: 'rgba(184,50,50,.3)',
   successBg: 'rgba(74,222,128,.06)', successBorder: 'rgba(74,222,128,.3)', successText: '#15803d',
   googleBg: '#faf7f0', googleBorder: '#c8b898', googleText: '#2a1f0e',
-  stripeFieldBg: '#faf7f0', stripeFieldBorder: '#c8b898',
   checkBg: 'rgba(160,104,24,.04)', checkBorder: 'rgba(160,104,24,.18)',
 }
 
@@ -66,7 +53,7 @@ const PLAN_FEATURES = [
   'Morning & EOD spoken briefings',
 ]
 
-type Field = 'email' | 'password' | 'name' | 'cardName' | 'zip'
+type Field = 'email' | 'password' | 'name'
 
 function GoogleIcon() {
   return (
@@ -113,14 +100,16 @@ function EyeOff({ color }: { color: string }) {
   )
 }
 
-function SignupForm({ isDark, billing, setBilling }: {
+function SignupForm({
+  isDark,
+  billing,
+  setBilling,
+}: {
   isDark: boolean
   billing: 'monthly' | 'annual'
   setBilling: (b: 'monthly' | 'annual') => void
 }) {
   const T = isDark ? DARK : LIGHT
-  const stripe = useStripe()
-  const elements = useElements()
   const searchParams = useSearchParams()
 
   const confirmedParam = searchParams.get('confirmed') === '1'
@@ -134,13 +123,10 @@ function SignupForm({ isDark, billing, setBilling }: {
   const [error, setError] = useState('')
   const [focused, setFocused] = useState<Field | null>(null)
   const [form, setForm] = useState({
-  name: '',
-  email: '',
-  password: '',
-  cardName: '',
-  zip: '',
-})
-  const [cardFocused, setCardFocused] = useState<string | null>(null)
+    name: '',
+    email: '',
+    password: '',
+  })
 
   useEffect(() => {
     if (confirmedParam && emailParam) {
@@ -150,254 +136,112 @@ function SignupForm({ isDark, billing, setBilling }: {
     }
   }, [confirmedParam, emailParam])
 
-  const priceId = billing === 'monthly'
-    ? process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY!
-    : process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL!
-
   const chargeDate = (() => {
-    const d = new Date(); d.setDate(d.getDate() + 5)
+    const d = new Date()
+    d.setDate(d.getDate() + 5)
     return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
   })()
 
   function set(field: Field, val: string) {
-    setError(''); setForm(f => ({ ...f, [field]: val }))
+    setError('')
+    setForm(f => ({ ...f, [field]: val }))
   }
 
-  // Google signup — redirects to /auth/callback
   async function handleGoogleSignup() {
-  setGoogleLoading(true)
-  setError('')
+    setGoogleLoading(true)
+    setError('')
 
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: `${window.location.origin}/auth/callback`,
-    },
-  })
-
-  if (error) {
-    setError(error.message)
-    setGoogleLoading(false)
-  }
-}
-
-async function handleStep1(e: React.FormEvent) {
-  e.preventDefault()
-
-  if (!form.name.trim()) {
-    setError('Full name is required')
-    return
-  }
-
-  if (!form.email.trim() || !form.email.includes('@')) {
-    setError('Valid email required')
-    return
-  }
-
-  if (form.password.length < 8) {
-    setError('Password must be at least 8 characters')
-    return
-  }
-
-  setLoading(true)
-  setError('')
-
-  const { error: signUpErr } = await supabase.auth.signUp({
-    email: form.email.trim(),
-    password: form.password,
-    options: {
-      data: {
-        full_name: form.name.trim(),
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
       },
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
-    },
-  })
+    })
 
-  if (signUpErr) {
-    const msg = signUpErr.message.toLowerCase()
+    if (error) {
+      setError(error.message)
+      setGoogleLoading(false)
+    }
+  }
 
-    if (msg.includes('already') || msg.includes('registered')) {
-      setError('An account with this email already exists. Please log in.')
-    } else {
-      setError(signUpErr.message)
+  async function handleStep1(e: React.FormEvent) {
+    e.preventDefault()
+
+    if (!form.name.trim()) {
+      setError('Full name is required')
+      return
     }
 
+    if (!form.email.trim() || !form.email.includes('@')) {
+      setError('Valid email required')
+      return
+    }
+
+    if (form.password.length < 8) {
+      setError('Password must be at least 8 characters')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    const { error: signUpErr } = await supabase.auth.signUp({
+      email: form.email.trim(),
+      password: form.password,
+      options: {
+        data: {
+          full_name: form.name.trim(),
+        },
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    })
+
+    if (signUpErr) {
+      const msg = signUpErr.message.toLowerCase()
+
+      if (msg.includes('already') || msg.includes('registered')) {
+        setError('An account with this email already exists. Please log in.')
+      } else {
+        setError(signUpErr.message)
+      }
+
+      setLoading(false)
+      return
+    }
+
+    await supabase.auth.signOut()
+    setEmailSent(true)
     setLoading(false)
-    return
   }
 
-  await supabase.auth.signOut()
-  setEmailSent(true)
-  setLoading(false)
-}
+  async function handleSecureCheckout() {
+    try {
+      setError('')
+      setLoading(true)
 
-  async function handleStep2(e: React.FormEvent) {
-  e.preventDefault()
+      const billingMode = billing === 'annual' ? 'annual' : 'monthly'
 
-  if (!stripe || !elements) {
-    setError('Stripe not loaded — please refresh.')
-    return
-  }
-
-  const cardNumber = elements.getElement(CardNumberElement)
-  if (!cardNumber) {
-    setError('Card input missing — please refresh.')
-    return
-  }
-
-  const typedCardName = form.cardName.trim()
-  const typedZip = form.zip.trim()
-
-  if (!typedCardName) {
-    setError('Name on card is required.')
-    return
-  }
-
-  if (!typedZip) {
-    setError('Billing ZIP code is required.')
-    return
-  }
-
-  const { data: { session } } = await supabase.auth.getSession()
-  const isGoogleUser = session?.user?.app_metadata?.provider === 'google'
-
-  if (!isGoogleUser && !form.password) {
-    setError('Please enter your password to continue.')
-    return
-  }
-
-  setLoading(true)
-  setError('')
-
-  try {
-    let userId: string
-    let userEmail: string
-    let userName: string
-
-    if (session?.user) {
-      userId = session.user.id
-      userEmail = session.user.email ?? form.email
-
-      userName =
-        form.name.trim() ||
-        session.user.user_metadata?.full_name ||
-        session.user.user_metadata?.name ||
-        [
-          session.user.user_metadata?.given_name,
-          session.user.user_metadata?.family_name,
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .trim() ||
-        typedCardName
-    } else {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: form.email.trim(),
-        password: form.password,
+      const res = await fetch('/api/billing/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billing: billingMode }),
       })
 
-      if (error || !data.user) {
-        throw new Error('Incorrect password. Please try again.')
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Could not start secure checkout.')
       }
 
-      userId = data.user.id
-      userEmail = data.user.email ?? form.email
-
-      userName =
-        form.name.trim() ||
-        data.user.user_metadata?.full_name ||
-        data.user.user_metadata?.name ||
-        [
-          data.user.user_metadata?.given_name,
-          data.user.user_metadata?.family_name,
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .trim() ||
-        typedCardName
-    }
-
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .upsert(
-        {
-          id: userId,
-          email: userEmail,
-          full_name: userName,
-          billing_zip: typedZip,
-        },
-        { onConflict: 'id' }
-      )
-
-    if (profileError) {
-      console.error('Profile upsert error:', profileError.message)
-    }
-
-    const { paymentMethod, error: pmErr } = await stripe.createPaymentMethod({
-      type: 'card',
-      card: cardNumber,
-      billing_details: {
-        name: typedCardName,
-        email: userEmail,
-        address: {
-          postal_code: typedZip,
-        },
-      },
-    })
-
-    if (pmErr || !paymentMethod) {
-      throw new Error(pmErr?.message ?? 'Card error')
-    }
-
-    const res = await fetch('/api/create-subscription', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: userEmail,
-        name: userName,
-        cardholderName: typedCardName,
-        zip: typedZip,
-        paymentMethodId: paymentMethod.id,
-        priceId,
-        billing,
-      }),
-    })
-
-    const data = await res.json().catch(() => ({}))
-
-    if (!res.ok) {
-      throw new Error(data.error ?? 'Subscription failed')
-    }
-
-    if (data.clientSecret) {
-      const { error: confirmErr } = await stripe.confirmCardPayment(
-        data.clientSecret,
-        { payment_method: paymentMethod.id }
-      )
-
-      if (confirmErr) {
-        throw new Error(confirmErr.message ?? 'Payment confirmation failed')
+      if (!data.url) {
+        throw new Error('No checkout URL returned.')
       }
+
+      window.location.href = data.url
+    } catch (err: any) {
+      setError(err.message || 'Could not start secure checkout.')
+      setLoading(false)
     }
-
-    window.location.href = '/onboarding'
-  } catch (err: any) {
-    setError(err.message ?? 'Unexpected error')
-    setLoading(false)
-  }
-}
-
-  const stripeElementStyle = {
-    style: {
-      base: {
-        color: T.text,
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: '14px',
-        '::placeholder': { color: T.text3 },
-        iconColor: T.text2,
-      },
-      invalid: { color: T.red, iconColor: T.red },
-    },
   }
 
   const inputStyle = (field: Field): React.CSSProperties => ({
@@ -413,20 +257,14 @@ async function handleStep1(e: React.FormEvent) {
     transition: 'border-color 0.15s',
   })
 
-  const stripeFieldStyle = (name: string): React.CSSProperties => ({
-    background: T.stripeFieldBg,
-    border: `1px solid ${cardFocused === name ? T.inputFocus : T.stripeFieldBorder}`,
-    padding: '12px 14px',
-    borderRadius: 4,
-    transition: 'border-color 0.15s',
-  })
-
   const labelStyle: React.CSSProperties = {
-    display: 'block', fontSize: 12, fontWeight: 500,
-    color: T.text2, marginBottom: 6,
+    display: 'block',
+    fontSize: 12,
+    fontWeight: 500,
+    color: T.text2,
+    marginBottom: 6,
   }
 
-  // Check if user is a Google user on step 2
   const [isGoogleUser, setIsGoogleUser] = useState(false)
   useEffect(() => {
     if (step === 2) {
@@ -438,8 +276,6 @@ async function handleStep1(e: React.FormEvent) {
 
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
-
-      {/* CHECK EMAIL */}
       {step === 1 && emailSent && (
         <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ background: T.checkBg, border: `1px solid ${T.checkBorder}`, padding: '32px 24px', textAlign: 'center', borderRadius: 8 }}>
@@ -453,33 +289,79 @@ async function handleStep1(e: React.FormEvent) {
           <div style={{ background: T.bg2, border: `1px solid ${T.border}`, padding: '12px 16px', fontSize: 12, color: T.text3, lineHeight: 1.6, borderRadius: 4 }}>
             💡 Check spam if you don't see it within a minute.
           </div>
-          <button onClick={() => { setEmailSent(false); setError('') }}
-            style={{ background: 'transparent', border: `1px solid ${T.border2}`, color: T.text3, padding: '11px', fontSize: 12, cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace", borderRadius: 4 }}>
+          <button
+            onClick={() => {
+              setEmailSent(false)
+              setError('')
+            }}
+            style={{ background: 'transparent', border: `1px solid ${T.border2}`, color: T.text3, padding: '11px', fontSize: 12, cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace", borderRadius: 4 }}
+          >
             ← Use a different email
           </button>
         </div>
       )}
 
-      {/* STEP 1: ACCOUNT */}
       {step === 1 && !emailSent && (
         <div className="fade-up">
           <div style={{ marginBottom: 28 }}>
             <div style={{ fontSize: 11, letterSpacing: '0.18em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 10 }}>Choose your plan</div>
             <div style={{ display: 'flex', background: T.bg2, border: `1px solid ${T.border2}`, padding: 3, gap: 3, borderRadius: 6 }}>
               {(['monthly', 'annual'] as const).map(b => (
-                <div key={b} onClick={() => setBilling(b)}
-                  style={{ flex: 1, padding: '10px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: billing === b ? T.bg4 : 'transparent', color: billing === b ? T.heading : T.text3, border: billing === b ? `1px solid ${T.border2}` : '1px solid transparent', borderRadius: 4, transition: 'all .15s', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <div
+                  key={b}
+                  onClick={() => setBilling(b)}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: billing === b ? T.bg4 : 'transparent',
+                    color: billing === b ? T.heading : T.text3,
+                    border: billing === b ? `1px solid ${T.border2}` : '1px solid transparent',
+                    borderRadius: 4,
+                    transition: 'all .15s',
+                    textAlign: 'center',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                  }}
+                >
                   {b === 'monthly' ? '$79.99/mo' : '$66.66/mo'}
-                  {b === 'annual' && <span style={{ fontSize: 9, padding: '1px 6px', background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, color: T.gold, borderRadius: 3 }}>SAVE 17%</span>}
+                  {b === 'annual' && (
+                    <span style={{ fontSize: 9, padding: '1px 6px', background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, color: T.gold, borderRadius: 3 }}>
+                      SAVE 17%
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
             {billing === 'annual' && <div style={{ marginTop: 8, fontSize: 11, color: T.gold }}>Billed as $799.92/year — save $159.96</div>}
           </div>
 
-          {/* Google — redirects to /login which handles the implicit hash */}
-          <button onClick={handleGoogleSignup} disabled={googleLoading}
-            style={{ width: '100%', background: T.googleBg, border: `1px solid ${T.googleBorder}`, color: T.googleText, padding: '12px 16px', fontSize: 14, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 4, marginBottom: 16, fontFamily: 'system-ui, sans-serif', opacity: googleLoading ? 0.7 : 1 }}>
+          <button
+            onClick={handleGoogleSignup}
+            disabled={googleLoading}
+            style={{
+              width: '100%',
+              background: T.googleBg,
+              border: `1px solid ${T.googleBorder}`,
+              color: T.googleText,
+              padding: '12px 16px',
+              fontSize: 14,
+              fontWeight: 500,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+              borderRadius: 4,
+              marginBottom: 16,
+              fontFamily: 'system-ui, sans-serif',
+              opacity: googleLoading ? 0.7 : 1,
+            }}
+          >
             <GoogleIcon />
             {googleLoading ? 'Redirecting…' : 'Continue with Google'}
           </button>
@@ -495,37 +377,100 @@ async function handleStep1(e: React.FormEvent) {
 
             <div>
               <label style={labelStyle}>Full name</label>
-              <input style={inputStyle('name')} type="text" placeholder="Jane Smith" value={form.name}
-                onChange={e => set('name', e.target.value)} onFocus={() => setFocused('name')} onBlur={() => setFocused(null)} autoComplete="name" />
+              <input
+                style={inputStyle('name')}
+                type="text"
+                placeholder="Jane Smith"
+                value={form.name}
+                onChange={e => set('name', e.target.value)}
+                onFocus={() => setFocused('name')}
+                onBlur={() => setFocused(null)}
+                autoComplete="name"
+              />
             </div>
             <div>
               <label style={labelStyle}>Email address</label>
-              <input style={inputStyle('email')} type="email" placeholder="you@example.com" value={form.email}
-                onChange={e => set('email', e.target.value)} onFocus={() => setFocused('email')} onBlur={() => setFocused(null)} autoComplete="email" />
+              <input
+                style={inputStyle('email')}
+                type="email"
+                placeholder="you@example.com"
+                value={form.email}
+                onChange={e => set('email', e.target.value)}
+                onFocus={() => setFocused('email')}
+                onBlur={() => setFocused(null)}
+                autoComplete="email"
+              />
             </div>
             <div>
               <label style={labelStyle}>Password</label>
               <div style={{ position: 'relative' }}>
-                <input style={{ ...inputStyle('password'), paddingRight: 44 }} type={showPass ? 'text' : 'password'} placeholder="Min. 8 characters" value={form.password}
-                  onChange={e => set('password', e.target.value)} onFocus={() => setFocused('password')} onBlur={() => setFocused(null)} autoComplete="new-password" />
-                <button type="button" onClick={() => setShowPass(s => !s)}
-                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', background: 'none', border: 'none', padding: 4, display: 'flex', alignItems: 'center', opacity: 0.6 }}>
+                <input
+                  style={{ ...inputStyle('password'), paddingRight: 44 }}
+                  type={showPass ? 'text' : 'password'}
+                  placeholder="Min. 8 characters"
+                  value={form.password}
+                  onChange={e => set('password', e.target.value)}
+                  onFocus={() => setFocused('password')}
+                  onBlur={() => setFocused(null)}
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass(s => !s)}
+                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', background: 'none', border: 'none', padding: 4, display: 'flex', alignItems: 'center', opacity: 0.6 }}
+                >
                   {showPass ? <EyeOff color={T.text2} /> : <EyeOpen color={T.text2} />}
                 </button>
               </div>
               {form.password && (
                 <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 3 }}>
-                  {[1,2,3,4].map(i => (
-                    <div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: form.password.length >= i * 3 ? (form.password.length >= 12 ? T.gold : T.amber) : T.border2, transition: 'background 0.2s' }} />
+                  {[1, 2, 3, 4].map(i => (
+                    <div
+                      key={i}
+                      style={{
+                        flex: 1,
+                        height: 3,
+                        borderRadius: 2,
+                        background: form.password.length >= i * 3 ? (form.password.length >= 12 ? T.gold : T.amber) : T.border2,
+                        transition: 'background 0.2s',
+                      }}
+                    />
                   ))}
-                  <span style={{ fontSize: 10, color: T.text3, marginLeft: 6 }}>{form.password.length < 8 ? 'Weak' : form.password.length < 12 ? 'Good' : 'Strong'}</span>
+                  <span style={{ fontSize: 10, color: T.text3, marginLeft: 6 }}>
+                    {form.password.length < 8 ? 'Weak' : form.password.length < 12 ? 'Good' : 'Strong'}
+                  </span>
                 </div>
               )}
             </div>
 
-            <button type="submit" disabled={loading}
-              style={{ width: '100%', background: loading ? T.goldDim : T.gold, color: T.btnText, padding: '13px', fontWeight: 700, fontSize: 14, border: 'none', cursor: loading ? 'default' : 'pointer', fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 4, marginTop: 4, transition: 'background 0.2s' }}>
-              {loading ? <><span style={{ width: 14, height: 14, border: `2px solid ${T.btnText}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />Sending confirmation…</> : 'Continue →'}
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                width: '100%',
+                background: loading ? T.goldDim : T.gold,
+                color: T.btnText,
+                padding: '13px',
+                fontWeight: 700,
+                fontSize: 14,
+                border: 'none',
+                cursor: loading ? 'default' : 'pointer',
+                fontFamily: "'JetBrains Mono', monospace",
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                borderRadius: 4,
+                marginTop: 4,
+                transition: 'background 0.2s',
+              }}
+            >
+              {loading ? (
+                <>
+                  <span style={{ width: 14, height: 14, border: `2px solid ${T.btnText}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
+                  Sending confirmation…
+                </>
+              ) : 'Continue →'}
             </button>
 
             <div style={{ fontSize: 12, color: T.text3, lineHeight: 1.6, textAlign: 'center' }}>
@@ -537,13 +482,12 @@ async function handleStep1(e: React.FormEvent) {
         </div>
       )}
 
-      {/* STEP 2: PAYMENT */}
       {step === 2 && (
-        <form onSubmit={handleStep2} className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <div style={{ background: T.successBg, border: `1px solid ${T.successBorder}`, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, borderRadius: 4 }}>
-            <span style={{ fontSize: 16 }}></span>
+            <span style={{ fontSize: 16 }} />
             <div style={{ fontSize: 13, color: T.successText, fontWeight: 500 }}>
-              {isGoogleUser ? 'Google account connected! Add payment details below.' : 'Email confirmed! Add your payment details below.'}
+              {isGoogleUser ? 'Google account connected! Continue to secure checkout below.' : 'Email confirmed! Continue to secure checkout below.'}
             </div>
           </div>
 
@@ -559,79 +503,77 @@ async function handleStep1(e: React.FormEvent) {
 
           {error && <div style={{ background: T.errBg, border: `1px solid ${T.errBorder}`, color: T.red, padding: '11px 14px', fontSize: 13, borderRadius: 4 }}>⚠ {error}</div>}
 
-          {/* Only show password field for email users, not Google users */}
-          {!isGoogleUser && (
-            <div>
-              <label style={labelStyle}>Confirm your password</label>
-              <div style={{ position: 'relative' }}>
-                <input style={{ ...inputStyle('password'), paddingRight: 44 }} type={showPass ? 'text' : 'password'} placeholder="Re-enter your password"
-                  value={form.password} onChange={e => set('password', e.target.value)}
-                  onFocus={() => setFocused('password')} onBlur={() => setFocused(null)} autoComplete="current-password" />
-                <button type="button" onClick={() => setShowPass(s => !s)}
-                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', background: 'none', border: 'none', padding: 4, display: 'flex', alignItems: 'center', opacity: 0.6 }}>
-                  {showPass ? <EyeOff color={T.text2} /> : <EyeOpen color={T.text2} />}
-                </button>
-              </div>
+          <div style={{
+            background: T.bg2,
+            border: `1px solid ${T.border}`,
+            padding: '20px',
+            marginBottom: 4,
+            borderRadius: 6,
+          }}>
+            <div style={{
+              color: T.successText,
+              marginBottom: 10,
+              fontSize: 12,
+              fontWeight: 600,
+            }}>
+              ✓ Payment is handled on secure Stripe checkout
             </div>
-          )}
 
-          <div>
-  <label style={labelStyle}>Name on card</label>
-  <input
-    style={inputStyle('cardName')}
-    type="text"
-    placeholder="Jane Smith"
-    value={form.cardName}
-    onChange={e => set('cardName', e.target.value)}
-    onFocus={() => setFocused('cardName')}
-    onBlur={() => setFocused(null)}
-    autoComplete="cc-name"
-  />
-</div>
+            <div style={{
+              color: T.text2,
+              fontSize: 13,
+              lineHeight: 1.7,
+              marginBottom: 14,
+            }}>
+              You’ll be redirected to Stripe to start your 5-day free trial securely.
+              Your card won’t be charged today.
+            </div>
 
-<div>
-  <label style={labelStyle}>Billing ZIP code</label>
-  <input
-    style={inputStyle('zip')}
-    type="text"
-    inputMode="numeric"
-    placeholder="85016"
-    value={form.zip}
-    onChange={e => set('zip', e.target.value)}
-    onFocus={() => setFocused('zip')}
-    onBlur={() => setFocused(null)}
-    autoComplete="postal-code"
-  />
-</div>
-
-          <div>
-            <label style={labelStyle}>Card number</label>
-            <div style={stripeFieldStyle('number')}>
-              <CardNumberElement options={{ ...stripeElementStyle, showIcon: true }} onFocus={() => setCardFocused('number')} onBlur={() => setCardFocused(null)} />
+            <div style={{
+              color: T.text3,
+              fontSize: 12,
+              lineHeight: 1.7,
+            }}>
+              • Secure Stripe-hosted checkout<br />
+              • 5-day free trial<br />
+              • Cancel anytime from billing settings
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <label style={labelStyle}>Expiry date</label>
-              <div style={stripeFieldStyle('expiry')}>
-                <CardExpiryElement options={stripeElementStyle} onFocus={() => setCardFocused('expiry')} onBlur={() => setCardFocused(null)} />
-              </div>
-            </div>
-            <div>
-              <label style={labelStyle}>CVC</label>
-              <div style={stripeFieldStyle('cvc')}>
-                <CardCvcElement options={stripeElementStyle} onFocus={() => setCardFocused('cvc')} onBlur={() => setCardFocused(null)} />
-              </div>
-            </div>
-          </div>
-
-          <button type="submit" disabled={loading || !stripe}
-            style={{ width: '100%', background: loading ? T.goldDim : T.gold, color: T.btnText, padding: '14px', fontWeight: 700, fontSize: 14, border: 'none', cursor: loading ? 'default' : 'pointer', fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 4, transition: 'background 0.2s', marginTop: 4 }}>
-            {loading
-              ? <><span style={{ width: 14, height: 14, border: `2px solid ${T.btnText}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />Setting up your trial…</>
-              : <><LockIcon color={T.btnText} />Start Free Trial — No Charge Today →</>
-            }
+          <button
+            type="button"
+            onClick={handleSecureCheckout}
+            disabled={loading}
+            style={{
+              width: '100%',
+              background: loading ? T.goldDim : T.gold,
+              color: T.btnText,
+              padding: '14px',
+              fontWeight: 700,
+              fontSize: 14,
+              border: 'none',
+              cursor: loading ? 'default' : 'pointer',
+              fontFamily: "'JetBrains Mono', monospace",
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+              borderRadius: 4,
+              transition: 'background 0.2s',
+              marginTop: 4,
+            }}
+          >
+            {loading ? (
+              <>
+                <span style={{ width: 14, height: 14, border: `2px solid ${T.btnText}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
+                Redirecting…
+              </>
+            ) : (
+              <>
+                <LockIcon color={T.btnText} />
+                Continue to Secure Checkout →
+              </>
+            )}
           </button>
 
           <div style={{ display: 'flex', justifyContent: 'center', gap: 20, flexWrap: 'wrap' }}>
@@ -642,7 +584,7 @@ async function handleStep1(e: React.FormEvent) {
               </div>
             ))}
           </div>
-        </form>
+        </div>
       )}
     </div>
   )
@@ -658,7 +600,8 @@ function SignupPageInner() {
 
   const price = billing === 'monthly' ? '79.99' : '66.66'
   const chargeDate = (() => {
-    const d = new Date(); d.setDate(d.getDate() + 5)
+    const d = new Date()
+    d.setDate(d.getDate() + 5)
     return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
   })()
 
@@ -672,7 +615,6 @@ function SignupPageInner() {
         @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
         .fade-up{animation:fadeUp 0.35s ease both}
-        .StripeElement{width:100%}
         @media(max-width:640px){.layout{flex-direction:column!important}.sidebar{display:none!important}}
       `}</style>
 
@@ -702,9 +644,7 @@ function SignupPageInner() {
       </div>
 
       <div className="layout" style={{ maxWidth: 1000, margin: '0 auto', padding: '48px 24px', display: 'flex', gap: 48, alignItems: 'flex-start' }}>
-        <Elements stripe={stripePromise}>
-          <SignupForm isDark={isDark} billing={billing} setBilling={setBilling} />
-        </Elements>
+        <SignupForm isDark={isDark} billing={billing} setBilling={setBilling} />
 
         <div className="sidebar" style={{ width: 300, flexShrink: 0, position: 'sticky', top: 80 }}>
           <div style={{ background: T.cardBg, border: `1px solid ${T.cardBorder}`, overflow: 'hidden', borderRadius: 8 }}>
@@ -756,7 +696,7 @@ function SignupPageInner() {
                 <div style={{ fontSize: 10, color: T.text3 }}>Options Trader</div>
               </div>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 2 }}>
-                {[1,2,3,4,5].map(i => <span key={i} style={{ color: T.gold, fontSize: 11 }}>★</span>)}
+                {[1, 2, 3, 4, 5].map(i => <span key={i} style={{ color: T.gold, fontSize: 11 }}>★</span>)}
               </div>
             </div>
           </div>
