@@ -223,6 +223,14 @@ const LIGHT = {
 
 type PanelId = 'pulse' | 'events' | 'news' | 'summaries'
 type LayoutId = '2x2' | 'focus' | '2col' | '2row'
+const DASHBOARD_PREFS_KEY = 'heymonday_dashboard_prefs_v1'
+
+type DashboardPrefs = {
+  isDark: boolean
+  layout: LayoutId
+  slotPanels: PanelId[]
+  newsTab: 'watchlist' | 'general'
+}
 
 const DEFAULT_WATCHLIST_TICKERS = ['NVDA', 'AAPL', 'TSLA', 'META', 'AMD', 'SPY', 'GLD']
 const CRYPTO_SYMBOLS = new Set(['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA', 'AVAX', 'MATIC', 'LINK'])
@@ -525,10 +533,58 @@ export default function DashboardPage() {
   const [speechOn, setSpeechOn] = useState(true)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [isRecordingVoice, setIsRecordingVoice] = useState(false)
-  const [isDark, setIsDark] = useState(true)
-  const [layout, setLayout] = useState<LayoutId>('2x2')
-  // slotPanels: which panel shows in each slot [slot0, slot1, slot2, slot3]
-  const [slotPanels, setSlotPanels] = useState<PanelId[]>(['pulse', 'events', 'news', 'summaries'])
+  const [isDark, setIsDark] = useState<boolean>(() => {
+  if (typeof window === 'undefined') return true
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_PREFS_KEY)
+    if (!raw) return true
+    const parsed = JSON.parse(raw) as Partial<DashboardPrefs>
+    return typeof parsed.isDark === 'boolean' ? parsed.isDark : true
+  } catch {
+    return true
+  }
+})
+
+const [layout, setLayout] = useState<LayoutId>(() => {
+  if (typeof window === 'undefined') return '2x2'
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_PREFS_KEY)
+    if (!raw) return '2x2'
+    const parsed = JSON.parse(raw) as Partial<DashboardPrefs>
+    return parsed.layout && ['2x2', 'focus', '2col', '2row'].includes(parsed.layout)
+      ? parsed.layout
+      : '2x2'
+  } catch {
+    return '2x2'
+  }
+})
+
+// slotPanels: which panel shows in each slot [slot0, slot1, slot2, slot3]
+const [slotPanels, setSlotPanels] = useState<PanelId[]>(() => {
+  if (typeof window === 'undefined') return ['pulse', 'events', 'news', 'summaries']
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_PREFS_KEY)
+    if (!raw) return ['pulse', 'events', 'news', 'summaries']
+    const parsed = JSON.parse(raw) as Partial<DashboardPrefs>
+    const validPanels = ['pulse', 'events', 'news', 'summaries']
+    const arr = Array.isArray(parsed.slotPanels) ? parsed.slotPanels.filter((p): p is PanelId => validPanels.includes(p)) : []
+    return arr.length === 4 ? arr : ['pulse', 'events', 'news', 'summaries']
+  } catch {
+    return ['pulse', 'events', 'news', 'summaries']
+  }
+})
+
+const [newsTab, setNewsTab] = useState<'watchlist' | 'general'>(() => {
+  if (typeof window === 'undefined') return 'watchlist'
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_PREFS_KEY)
+    if (!raw) return 'watchlist'
+    const parsed = JSON.parse(raw) as Partial<DashboardPrefs>
+    return parsed.newsTab === 'general' ? 'general' : 'watchlist'
+  } catch {
+    return 'watchlist'
+  }
+})
   const [voiceTriggered, setVoiceTriggered] = useState(false)
   // activeBriefing: summary that has just auto-played, sits on top bar for 30min
   const [activeBriefing, setActiveBriefing] = useState<{ id: string; name: string; content: string; expiresAt: number; manualPlayUsed: boolean } | null>(null)
@@ -555,7 +611,6 @@ export default function DashboardPage() {
   const [isThinking, setIsThinking] = useState(false)
   const [watchlistNews, setWatchlistNews] = useState<any[]>([])
   const [generalNews, setGeneralNews] = useState<any[]>([])
-  const [newsTab, setNewsTab] = useState<'watchlist' | 'general'>('watchlist')
   const [pulse, setPulse] = useState<{ headline: string; summary: string; riskNote: string } | null>(null)
   const [pulseLoading, setPulseLoading] = useState(false)
   const [marketState, setMarketState] = useState<any | null>(null)
@@ -649,6 +704,21 @@ export default function DashboardPage() {
       audioContextRef.current?.close()
     }
   }, [])
+
+  useEffect(() => {
+  if (typeof window === 'undefined') return
+
+  const prefs: DashboardPrefs = {
+    isDark,
+    layout,
+    slotPanels,
+    newsTab,
+  }
+
+  try {
+    window.localStorage.setItem(DASHBOARD_PREFS_KEY, JSON.stringify(prefs))
+  } catch {}
+}, [isDark, layout, slotPanels, newsTab])
 
   useEffect(() => {
     async function getUser() {
