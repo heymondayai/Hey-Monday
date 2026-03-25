@@ -608,7 +608,7 @@ const [newsTab, setNewsTab] = useState<'watchlist' | 'general'>(() => {
   const stopThinkingChimesRef = useRef<(() => void) | null>(null)
 
   const [tickerData, setTickerData] = useState<{ sym: string; price?: string; change?: string; up?: boolean }[]>(DEFAULT_TICKER_DATA)
-  const [watchlist, setWatchlist] = useState<{ ticker: string; bars: number[]; price?: string; change?: string; up?: boolean }[]>(DEFAULT_WATCHLIST_TICKERS.map(makeWlItem))
+  const [watchlist, setWatchlist] = useState<{ ticker: string; bars: number[]; price?: string; change?: string; up?: boolean }[]>(DEFAULT_WATCHLIST_TICKERS.map((ticker) => makeWlItem(ticker)))
   const [lastUpdated, setLastUpdated] = useState<string | null>(null)
   const [currentEtDate, setCurrentEtDate] = useState('')
   const [showSettings, setShowSettings] = useState(false)
@@ -910,7 +910,17 @@ function startThinkingChimes(): () => void {
   async function speakText(text: string, onEnded?: () => void) {
     try {
       stopCurrentAudio()
-      const res = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })
+      const res = await fetch('/api/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+    text,
+    watchlist: watchlist.map((w: any) => ({
+      ticker: w.ticker,
+      company_name: w.company_name,
+    })),
+  }),
+})
       if (!res.ok) { console.error('TTS failed:', res.status); return }
       const blob = await res.blob(); const url = URL.createObjectURL(blob); const audio = new Audio(url)
       audioRef.current = audio; setIsSpeaking(true)
