@@ -9,13 +9,12 @@ type NormalizeTTSOptions = {
 }
 
 // ── BUILT-IN TICKER PRONUNCIATIONS ────────────────────────────────────────────
-// These are your common-name defaults. Dynamic watchlist names will override them.
 const BUILTIN_TICKER_MAP: Record<string, string> = {
   AAPL: 'Apple',
   ABBV: 'AbbVie',
   ABNB: 'Airbnb',
   ADBE: 'Adobe',
-  AMD: 'A M D',
+  AMD: 'AMD',
   AMGN: 'Amgen',
   AMZN: 'Amazon',
   AVGO: 'Broadcom',
@@ -31,7 +30,7 @@ const BUILTIN_TICKER_MAP: Record<string, string> = {
   CRM: 'Salesforce',
   CRWD: 'CrowdStrike',
   CVX: 'Chevron',
-  DIA: 'D I A',
+  DIA: 'Dow ETF',
   DIS: 'Disney',
   DKNG: 'DraftKings',
   ELF: 'e l f Beauty',
@@ -45,9 +44,9 @@ const BUILTIN_TICKER_MAP: Record<string, string> = {
   GS: 'Goldman Sachs',
   HIMS: 'Hims and Hers',
   HOOD: 'Robinhood',
-  IBM: 'I B M',
+  IBM: 'IBM',
   INTC: 'Intel',
-  IWM: 'I W M',
+  IWM: 'Russell ETF',
   JNJ: 'Johnson and Johnson',
   JPM: 'J P Morgan',
   KO: 'Coca-Cola',
@@ -70,7 +69,7 @@ const BUILTIN_TICKER_MAP: Record<string, string> = {
   PLTR: 'Palantir',
   PYPL: 'PayPal',
   QCOM: 'Qualcomm',
-  QQQ: 'Q Q Q',
+  QQQ: 'Nasdaq ETF',
   RBLX: 'Roblox',
   RIOT: 'Riot Platforms',
   RIVN: 'Rivian',
@@ -81,13 +80,14 @@ const BUILTIN_TICKER_MAP: Record<string, string> = {
   SNOW: 'Snowflake',
   SOFI: 'SoFi',
   SPOT: 'Spotify',
-  SPY: 'S P Y',
+  SPY: 'S and P ETF',
   SQ: 'Block',
-  TLT: 'T L T',
+  TLT: 'Treasury ETF',
   TMO: 'Thermo Fisher',
   TSLA: 'Tesla',
   UAL: 'United Airlines',
   UNH: 'UnitedHealth',
+  UPST: 'Upstart',
   V: 'Visa',
   VRT: 'Vertiv',
   WFC: 'Wells Fargo',
@@ -115,14 +115,13 @@ const BUILTIN_TICKER_MAP: Record<string, string> = {
   ETF: 'E T F',
   IPO: 'I P O',
   SEC: 'the S E C',
-  VWAP: 'V-WAP',
+  VWAP: 'V WAP',
   HOD: 'high of day',
   LOD: 'low of day',
   EOD: 'end of day',
   YTD: 'year to date',
 }
 
-// ── TIME ZONES ────────────────────────────────────────────────────────────────
 const TIMEZONE_MAP: Record<string, string> = {
   ET: 'Eastern time',
   EST: 'Eastern Standard Time',
@@ -136,8 +135,6 @@ const TIMEZONE_MAP: Record<string, string> = {
   UTC: 'U T C',
 }
 
-// ── HELPERS ───────────────────────────────────────────────────────────────────
-
 function stripCommas(num: string): string {
   return num.replace(/,/g, '')
 }
@@ -149,12 +146,16 @@ function escapeRegExp(value: string): string {
 function spokenInteger(n: number): string {
   if (n === 0) return 'zero'
 
-  const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
+  const ones = [
+    '', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
     'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen',
-    'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen']
+    'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen',
+  ]
 
-  const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty',
-    'sixty', 'seventy', 'eighty', 'ninety']
+  const tens = [
+    '', '', 'twenty', 'thirty', 'forty', 'fifty',
+    'sixty', 'seventy', 'eighty', 'ninety',
+  ]
 
   function below1000(num: number): string {
     if (num === 0) return ''
@@ -162,7 +163,7 @@ function spokenInteger(n: number): string {
     if (num < 100) {
       const t = tens[Math.floor(num / 10)]
       const o = ones[num % 10]
-      return o ? `${t}-${o}` : t
+      return o ? `${t} ${o}` : t
     }
     const h = ones[Math.floor(num / 100)]
     const rest = num % 100
@@ -198,8 +199,10 @@ function expandDecimal(numStr: string): string {
 
   if (!fracPart) return wholeSpoken
 
-  const trimmedFrac = fracPart.replace(/0+$/, '') || '0'
-  return `${wholeSpoken} point ${trimmedFrac}`
+  // Preserve all digits after the decimal, including trailing zeros.
+  // 175.20 -> one hundred seventy five point 2 0
+  const fracDigits = fracPart.split('').join(' ')
+  return `${wholeSpoken} point ${fracDigits}`
 }
 
 function expandMoney(
@@ -249,21 +252,28 @@ function expandPercent(_match: string, sign: string, numRaw: string): string {
 }
 
 function buildMergedTickerMap(dynamicTickerMap?: Record<string, string>) {
-  return {
-    ...BUILTIN_TICKER_MAP,
-    ...(dynamicTickerMap || {}),
-  }
-}
+  const merged = { ...BUILTIN_TICKER_MAP }
 
-// ── MAIN NORMALIZER ───────────────────────────────────────────────────────────
+  for (const [ticker, spoken] of Object.entries(dynamicTickerMap || {})) {
+    const cleanTicker = ticker.toUpperCase().trim()
+    const cleanSpoken = String(spoken || '').trim()
+
+    // Do not let dynamic values overwrite built-ins if the "company name"
+    // is just the ticker letters again.
+    if (!cleanSpoken) continue
+    if (cleanSpoken.toUpperCase() === cleanTicker) continue
+
+    merged[cleanTicker] = cleanSpoken
+  }
+
+  return merged
+}
 
 export function normalizeTTS(text: string, options: NormalizeTTSOptions = {}): string {
   let s = text
-
   const TICKER_MAP = buildMergedTickerMap(options.tickerMap)
 
-  // 1. Convert numeric ranges to spoken "to" BEFORE any other number expansion
-  // ex: 50,000 - 60,000  -> fifty thousand to sixty thousand
+  // 1. Numeric ranges first
   s = s.replace(
     /\b(\$?\d[\d,]*\.?\d*[TBMK]?)\s*[-–—]\s*(\$?\d[\d,]*\.?\d*[TBMK]?)\b/g,
     (_match, left, right) => {
@@ -278,70 +288,73 @@ export function normalizeTTS(text: string, options: NormalizeTTSOptions = {}): s
     }
   )
 
-  // 2. Expand known tickers / watchlist names — whole word only
+  // 2. Tickers / names
   for (const [ticker, spoken] of Object.entries(TICKER_MAP)) {
     const re = new RegExp(`\\b${escapeRegExp(ticker)}\\b`, 'g')
     s = s.replace(re, spoken)
   }
 
-  // 3. Expand time zones
+  // 3. Time zones
   for (const [tz, spoken] of Object.entries(TIMEZONE_MAP)) {
     const re = new RegExp(`\\b${escapeRegExp(tz)}\\b`, 'g')
     s = s.replace(re, spoken)
   }
 
-  // 4. Expand percentages first
+  // 4. Percentages
   s = s.replace(/([+\-±]?)(\d[\d,]*\.?\d*)%/g, (match, sign, num) =>
     expandPercent(match, sign, num)
   )
 
-  // 5. Expand suffix money: $21.1B / $70K / 48.2M
+  // 5. Suffixed numbers
   s = s.replace(/(\$?)(\d[\d,]*\.?\d*)([TBMK])\b/gi, (match, dollar, num, suffix) =>
     expandMoney(match, dollar, num, suffix)
   )
 
-  // 6. Expand comma-formatted dollar amounts
+  // 6. Dollar amounts with commas
   s = s.replace(/\$(\d{1,3}(?:,\d{3})+(?:\.\d+)?)/g, (_match, num) =>
     `${expandDecimal(num)} dollars`
   )
 
-  // 7. Expand plain dollar decimals
+  // 7. Plain dollar decimals
   s = s.replace(/\$(\d+\.\d+)/g, (_match, num) => `${expandDecimal(num)} dollars`)
 
-  // 8. Expand plain dollar integers
+  // 8. Plain dollar integers
   s = s.replace(/\$(\d+)\b/g, (_match, num) => `${expandDecimal(num)} dollars`)
 
-  // 9. Expand comma-formatted standalone numbers
+  // 9. Comma-formatted standalone numbers
   s = s.replace(/(?<!\$)\b(\d{1,3}(?:,\d{3})+)\b/g, (_match, num) =>
     expandDecimal(num)
   )
 
-  // 10. Expand 24-hour times
+  // 10. Standalone decimals like 175.20, 383.03, 26.60
+  s = s.replace(/(?<![$\d])(\d+\.\d+)\b/g, (_match, num) => expandDecimal(num))
+
+  // 11. 24-hour times
   s = s.replace(/\b([01]?\d|2[0-3]):([0-5]\d)(?!\s*[AaPp][Mm])\b/g, (match, h, m) =>
     expandTime(match, h, m)
   )
 
-  // 11. Expand 12-hour times
+  // 12. 12-hour times
   s = s.replace(/\b(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)\b/g, (match, h, m, period) =>
     expandTime(match, h, m, period)
   )
 
-  // 12. Expand bare hour + AM/PM
+  // 13. Bare hour + AM/PM
   s = s.replace(/\b(\d{1,2})\s*(AM|PM)\b/g, (_, h, period) => {
     const spoken = period.toUpperCase().replace('AM', 'A M').replace('PM', 'P M')
     return `${h} ${spoken}`
   })
 
-  // 13. Basis points
+  // 14. Basis points
   s = s.replace(/\b(\d+)\s*bps?\b/gi, (_, n) => `${n} basis points`)
 
-  // 14. Arrow symbols
+  // 15. Symbols
   s = s.replace(/▲/g, 'up')
   s = s.replace(/▼/g, 'down')
   s = s.replace(/→/g, '')
   s = s.replace(/←/g, '')
 
-  // 15. Cleanup
+  // 16. Cleanup
   s = s.replace(/  +/g, ' ').trim()
 
   return s
