@@ -29,7 +29,7 @@ const SAMPLE_RATE       = 16000
 const CHUNK_SAMPLES     = 1280          // 80ms per chunk
 const MEL_FRAMES_NEEDED = 76            // embedding model input window
 const MEL_STEP          = 8             // slide mel buffer by this many frames
-const DETECTION_THRESHOLD = 0.35        // score above this = detected
+const DETECTION_THRESHOLD = 0.18       // score above this = detected
 const COOLDOWN_MS       = 2000          // prevent re-firing for 2 seconds
 
 interface UseWakeWordOptions {
@@ -77,6 +77,9 @@ export function useWakeWord({
   //Chunk Handling
   const pendingChunksRef = useRef<Float32Array[]>([])
   const processingLoopActiveRef = useRef(false)
+
+  //Consecutive Calls
+  const consecutiveHitsRef = useRef(0)
 
   // ── LOAD MODELS ─────────────────────────────────────────────────────────────
   const loadModels = useCallback(async () => {
@@ -178,44 +181,51 @@ export function useWakeWord({
           console.log('[WakeWord] score:', score.toFixed(4))
 
           if (score > threshold) {
-            const now = Date.now()
-            if (now - lastDetectRef.current > COOLDOWN_MS) {
-              lastDetectRef.current = now
-              onDetected()
+  consecutiveHitsRef.current += 1
+} else {
+  consecutiveHitsRef.current = 0
+}
 
-              try {
-                const AudioCtx = globalThis.AudioContext || (globalThis as any).webkitAudioContext
-                const actx = new AudioCtx()
-                if (actx.state === 'suspended') await actx.resume()
+if (consecutiveHitsRef.current >= 2) {
+  const now = Date.now()
+  if (now - lastDetectRef.current > COOLDOWN_MS) {
+    lastDetectRef.current = now
+    consecutiveHitsRef.current = 0
+    onDetected()
 
-                const osc1 = actx.createOscillator()
-                const osc2 = actx.createOscillator()
-                const gain = actx.createGain()
+    try {
+      const AudioCtx = globalThis.AudioContext || (globalThis as any).webkitAudioContext
+      const actx = new AudioCtx()
+      if (actx.state === 'suspended') await actx.resume()
 
-                osc1.type = 'sine'
-                osc2.type = 'sine'
-                osc1.frequency.setValueAtTime(440, actx.currentTime)
-                osc2.frequency.setValueAtTime(587, actx.currentTime + 0.12)
+      const osc1 = actx.createOscillator()
+      const osc2 = actx.createOscillator()
+      const gain = actx.createGain()
 
-                gain.gain.setValueAtTime(0.0, actx.currentTime)
-                gain.gain.linearRampToValueAtTime(0.18, actx.currentTime + 0.03)
-                gain.gain.setValueAtTime(0.18, actx.currentTime + 0.10)
-                gain.gain.linearRampToValueAtTime(0.0, actx.currentTime + 0.38)
+      osc1.type = 'sine'
+      osc2.type = 'sine'
+      osc1.frequency.setValueAtTime(440, actx.currentTime)
+      osc2.frequency.setValueAtTime(587, actx.currentTime + 0.12)
 
-                osc1.connect(gain)
-                osc2.connect(gain)
-                gain.connect(actx.destination)
+      gain.gain.setValueAtTime(0.0, actx.currentTime)
+      gain.gain.linearRampToValueAtTime(0.18, actx.currentTime + 0.03)
+      gain.gain.setValueAtTime(0.18, actx.currentTime + 0.10)
+      gain.gain.linearRampToValueAtTime(0.0, actx.currentTime + 0.38)
 
-                osc1.start(actx.currentTime)
-                osc1.stop(actx.currentTime + 0.14)
-                osc2.start(actx.currentTime + 0.12)
-                osc2.stop(actx.currentTime + 0.38)
-                osc2.onended = () => { void actx.close() }
-              } catch (err) {
-                console.error('Wake word chime failed:', err)
-              }
-            }
-          }
+      osc1.connect(gain)
+      osc2.connect(gain)
+      gain.connect(actx.destination)
+
+      osc1.start(actx.currentTime)
+      osc1.stop(actx.currentTime + 0.14)
+      osc2.start(actx.currentTime + 0.12)
+      osc2.stop(actx.currentTime + 0.38)
+      osc2.onended = () => { void actx.close() }
+    } catch (err) {
+      console.error('Wake word chime failed:', err)
+    }
+  }
+}
 
           if (embBufferRef.current.length > embWindowSize * 3) {
             embBufferRef.current = embBufferRef.current.slice(-embWindowSize)
@@ -229,21 +239,26 @@ export function useWakeWord({
 
   // ── QUEUED CHUNK PROCESSOR ───────────────────────────────────────────────
   const processChunk = useCallback(async (samples: Float32Array) => {
-    pendingChunksRef.current.push(samples)
+  pendingChunksRef.current.push(samples)
 
-    if (processingLoopActiveRef.current) return
-    processingLoopActiveRef.current = true
+  // keep only the most recent few chunks so we don't lag behind live speech
+  if (pendingChunksRef.current.length > 4) {
+    pendingChunksRef.current = pendingChunksRef.current.slice(-4)
+  }
 
-    try {
-      while (pendingChunksRef.current.length > 0) {
-        const next = pendingChunksRef.current.shift()
-        if (!next) continue
-        await runChunkInference(next)
-      }
-    } finally {
-      processingLoopActiveRef.current = false
+  if (processingLoopActiveRef.current) return
+  processingLoopActiveRef.current = true
+
+  try {
+    while (pendingChunksRef.current.length > 0) {
+      const next = pendingChunksRef.current.shift()
+      if (!next) continue
+      await runChunkInference(next)
     }
-  }, [runChunkInference])
+  } finally {
+    processingLoopActiveRef.current = false
+  }
+}, [runChunkInference])
 
   // ── START ────────────────────────────────────────────────────────────────
   const start = useCallback(async () => {
