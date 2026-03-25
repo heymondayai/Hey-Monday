@@ -135,6 +135,29 @@ const TIMEZONE_MAP: Record<string, string> = {
   UTC: 'U T C',
 }
 
+const PREFERRED_BUILTIN_TICKERS = new Set([
+  'GLD',
+  'GDX',
+  'GC',
+  'SPY',
+  'QQQ',
+  'IWM',
+  'DIA',
+  'TLT',
+  'XLE',
+  'XLF',
+  'XLK',
+  'XLP',
+  'XLRE',
+  'XLU',
+  'XLV',
+  'XLY',
+  'BTC',
+  'ETH',
+  'ES',
+  'NQ',
+])
+
 function stripCommas(num: string): string {
   return num.replace(/,/g, '')
 }
@@ -191,6 +214,22 @@ function spokenInteger(n: number): string {
   return parts.join(' ')
 }
 
+function spokenDigit(d: string): string {
+  switch (d) {
+    case '0': return 'zero'
+    case '1': return 'one'
+    case '2': return 'two'
+    case '3': return 'three'
+    case '4': return 'four'
+    case '5': return 'five'
+    case '6': return 'six'
+    case '7': return 'seven'
+    case '8': return 'eight'
+    case '9': return 'nine'
+    default: return d
+  }
+}
+
 function expandDecimal(numStr: string): string {
   const clean = stripCommas(numStr)
   const [wholePart, fracPart] = clean.split('.')
@@ -199,9 +238,10 @@ function expandDecimal(numStr: string): string {
 
   if (!fracPart) return wholeSpoken
 
-  // Preserve all digits after the decimal, including trailing zeros.
-  // 175.20 -> one hundred seventy five point 2 0
-  const fracDigits = fracPart.split('').join(' ')
+  // Preserve every decimal digit, but spell each digit as a word
+  // so ElevenLabs pronounces them more cleanly.
+  // 175.20 -> one hundred seventy five point two zero
+  const fracDigits = fracPart.split('').map(spokenDigit).join(' ')
   return `${wholeSpoken} point ${fracDigits}`
 }
 
@@ -258,10 +298,12 @@ function buildMergedTickerMap(dynamicTickerMap?: Record<string, string>) {
     const cleanTicker = ticker.toUpperCase().trim()
     const cleanSpoken = String(spoken || '').trim()
 
-    // Do not let dynamic values overwrite built-ins if the "company name"
-    // is just the ticker letters again.
     if (!cleanSpoken) continue
     if (cleanSpoken.toUpperCase() === cleanTicker) continue
+
+    // Keep preferred built-in names for common ETFs / indices / futures / crypto.
+    // Example: GLD should stay "gold", not "SPDR Gold Shares".
+    if (PREFERRED_BUILTIN_TICKERS.has(cleanTicker)) continue
 
     merged[cleanTicker] = cleanSpoken
   }
