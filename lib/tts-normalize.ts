@@ -80,7 +80,7 @@ const BUILTIN_TICKER_MAP: Record<string, string> = {
   SNOW: 'Snowflake',
   SOFI: 'SoFi',
   SPOT: 'Spotify',
-  SPY: 'S and P ETF',
+  SPY: 'S and P five-hundred',
   SQ: 'Block',
   TLT: 'Treasury ETF',
   TMO: 'Thermo Fisher',
