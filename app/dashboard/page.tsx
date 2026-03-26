@@ -614,12 +614,12 @@ const [newsTab, setNewsTab] = useState<'watchlist' | 'general'>(() => {
 const touchStartYRef = useRef<number>(0)
 
 const MOBILE_PANELS: PanelId[] = ['pulse', 'events', 'news', 'summaries', 'chat']
-const MOBILE_PANEL_LABELS: Record<PanelId, { emoji: string; label: string }> = {
-  pulse:     { emoji: '📊', label: 'Pulse' },
-  events:    { emoji: '📅', label: 'Events' },
-  news:      { emoji: '📰', label: 'News' },
-  summaries: { emoji: '⏱', label: 'Briefs' },
-  chat:      { emoji: '💬', label: 'Chat' },
+const MOBILE_PANEL_LABELS: Record<PanelId, { label: string }> = {
+  pulse:     { label: 'Pulse' },
+  events:    { label: 'Events' },
+  news:      { label: 'News' },
+  summaries: { label: 'Briefs' },
+  chat:      { label: 'Chat' },
 }
 
 function handleTouchStart(e: React.TouchEvent) {
@@ -1313,7 +1313,7 @@ function startThinkingChimes(): () => void {
           <div style={{ background: T.headerBg, borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', height: '40px', flexShrink: 0, overflowX: 'auto', padding: '0 6px', gap: '2px' }}>
             {MOBILE_PANELS.map(pid => (
               <div key={pid} onClick={() => setMobilePanel(pid)} style={{ padding: '5px 10px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', color: mobilePanel === pid ? T.gold : T.text6, background: mobilePanel === pid ? T.goldFaint2 : 'transparent', border: `1px solid ${mobilePanel === pid ? T.goldFaint7 : 'transparent'}`, borderRadius: '4px', transition: 'all 0.15s', letterSpacing: '0.05em', flexShrink: 0 }}>
-                {MOBILE_PANEL_LABELS[pid].emoji} {MOBILE_PANEL_LABELS[pid].label}
+                {MOBILE_PANEL_LABELS[pid].label}
               </div>
             ))}
             {/* Progress dots */}
