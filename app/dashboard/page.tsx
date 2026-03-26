@@ -6,6 +6,18 @@ import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import WakeWordListener from '@/components/WakeWordListener'
 
+function useIsMobile(breakpoint = 960) {
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`)
+    setIsMobile(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [breakpoint])
+  return isMobile
+}
+
 
 // ─── Theme tokens ─────────────────────────────────────────────────────────────
 const DARK = {
@@ -221,7 +233,7 @@ const LIGHT = {
   pricingToggle:'rgba(154,100,18,0.04)',
 }
 
-type PanelId = 'pulse' | 'events' | 'news' | 'summaries'
+type PanelId = 'pulse' | 'events' | 'news' | 'summaries'| 'chat'
 type LayoutId = '2x2' | 'focus' | '2col' | '2row'
 const DASHBOARD_PREFS_KEY = 'heymonday_dashboard_prefs_v1'
 
@@ -593,6 +605,37 @@ const [newsTab, setNewsTab] = useState<'watchlist' | 'general'>(() => {
   }
 })
   const [voiceTriggered, setVoiceTriggered] = useState(false)
+
+  const isMobile = useIsMobile(960)
+  const [mobilePanel, setMobilePanel] = useState<PanelId>('pulse')
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
+
+  const touchStartXRef = useRef<number>(0)
+const touchStartYRef = useRef<number>(0)
+
+const MOBILE_PANELS: PanelId[] = ['pulse', 'events', 'news', 'summaries', 'chat']
+const MOBILE_PANEL_LABELS: Record<PanelId, { emoji: string; label: string }> = {
+  pulse:     { emoji: '📊', label: 'Pulse' },
+  events:    { emoji: '📅', label: 'Events' },
+  news:      { emoji: '📰', label: 'News' },
+  summaries: { emoji: '⏱', label: 'Briefs' },
+  chat:      { emoji: '💬', label: 'Chat' },
+}
+
+function handleTouchStart(e: React.TouchEvent) {
+  touchStartXRef.current = e.touches[0].clientX
+  touchStartYRef.current = e.touches[0].clientY
+}
+
+function handleTouchEnd(e: React.TouchEvent) {
+  const dx = e.changedTouches[0].clientX - touchStartXRef.current
+  const dy = e.changedTouches[0].clientY - touchStartYRef.current
+  if (Math.abs(dx) < 44 || Math.abs(dy) > Math.abs(dx) * 0.8) return
+  const idx = MOBILE_PANELS.indexOf(mobilePanel)
+  if (dx < 0 && idx < MOBILE_PANELS.length - 1) setMobilePanel(MOBILE_PANELS[idx + 1])
+  if (dx > 0 && idx > 0) setMobilePanel(MOBILE_PANELS[idx - 1])
+}
+
   // activeBriefing: summary that has just auto-played, sits on top bar for 30min
   const [activeBriefing, setActiveBriefing] = useState<{ id: string; name: string; content: string; expiresAt: number; manualPlayUsed: boolean } | null>(null)
 
@@ -1201,6 +1244,8 @@ function startThinkingChimes(): () => void {
   const previousPastSummary = selectedPastSummaryIndex >= 0 && selectedPastSummaryIndex < orderedPastBriefings.length - 1 ? orderedPastBriefings[selectedPastSummaryIndex + 1] : null
   const summaryDayLabels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
 
+  
+
   if (!user) {
     return (
       <div style={{ background: T.pageBg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.gold, fontFamily: 'Georgia, serif', fontSize: '12px', letterSpacing: '0.2em' }}>
@@ -1213,6 +1258,8 @@ function startThinkingChimes(): () => void {
   const sessionColor = marketSession === 'open' ? T.green : marketSession === 'pre' ? T.gold : marketSession === 'after' ? T.blue : T.text7
   const sessionGlow  = marketSession === 'open' ? T.greenGlow : marketSession === 'pre' ? T.goldFaint8 : marketSession === 'after' ? T.blueFaint2 : 'none'
 
+
+
   return (
     <>
       <WakeWordListener
@@ -1224,6 +1271,417 @@ function startThinkingChimes(): () => void {
         }}
       />
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+
+      {/* ── MOBILE LAYOUT ── */}
+      {isMobile && (
+        <div style={{ background: T.pageBg, height: '100dvh', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif", color: T.text, overflow: 'hidden' }}>
+
+          {/* Mobile ticker tape */}
+          <div style={{ background: T.tickerBg, borderBottom: `1px solid ${T.border}`, height: '30px', display: 'flex', alignItems: 'center', overflow: 'hidden', flexShrink: 0, position: 'relative' }}>
+            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '30px', background: `linear-gradient(90deg,${T.tickerBg},transparent)`, zIndex: 2 }} />
+            <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '30px', background: `linear-gradient(-90deg,${T.tickerBg},transparent)`, zIndex: 2 }} />
+            <div style={{ display: 'flex', animation: 'scrollTicker 55s linear infinite', whiteSpace: 'nowrap' }}>
+              {[...watchlist, ...watchlist].map((t, i) => (
+                <div key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '0 14px', borderRight: `1px solid ${T.tickerBorder}`, fontSize: '11px', height: '30px', fontFamily: "'DM Mono', monospace" }}>
+                  <span style={{ fontWeight: 600, color: T.tickerText }}>{t.ticker}</span>
+                  <span style={{ color: t.price ? (t.up ? T.green : T.red) : T.text8, fontWeight: 500 }}>{t.change ?? '—'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Mobile top bar */}
+          <div style={{ background: T.headerBg, borderBottom: `1px solid ${T.border}`, height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', flexShrink: 0 }}>
+            {/* Hamburger button */}
+            <div onClick={() => setMobileDrawerOpen(true)} style={{ width: '36px', height: '36px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '5px', cursor: 'pointer', border: `1px solid ${T.borderFaint}`, background: T.inputBg, flexShrink: 0 }}>
+              <div style={{ width: '14px', height: '1.5px', background: T.gold }} />
+              <div style={{ width: '14px', height: '1.5px', background: T.gold }} />
+              <div style={{ width: '14px', height: '1.5px', background: T.gold }} />
+            </div>
+            {/* Logo */}
+            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '17px', fontWeight: 600, fontStyle: 'italic', color: T.text }}>
+              Hey <span style={{ color: T.gold }}>Monday</span>
+            </div>
+            {/* Right: session dot + theme */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: marketSession === 'open' ? T.green : marketSession === 'pre' ? T.gold : T.text7, boxShadow: marketSession === 'open' ? `0 0 6px ${T.greenGlow}` : 'none' }} />
+              <div onClick={() => setIsDark(d => !d)} style={{ fontSize: '15px', cursor: 'pointer', color: T.gold }}>{isDark ? '☀' : '☾'}</div>
+            </div>
+          </div>
+
+          {/* Panel tab bar */}
+          <div style={{ background: T.headerBg, borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', height: '40px', flexShrink: 0, overflowX: 'auto', padding: '0 6px', gap: '2px' }}>
+            {MOBILE_PANELS.map(pid => (
+              <div key={pid} onClick={() => setMobilePanel(pid)} style={{ padding: '5px 10px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', color: mobilePanel === pid ? T.gold : T.text6, background: mobilePanel === pid ? T.goldFaint2 : 'transparent', border: `1px solid ${mobilePanel === pid ? T.goldFaint7 : 'transparent'}`, borderRadius: '4px', transition: 'all 0.15s', letterSpacing: '0.05em', flexShrink: 0 }}>
+                {MOBILE_PANEL_LABELS[pid].emoji} {MOBILE_PANEL_LABELS[pid].label}
+              </div>
+            ))}
+            {/* Progress dots */}
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px', paddingRight: '8px', alignItems: 'center', flexShrink: 0 }}>
+              {MOBILE_PANELS.map(pid => (
+                <div key={pid} style={{ width: mobilePanel === pid ? '14px' : '5px', height: '5px', borderRadius: '3px', background: mobilePanel === pid ? T.gold : T.text7, transition: 'all 0.2s' }} />
+              ))}
+            </div>
+          </div>
+
+          {/* Swipeable panel */}
+          <div onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+
+            {mobilePanel === 'pulse' && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: T.panelBg }}>
+                <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                  <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, display: 'flex', alignItems: 'center', gap: '7px' }}>
+                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: T.gold }} />
+                    {PULSE_LABEL[traderType] || '📊 Portfolio Pulse'}
+                  </div>
+                  <div onClick={() => fetchPulse(traderType, watchlist)} style={{ fontSize: '10px', color: T.goldText2, cursor: 'pointer', fontFamily: "'DM Mono', monospace", padding: '2px 8px', border: `1px solid ${T.goldFaint5}` }}>{pulseLoading ? '...' : '↻'}</div>
+                </div>
+                <div style={{ padding: '14px 16px', flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
+                  {pulseLoading && !pulse ? (
+                    <div style={{ fontSize: '13px', color: T.goldText3, fontStyle: 'italic', fontFamily: "'Playfair Display', serif" }}>Analyzing your watchlist…</div>
+                  ) : pulse ? (
+                    <>
+                      <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '17px', color: T.text, lineHeight: 1.75 }}>{pulse.headline}</div>
+                      {pulse.summary && <div style={{ fontSize: '14px', color: T.textMuted, lineHeight: 1.65 }}>{pulse.summary}</div>}
+                      {pulse.riskNote && <div style={{ fontSize: '13px', color: T.red, lineHeight: 1.55, borderLeft: `2px solid ${T.redBorder2}`, paddingLeft: '10px' }}>⚠ {pulse.riskNote}</div>}
+                    </>
+                  ) : null}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {watchlist.map((s, i) => (
+                      <div key={i} style={{ background: s.change ? (s.up ? T.greenFaint3 : T.redFaint3) : T.inputBg, border: `1px solid ${s.change ? (s.up ? T.greenBorder2 : T.redBorder2) : T.borderItem}`, padding: '6px 10px', minWidth: '64px' }}>
+                        <div style={{ fontSize: '10px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '2px' }}>{s.ticker}</div>
+                        <div style={{ fontSize: '13px', color: s.change ? (s.up ? T.green : T.red) : T.text8, fontFamily: "'DM Mono', monospace", fontWeight: 600 }}>{s.change ?? '—'}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {mobilePanel === 'events' && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: T.panelBg }}>
+                <EventsPanel watchlistTickers={watchlist.map(s => s.ticker)} onOpenCalendar={() => setShowCalendar(true)} T={T} isDark={isDark} />
+              </div>
+            )}
+
+            {mobilePanel === 'news' && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: T.panelBg }}>
+                <div style={{ padding: '0 14px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                  <div style={{ display: 'flex' }}>
+                    {(['watchlist', 'general'] as const).map(tab => (
+                      <div key={tab} onClick={() => handleNewsTab(tab)} style={{ fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, padding: '12px 12px', cursor: 'pointer', color: newsTab === tab ? T.gold : T.text6, borderBottom: `2px solid ${newsTab === tab ? T.gold : 'transparent'}` }}>
+                        {tab === 'watchlist' ? '📋 Mine' : '🌐 General'}
+                      </div>
+                    ))}
+                  </div>
+                  <div onClick={() => setShowNewsModal(true)} style={{ fontSize: '11px', color: T.goldText, cursor: 'pointer', padding: '4px 8px', border: `1px solid ${T.goldFaint6}` }}>All →</div>
+                </div>
+                <div style={{ overflowY: 'auto', flex: 1 }}>
+                  {(newsTab === 'watchlist' ? watchlistNews : generalNews).length === 0 ? (
+                    <div style={{ padding: '24px 16px', fontSize: '12px', color: T.text7, fontStyle: 'italic' }}>Loading news…</div>
+                  ) : (newsTab === 'watchlist' ? watchlistNews : generalNews).map((n, i) => (
+                    <div key={i} style={{ padding: '12px 14px', borderBottom: `1px solid ${T.borderFaint2}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '5px' }}>
+                        <span style={{ fontSize: '10px', padding: '2px 6px', fontWeight: 600, color: n.up ? T.green : T.red, border: `1px solid ${n.up ? T.greenBorder2 : T.redBorder2}` }}>{n.ticker}</span>
+                        <span style={{ fontSize: '10px', color: n.up ? T.green : T.red, fontWeight: 600 }}>{n.sent}</span>
+                        <span style={{ fontSize: '10px', color: T.text8, marginLeft: 'auto', fontFamily: "'DM Mono', monospace" }}>{n.time}</span>
+                      </div>
+                      <div style={{ fontSize: '15px', fontWeight: 500, color: T.text, marginBottom: '5px', lineHeight: 1.5, fontFamily: "'Playfair Display', serif" }}>{n.headline}</div>
+                      <div style={{ fontSize: '12px', color: T.goldText4, lineHeight: 1.6, borderLeft: `2px solid ${T.newsAiBorder}`, paddingLeft: '7px', fontStyle: 'italic' }}>{n.ai}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {mobilePanel === 'summaries' && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: T.panelBg }}>
+                <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                  <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, fontWeight: 600 }}>Briefs</div>
+                  <div onClick={() => setShowSummaryEditor(true)} style={{ fontSize: '11px', color: T.goldText, cursor: 'pointer' }}>Configure →</div>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {scheduledSummaries.length === 0 ? (
+                    <div style={{ color: T.text6, fontStyle: 'italic', paddingTop: '10px', fontSize: '13px' }}>No upcoming summaries. Tap Configure →</div>
+                  ) : scheduledSummaries.sort((a, b) => new Date(a.run_at).getTime() - new Date(b.run_at).getTime()).map(s => {
+                    const msUntil = new Date(s.run_at).getTime() - countdownTick
+                    return (
+                      <div key={s.id} style={{ background: T.cardBg, padding: '14px', borderTop: `3px solid ${s.top_color}`, border: `1px solid ${T.borderFaint3}` }}>
+                        <div style={{ fontSize: '22px', marginBottom: '6px' }}>{s.icon}</div>
+                        <div style={{ fontSize: '15px', fontWeight: 600, color: T.text, marginBottom: '4px' }}>{s.name}</div>
+                        <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '8px' }}>{formatSummaryRunAt(s.run_at)}</div>
+                        <div style={{ display: 'inline-block', padding: '4px 10px', border: `1px solid ${T.goldFaint7}`, background: T.goldFaint2, color: T.gold, fontSize: '11px', fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>
+                          {msUntil <= 0 ? 'READY' : formatCountdown(msUntil)}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {pastBriefings.length > 0 && (
+                    <>
+                      <div style={{ fontSize: '10px', letterSpacing: '0.2em', textTransform: 'uppercase', color: T.goldText2, marginTop: '8px', fontWeight: 600 }}>Past Briefs</div>
+                      {pastBriefings.slice(0, 5).map(item => (
+                        <div key={item.id} onClick={() => setSelectedPastSummary(item)} style={{ padding: '12px', borderBottom: `1px solid ${T.borderFaint3}`, cursor: 'pointer' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '3px' }}>{item.title}</div>
+                          <div style={{ fontSize: '10px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '4px' }}>{formatSummaryRunAt(item.briefing_date)}</div>
+                          <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.5, maxHeight: '36px', overflow: 'hidden' }}>{item.content}</div>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {mobilePanel === 'chat' && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: T.panelBg }}>
+                {/* Chat header */}
+                <div style={{ padding: '10px 14px', borderBottom: `1px solid ${T.border}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ width: '32px', height: '32px', background: T.avatarBg, border: `1px solid ${T.avatarBorder}`, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 600, color: T.gold, fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}>M</div>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '14px', color: T.text, fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}>Monday</div>
+                      <div style={{ fontSize: '9px', color: T.green, letterSpacing: '0.1em', textTransform: 'uppercase' }}>AI Market Intelligence</div>
+                    </div>
+                  </div>
+                  <div onClick={() => { if (speechOn && isSpeaking) stopCurrentAudio(); setSpeechOn(v => !v) }} style={{ fontSize: '11px', color: speechOn ? T.green : T.text6, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, padding: '5px 10px', cursor: 'pointer' }}>
+                    {speechOn ? (isSpeaking ? '🔊 Speaking' : '🔊 Voice On') : '🔇 Voice Off'}
+                  </div>
+                </div>
+                {/* Messages */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {messages.length === 0 && !isThinking ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div style={{ fontSize: '10px', letterSpacing: '0.2em', textTransform: 'uppercase', color: T.goldText3, marginBottom: '8px' }}>Ask Monday anything</div>
+                      {SUGGESTED_QUESTIONS.slice(0, 6).map((q, i) => (
+                        <div key={i} onClick={() => setChatInput(q.text)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', background: T.suggestBg, border: `1px solid ${T.suggestBorder}`, cursor: 'pointer' }}>
+                          <span style={{ fontSize: '14px', flexShrink: 0 }}>{q.emoji}</span>
+                          <span style={{ fontSize: '13px', color: T.text4, lineHeight: 1.4 }}>{q.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <>
+                      {messages.map((m, i) => (
+                        <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', gap: '3px' }}>
+                          <div style={{ maxWidth: '88%', padding: '9px 12px', fontSize: '13px', lineHeight: 1.7, background: m.role === 'monday' ? T.chatAiBg : T.chatUserBg, border: `1px solid ${m.role === 'monday' ? T.chatAiBorder : T.chatUserBorder}`, color: T.text }}>
+                            <MondayText text={m.text} />
+                          </div>
+                          <div style={{ fontSize: '9px', color: T.text8, fontFamily: "'DM Mono', monospace" }}>
+                            {m.role === 'monday' ? 'Monday' : 'You'} · {m.time}
+                          </div>
+                        </div>
+                      ))}
+                      {isThinking && (
+                        <div style={{ padding: '9px 12px', fontSize: '13px', background: T.chatAiBg, border: `1px solid ${T.chatAiBorder}`, color: T.thinkingText, fontStyle: 'italic', width: 'fit-content' }}>
+                          Monday is thinking…
+                        </div>
+                      )}
+                      <div ref={chatEndRef} />
+                    </>
+                  )}
+                </div>
+                {/* Chat input */}
+                <div style={{ padding: '10px 12px', borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
+                  <div style={{ display: 'flex', gap: '7px', alignItems: 'center' }}>
+                    <textarea value={chatInput} onChange={(e) => { setChatInput(e.target.value); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }} placeholder="Ask Monday anything..." rows={1} style={{ flex: 1, background: T.inputBg, border: `1px solid ${T.borderInput}`, color: T.text, padding: '10px 12px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', resize: 'none', overflowY: 'hidden', lineHeight: '1.5', maxHeight: '100px' }} />
+                    <div onClick={() => { if (isRecordingVoice) stopVoiceRecording(); else startVoiceRecording() }} style={{ width: '40px', height: '40px', background: isRecordingVoice ? T.redFaint4 : T.inputBg, border: `1px solid ${isRecordingVoice ? T.redBorder4 : T.borderItem}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                      {isRecordingVoice ? <span style={{ color: T.red, fontSize: '14px' }}>◼</span> : <div style={{ width: '13px', height: '13px', borderRadius: '50%', background: '#f87171' }} />}
+                    </div>
+                    <div onClick={handleSend} style={{ width: '40px', height: '40px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '14px', color: T.gold, flexShrink: 0 }}>➤</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+
+          {/* Mobile drawer */}
+          {mobileDrawerOpen && (
+            <>
+              <div onClick={() => setMobileDrawerOpen(false)} style={{ position: 'fixed', inset: 0, background: T.backdropBlur, backdropFilter: 'blur(3px)', zIndex: 400 }} />
+              <div style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: '280px', background: T.sideBg, borderRight: `1px solid ${T.border}`, zIndex: 500, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '8px 0 40px rgba(0,0,0,0.4)', animation: 'slideInDrawer 0.22s ease' }}>
+                <div style={{ padding: '16px 16px 12px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '18px', fontStyle: 'italic', color: T.text }}>Hey <span style={{ color: T.gold }}>Monday</span></div>
+                  <div onClick={() => setMobileDrawerOpen(false)} style={{ fontSize: '18px', color: T.text6, cursor: 'pointer', padding: '4px 6px' }}>✕</div>
+                </div>
+                <div style={{ padding: '10px 16px', borderBottom: `1px solid ${T.borderFaint}` }}>
+                  <div onClick={() => { router.push('/dashboard/settings'); setMobileDrawerOpen(false) }} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 11px', background: activeTrader.bgColor, border: `1px solid ${activeTrader.borderColor}`, cursor: 'pointer' }}>
+                    <span style={{ fontSize: '13px' }}>{activeTrader.icon}</span>
+                    <span style={{ fontSize: '11px', color: activeTrader.color, fontWeight: 600 }}>{activeTrader.label}</span>
+                    <span style={{ fontSize: '10px', color: T.text6, marginLeft: '2px' }}>✎</span>
+                  </div>
+                </div>
+                <div style={{ padding: '10px 16px', borderBottom: `1px solid ${T.borderFaint}` }}>
+                  <div onClick={() => setWakeOn(!wakeOn)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: wakeOn ? T.greenFaint3 : T.inputBg, border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`, cursor: 'pointer' }}>
+                    <div style={{ width: '26px', height: '15px', borderRadius: '8px', background: wakeOn ? T.green : T.text7, position: 'relative', flexShrink: 0 }}>
+                      <div style={{ position: 'absolute', top: '1.5px', left: wakeOn ? '13px' : '1.5px', width: '12px', height: '12px', borderRadius: '50%', background: '#fff', transition: 'left 0.25s' }} />
+                    </div>
+                    <span style={{ fontSize: '10px', color: wakeOn ? T.green : T.text6, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: "'DM Mono', monospace" }}>
+                      {wakeOn ? 'Hey Monday On' : 'Wake Word Off'}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+                  <div style={{ padding: '8px 16px 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: '10px', letterSpacing: '0.25em', textTransform: 'uppercase', color: T.goldText, fontWeight: 600 }}>Watchlist</div>
+                    <div onClick={() => { setShowWlEditor(true); setMobileDrawerOpen(false) }} style={{ color: T.goldText, cursor: 'pointer', fontSize: '18px', lineHeight: 1 }}>+</div>
+                  </div>
+                  {watchlist.map((s, i) => (
+                    <div key={s.ticker} style={{ display: 'flex', alignItems: 'center', padding: '8px 16px', gap: '8px', borderLeft: i === activeWl ? `2px solid ${T.gold}` : '2px solid transparent', background: i === activeWl ? T.wlActive : 'transparent' }}>
+                      <div style={{ fontWeight: 600, fontSize: '13px', width: '42px', color: i === activeWl ? T.gold : T.text3, fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>{s.ticker}</div>
+                      <div style={{ flex: 1 }} />
+                      <div style={{ fontSize: '12px', color: T.textMuted, fontFamily: "'DM Mono', monospace" }}>{s.price ?? '—'}</div>
+                      <div style={{ fontSize: '12px', color: s.change ? (s.up ? T.green : T.red) : T.text8, fontFamily: "'DM Mono', monospace", fontWeight: 600, minWidth: '46px', textAlign: 'right' }}>{s.change ?? '—'}</div>
+                    </div>
+                  ))}
+                  {/* Alerts */}
+                  {alerts.length > 0 && (
+                    <div style={{ padding: '12px 16px 6px', borderTop: `1px solid ${T.borderFaint}`, marginTop: '8px' }}>
+                      <div style={{ fontSize: '10px', letterSpacing: '0.25em', textTransform: 'uppercase', color: T.goldText, fontWeight: 600, marginBottom: '8px' }}>Alerts</div>
+                      {alerts.map(a => (
+                        <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                          <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: a.triggered ? T.green : T.text6, flexShrink: 0 }} />
+                          <span style={{ fontSize: '12px', fontFamily: "'DM Mono', monospace", color: T.text5, flex: 1 }}>
+                            <span style={{ color: T.text3, fontWeight: 600 }}>{a.ticker}</span> {a.condition} ${a.target_price}
+                          </span>
+                          {a.triggered && <span style={{ fontSize: '11px', color: T.green }}>✓</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div style={{ padding: '12px 16px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div onClick={() => { router.push('/dashboard/settings'); setMobileDrawerOpen(false) }} style={{ fontSize: '11px', color: T.goldText, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>⚙ Settings</div>
+                  <div onClick={handleLogout} style={{ fontSize: '11px', color: T.text6, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Sign Out</div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Shared modals — work on both mobile and desktop */}
+          {showWlEditor && (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div onClick={() => setShowWlEditor(false)} style={{ position: 'absolute', inset: 0, background: T.backdropBlur, backdropFilter: 'blur(4px)' }} />
+              <div style={{ position: 'relative', zIndex: 1, background: T.overlayBg, border: `1px solid ${T.border}`, width: '100%', maxWidth: '500px', margin: '0 16px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ padding: '18px 20px 14px', borderBottom: `1px solid ${T.borderFaint}`, flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                    <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '18px', fontStyle: 'italic', color: T.text }}>Edit Watchlist</div>
+                    <div onClick={() => setShowWlEditor(false)} style={{ fontSize: '18px', color: T.text6, cursor: 'pointer', padding: '4px' }}>✕</div>
+                  </div>
+                  <input autoFocus value={wlSearch} onChange={(e) => handleWlSearchInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && wlSearch.trim()) { const top = wlSearchResults[0]; if (top) { addToWatchlist(top.sym, top.name); setWlSearch(''); setWlSearchResults([]) } else { addToWatchlist(wlSearch.trim()); setWlSearch(''); setWlSearchResults([]) } } }}
+                    placeholder="Search ticker or company name…"
+                    style={{ width: '100%', background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '11px 14px', fontSize: '14px', outline: 'none', boxSizing: 'border-box' as const }} />
+                  {wlSearchResults.length > 0 && (
+                    <div style={{ background: T.overlayBg, border: `1px solid ${T.borderFaint}`, borderTop: 'none', maxHeight: '200px', overflowY: 'auto' }}>
+                      {wlSearchResults.slice(0, 8).map(r => {
+                        const alreadyIn = watchlist.some(w => w.ticker === r.sym)
+                        return (
+                          <div key={r.sym} onClick={() => { if (!alreadyIn && watchlist.length < 20) { addToWatchlist(r.sym, r.name); setWlSearch(''); setWlSearchResults([]) } }} style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', cursor: alreadyIn ? 'default' : 'pointer', gap: '10px', borderBottom: `1px solid ${T.borderItem}`, opacity: alreadyIn ? 0.4 : 1 }}
+                            onMouseEnter={e => { if (!alreadyIn) (e.currentTarget as HTMLDivElement).style.background = T.goldFaint }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}>
+                            <div style={{ fontFamily: "'DM Mono', monospace", fontWeight: 600, fontSize: '14px', color: T.gold, width: '52px', flexShrink: 0 }}>{r.sym}</div>
+                            <div style={{ flex: 1, fontSize: '13px', color: T.text4 }}>{r.name}</div>
+                            {alreadyIn ? <span style={{ fontSize: '10px', color: T.green }}>✓</span> : <span style={{ fontSize: '11px', color: T.goldText }}>+ Add</span>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto' }}>
+                  {watchlist.map(w => (
+                    <div key={w.ticker} style={{ display: 'flex', alignItems: 'center', padding: '10px 20px', gap: '12px', borderBottom: `1px solid ${T.borderItem}` }}>
+                      <div style={{ fontFamily: "'DM Mono', monospace", fontWeight: 600, fontSize: '14px', color: T.gold, width: '52px', flexShrink: 0 }}>{w.ticker}</div>
+                      <div style={{ flex: 1, fontSize: '12px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>
+                        {w.price && <span style={{ color: T.text3 }}>{w.price}</span>}
+                        {w.change && <span style={{ marginLeft: '8px', color: w.up ? T.green : T.red, fontWeight: 600 }}>{w.change}</span>}
+                      </div>
+                      <div onClick={() => removeFromWatchlist(w.ticker)} style={{ fontSize: '12px', color: T.red, cursor: 'pointer', padding: '4px 8px', border: `1px solid ${T.redBorder}` }}>Remove</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ padding: '12px 20px', borderTop: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'flex-end' }}>
+                  <div onClick={() => setShowWlEditor(false)} style={{ padding: '8px 20px', background: T.goldFaint3, border: `1px solid ${T.goldFaint8}`, color: T.gold, fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Done</div>
+                </div>
+              </div>
+            </div>
+          )}
+          {showSummaryEditor && (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 220, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+              <div onClick={() => setShowSummaryEditor(false)} style={{ position: 'absolute', inset: 0, background: T.backdropBlur, backdropFilter: 'blur(4px)' }} />
+              <div style={{ position: 'relative', zIndex: 1, background: T.overlayBg, border: `1px solid ${T.border}`, width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '12px 12px 0 0' }}>
+                <div style={{ padding: '18px 20px 14px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '18px', fontStyle: 'italic', color: T.text }}>Configure Summaries</div>
+                  <div onClick={() => setShowSummaryEditor(false)} style={{ fontSize: '18px', color: T.text6, cursor: 'pointer', padding: '4px' }}>✕</div>
+                </div>
+                <div style={{ padding: '16px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <input type="date" value={summaryDate} onChange={e => setSummaryDate(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '10px 12px', outline: 'none', fontSize: '14px' }} />
+                    <input type="time" value={summaryTime} onChange={e => setSummaryTime(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '10px 12px', outline: 'none', fontSize: '14px' }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', letterSpacing: '0.15em', textTransform: 'uppercase', color: T.gold, marginBottom: '10px', fontWeight: 600 }}>Quick Presets</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {SUMMARY_PRESETS.map((preset, i) => (
+                        <div key={i} onClick={() => { const iso = buildRunAtIsoFromLocalInput(summaryDate, summaryTime); void addPresetSummary(preset, iso) }} style={{ padding: '12px', border: `1px solid ${T.borderFaint}`, background: T.inputBg, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '18px' }}>{preset.icon}</span>
+                          <span style={{ fontSize: '14px', color: T.text, fontWeight: 600 }}>{preset.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {scheduledSummaries.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: '11px', letterSpacing: '0.15em', textTransform: 'uppercase', color: T.gold, marginBottom: '10px', fontWeight: 600 }}>Upcoming</div>
+                      {scheduledSummaries.sort((a, b) => new Date(a.run_at).getTime() - new Date(b.run_at).getTime()).map(item => (
+                        <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${T.borderFaint3}` }}>
+                          <div>
+                            <div style={{ color: T.text, fontWeight: 600, fontSize: '13px' }}>{item.icon} {item.name}</div>
+                            <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>{formatSummaryRunAt(item.run_at)}</div>
+                          </div>
+                          <div onClick={() => void removeScheduledSummary(item.id)} style={{ color: T.red, cursor: 'pointer', padding: '5px 10px', border: `1px solid ${T.redBorder2}`, fontSize: '12px' }}>Remove</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {selectedPastSummary && (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 240, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+              <div onClick={() => setSelectedPastSummary(null)} style={{ position: 'absolute', inset: 0, background: T.backdropBlur, backdropFilter: 'blur(4px)' }} />
+              <div style={{ position: 'relative', zIndex: 1, background: T.overlayBg, border: `1px solid ${T.border}`, width: '100%', maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '12px 12px 0 0' }}>
+                <div style={{ padding: '18px 20px 14px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '17px', fontStyle: 'italic', color: T.text }}>{selectedPastSummary.title}</div>
+                    <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginTop: '4px' }}>{formatSummaryRunAt(selectedPastSummary.briefing_date)}</div>
+                  </div>
+                  <div onClick={() => setSelectedPastSummary(null)} style={{ fontSize: '18px', color: T.text6, cursor: 'pointer', padding: '4px' }}>✕</div>
+                </div>
+                <div style={{ padding: '16px 20px', overflowY: 'auto' }}>
+                  <div style={{ fontSize: '14px', color: T.text3, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>{selectedPastSummary.content}</div>
+                </div>
+              </div>
+            </div>
+          )}
+          {showNewsModal && <NewsModal watchlistNews={watchlistNews} generalNews={generalNews} onClose={() => setShowNewsModal(false)} watchlistTickers={watchlist.map(s => s.ticker)} defaultTab={newsTab} T={T} />}
+          {showCalendar && <CalendarModal onClose={() => setShowCalendar(false)} watchlistTickers={watchlist.map(s => s.ticker)} T={T} isDark={isDark} />}
+
+          <style>{`
+            @keyframes scrollTicker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+            @keyframes slideInDrawer { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+            * { scrollbar-width: thin; scrollbar-color: ${T.scrollColor} transparent; }
+            input::placeholder { color: ${T.text8}; }
+            textarea::placeholder { color: ${T.text8}; }
+          `}</style>
+        </div>
+      )}
+
+      {/* ── DESKTOP LAYOUT (unchanged) ── */}
+      {!isMobile && (
+        <div style={{ background: T.pageBg, height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif", color: T.text, transition: 'background 0.35s, color 0.35s' }}>
       <div style={{ background: T.pageBg, height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif", color: T.text, transition: 'background 0.35s, color 0.35s' }}>
 
         {/* ── Ticker bar ── */}
@@ -1492,7 +1950,7 @@ function startThinkingChimes(): () => void {
             {/* ── Dynamic panel grid ── */}
             {(() => {
               const ALL_PANELS: PanelId[] = ['pulse', 'events', 'news', 'summaries']
-              const PANEL_LABELS: Record<PanelId, string> = { pulse: 'Pulse', events: 'Events', news: 'News', summaries: 'Summaries' }
+              const PANEL_LABELS: Record<PanelId, string> = { pulse: 'Pulse', events: 'Events', news: 'News', summaries: 'Summaries', chat: 'Chat' }
 
               const slotCount = layout === 'focus' ? 1 : layout === '2col' || layout === '2row' ? 2 : 4
 
@@ -1948,6 +2406,9 @@ function startThinkingChimes(): () => void {
           select option { background: ${T.overlayBg}; color: ${T.text}; }
         `}</style>
       </div>
-    </>
-  )
-}
+      </div>
+        )}
+        {/* end !isMobile */}
+      </>
+    )
+  }
