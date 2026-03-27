@@ -1370,7 +1370,7 @@ function startThinkingChimes(): () => void {
                   <div style={{ display: 'flex' }}>
                     {(['watchlist', 'general'] as const).map(tab => (
                       <div key={tab} onClick={() => handleNewsTab(tab)} style={{ fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, padding: '12px 12px', cursor: 'pointer', color: newsTab === tab ? T.gold : T.text6, borderBottom: `2px solid ${newsTab === tab ? T.gold : 'transparent'}` }}>
-                        {tab === 'watchlist' ? '📋 Mine' : '🌐 General'}
+                        {tab === 'watchlist' ? 'Watchlist' : 'General'}
                       </div>
                     ))}
                   </div>
