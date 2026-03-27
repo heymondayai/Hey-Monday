@@ -163,14 +163,17 @@ export default function MarketingPage() {
   const { isDark, toggle } = useTheme()
   const T = isDark ? DARK : LIGHT
 
-  const [activeNav, setActiveNav]     = useState('')
-  const [chatStep, setChatStep]       = useState(1)
-  const [openFaq, setOpenFaq]         = useState<number | null>(null)
-  const [billing, setBilling]         = useState<'monthly'|'annual'>('monthly')
-  const [activeStep, setActiveStep]   = useState(0)
+  const [activeNav, setActiveNav]           = useState('')
+  const [chatStep, setChatStep]             = useState(1)
+  const [openFaq, setOpenFaq]               = useState<number | null>(null)
+  const [billing, setBilling]               = useState<'monthly'|'annual'>('monthly')
+  const [activeStep, setActiveStep]         = useState(0)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
+
+  const sectionRefs   = useRef<Record<string, HTMLElement | null>>({})
   const hiwContentRef = useRef<HTMLDivElement | null>(null)
+  const hiwStepTabsRef = useRef<HTMLDivElement | null>(null)
+  const stepTabRefs   = useRef<(HTMLDivElement | null)[]>([])
 
   useEffect(() => {
     const t = setInterval(() => setChatStep(s => s < DEMO_CHAT.length ? s + 1 : s), 2800)
@@ -191,16 +194,31 @@ export default function MarketingPage() {
     return () => window.removeEventListener('scroll', handler)
   }, [])
 
+  // Auto-scroll HIW on step change
   useEffect(() => {
-    if (hiwContentRef.current) {
-    hiwContentRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    const isMobile = window.innerWidth <= 760
+
+    // Always scroll the active tab horizontally into view (centered)
+    const activeTab = stepTabRefs.current[activeStep]
+    if (activeTab) {
+      activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+    }
+
+    // On mobile only: scroll the content panel into view after tab scroll finishes
+    if (isMobile && hiwContentRef.current) {
+      setTimeout(() => {
+        hiwContentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 200)
     }
   }, [activeStep])
 
   const scrollTo = (id: string) => {
     setMobileMenuOpen(false)
     const el = sectionRefs.current[id]
-    if (el) { const top = el.getBoundingClientRect().top + window.scrollY - 70; window.scrollTo({ top, behavior: 'smooth' }) }
+    if (el) {
+      const top = el.getBoundingClientRect().top + window.scrollY - 70
+      window.scrollTo({ top, behavior: 'smooth' })
+    }
   }
 
   const price = billing === 'monthly' ? '79.99' : '66.66'
@@ -231,58 +249,34 @@ export default function MarketingPage() {
 
         /* ── MOBILE RESPONSIVE ── */
         @media(max-width:760px){
-          /* Nav */
           .nav-links{display:none!important}
           .nav-login{display:none!important}
           .hamburger{display:flex!important}
-
-          /* Hero */
           .hero-section{padding:52px 18px 48px!important}
           .hero-buttons{flex-direction:column!important;align-items:stretch!important}
           .hero-buttons a,.hero-buttons div{text-align:center!important;justify-content:center!important}
           .demo-window{margin:0 -2px!important}
-
-          /* Asset bar */
           .asset-bar-inner{justify-content:flex-start!important;overflow-x:auto!important;flex-wrap:nowrap!important;padding-bottom:4px!important}
-
-          /* Features */
           .features-grid{grid-template-columns:1fr!important}
-
-          /* How it works */
           .hiw-grid{grid-template-columns:1fr!important}
           .hiw-steps-col{display:flex!important;flex-direction:row!important;overflow-x:auto!important;gap:0!important;border-right:none!important;border-bottom:1px solid var(--border)!important}
           .hiw-step-item{min-width:160px!important;flex-shrink:0!important;border-bottom:none!important;border-right:1px solid var(--border)!important}
           .hiw-content-col{padding:20px 16px!important}
-
-          /* Calendar */
           .calendar-event{flex-wrap:wrap!important;gap:6px!important}
           .calendar-event-time{width:auto!important}
-
-          /* Testimonials */
           .testimonials-grid{grid-template-columns:1fr!important}
-
-          /* Pricing */
           .price-inner{flex-direction:column!important}
           .price-features-col{display:block!important;min-width:unset!important}
           .comp-grid{grid-template-columns:1fr 1fr!important}
           .billing-toggle{flex-wrap:wrap!important}
-
-          /* FAQ */
           .faq-q{font-size:13px!important}
-
-          /* Footer */
           .footer-grid{grid-template-columns:1fr 1fr!important;gap:28px!important}
           .footer-brand{grid-column:1/-1!important}
           .footer-bottom{flex-direction:column!important;gap:6px!important;text-align:center!important}
-
-          /* Section padding */
           .section-pad{padding:60px 18px!important}
           .section-pad-sm{padding:48px 18px!important}
-
-          /* Comparison — hide on very small */
           .comp-grid-wrap{overflow-x:auto!important}
         }
-
         @media(max-width:480px){
           .comp-grid{grid-template-columns:1fr 1fr!important}
           .features-grid{grid-template-columns:1fr!important}
@@ -291,7 +285,7 @@ export default function MarketingPage() {
       `}</style>
 
       {/* ── TICKER ── */}
-      <div style={{ background:T.tickerBg, borderBottom:`1px solid ${isDark?T.border:'#3a2808'}`, height:30, overflow:'hidden', position:'relative', transition:'background 0.3s ease' }}>
+      <div style={{ background:T.tickerBg, borderBottom:`1px solid ${isDark?T.border:'#3a2808'}`, height:30, overflow:'hidden', position:'relative' }}>
         <div style={{ position:'absolute', left:0, top:0, bottom:0, width:40, background:`linear-gradient(90deg,${T.tickerBg},transparent)`, zIndex:2 }} />
         <div style={{ position:'absolute', right:0, top:0, bottom:0, width:40, background:`linear-gradient(-90deg,${T.tickerBg},transparent)`, zIndex:2 }} />
         <div className="ticker-inner">
@@ -308,14 +302,11 @@ export default function MarketingPage() {
       {/* ── NAVBAR ── */}
       <nav style={{ position:'sticky', top:0, zIndex:100, background:T.navBg, backdropFilter:'blur(16px)', borderBottom:`1px solid ${T.border}`, transition:'background 0.3s ease' }}>
         <div style={{ maxWidth:1100, margin:'0 auto', padding:'0 18px', height:54, display:'flex', alignItems:'center', gap:12 }}>
-          {/* Logo */}
           <div style={{ marginRight:24, flexShrink:0, cursor:'pointer', display:'flex', alignItems:'center', gap:8 }} onClick={()=>window.scrollTo({top:0,behavior:'smooth'})}>
             <LogoSvg size={20} />
             <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, fontStyle:'italic', color:T.heading, fontWeight:600 }}>Hey </span>
             <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, fontStyle:'italic', color:T.gold, fontWeight:700 }}>Monday</span>
           </div>
-
-          {/* Desktop nav links */}
           <div className="nav-links" style={{ display:'flex', gap:24, marginRight:'auto' }}>
             {NAV_SECTIONS.map(s=>(
               <span key={s.id} onClick={()=>scrollTo(s.id)}
@@ -324,8 +315,6 @@ export default function MarketingPage() {
               </span>
             ))}
           </div>
-
-          {/* Right side */}
           <div style={{ display:'flex', gap:8, alignItems:'center', marginLeft:'auto' }}>
             <button onClick={toggle} style={{ background:T.toggleBg, border:`1px solid ${T.toggleBorder}`, borderRadius:24, padding:'5px 10px', cursor:'pointer', display:'flex', alignItems:'center', gap:5, color:T.text2, transition:'all 0.3s ease', flexShrink:0 }}>
               <span key={String(isDark)} className="toggle-icon">
@@ -338,7 +327,6 @@ export default function MarketingPage() {
             <Link href="/signup" style={{ textDecoration:'none' }}>
               <div style={{ fontSize:10, fontWeight:700, color:T.btnText, background:T.gold, padding:'8px 14px', letterSpacing:'0.1em', textTransform:'uppercase', cursor:'pointer', whiteSpace:'nowrap' }}>Free Trial →</div>
             </Link>
-            {/* Hamburger — hidden on desktop via CSS */}
             <button className="hamburger" onClick={()=>setMobileMenuOpen(v=>!v)}
               style={{ display:'none', flexDirection:'column', gap:5, padding:'6px', background:'transparent', border:`1px solid ${T.border2}`, cursor:'pointer', flexShrink:0 }}>
               <div style={{ width:16, height:1.5, background:T.gold }} />
@@ -347,8 +335,6 @@ export default function MarketingPage() {
             </button>
           </div>
         </div>
-
-        {/* Mobile menu dropdown */}
         {mobileMenuOpen && (
           <div className="mobile-menu-anim" style={{ borderTop:`1px solid ${T.border}`, background:T.navBg, padding:'12px 18px 16px' }}>
             {NAV_SECTIONS.map(s=>(
@@ -396,8 +382,6 @@ export default function MarketingPage() {
             See How It Works
           </div>
         </div>
-
-        {/* Demo window */}
         <div className="demo-window" style={{ maxWidth:680, margin:'0 auto', background:T.chatBg, border:`1px solid ${T.border2}`, position:'relative', overflow:'hidden', boxShadow:T.pricingShadow }}>
           <div style={{ position:'absolute', left:0, right:0, height:1, background:`linear-gradient(90deg,transparent,${T.scanline},transparent)`, animation:'scanline 9s linear infinite', pointerEvents:'none', zIndex:2 }} />
           <div style={{ padding:'9px 14px', borderBottom:`1px solid ${T.border}`, display:'flex', alignItems:'center', gap:8, background:T.chatToolbar }}>
@@ -479,10 +463,16 @@ export default function MarketingPage() {
             </h2>
           </div>
           <div className="hiw-grid" style={{ display:'grid', gridTemplateColumns:'240px 1fr', gap:1, background:T.border }}>
-            {/* Steps column */}
-            <div className="hiw-steps-col" style={{ display:'flex', flexDirection:'column' }}>
+
+            {/* Steps column / horizontal tab bar on mobile */}
+            <div ref={hiwStepTabsRef} className="hiw-steps-col" style={{ display:'flex', flexDirection:'column' }}>
               {STEPS.map((s,i)=>(
-                <div key={i} className="hiw-step-item" onClick={()=>setActiveStep(i)} style={{ background:activeStep===i?T.stepActive:T.stepInactive, borderLeft:activeStep===i?`3px solid ${T.gold}`:'3px solid transparent', padding:'16px 14px', cursor:'pointer', transition:'all .15s', borderBottom:`1px solid ${T.border}` }}>
+                <div
+                  key={i}
+                  ref={el => { stepTabRefs.current[i] = el }}
+                  className="hiw-step-item"
+                  onClick={()=>setActiveStep(i)}
+                  style={{ background:activeStep===i?T.stepActive:T.stepInactive, borderLeft:activeStep===i?`3px solid ${T.gold}`:'3px solid transparent', padding:'16px 14px', cursor:'pointer', transition:'all .15s', borderBottom:`1px solid ${T.border}` }}>
                   <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                     <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:16, fontStyle:'italic', color:activeStep===i?T.gold:`${T.gold}33`, fontWeight:700, lineHeight:1, flexShrink:0, width:24 }}>{s.n}</div>
                     <div style={{ fontSize:11, fontWeight:600, color:activeStep===i?T.heading:T.text3 }}>{s.title}</div>
@@ -491,7 +481,8 @@ export default function MarketingPage() {
                 </div>
               ))}
             </div>
-            {/* Content */}
+
+            {/* Content panel */}
             <div ref={hiwContentRef} className="hiw-content-col" style={{ background:T.pageBg, padding:'24px', minHeight:280 }}>
               <div style={{ height:2, background:`linear-gradient(90deg,${T.gold},transparent)`, marginBottom:20, width:['20%','40%','60%','80%','100%'][activeStep], transition:'width .4s ease' }} />
 
@@ -673,7 +664,6 @@ export default function MarketingPage() {
             <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(24px,4.5vw,48px)', fontStyle:'italic', fontWeight:600, color:T.heading, marginBottom:8 }}>One plan. Everything included.</h2>
             <p style={{ fontSize:12, color:T.text2 }}>No tiers. No feature gates. No gotchas.</p>
           </div>
-          {/* Billing toggle */}
           <div style={{ display:'flex', justifyContent:'center', marginBottom:32 }}>
             <div className="billing-toggle" style={{ display:'inline-flex', background:T.bg2, border:`1px solid ${T.border2}`, padding:3, gap:3 }}>
               {(['monthly','annual'] as const).map(b=>(
@@ -684,7 +674,6 @@ export default function MarketingPage() {
               ))}
             </div>
           </div>
-          {/* Pricing card */}
           <div style={{ background:T.pricingBg, border:`1px solid ${T.pricingBorder}`, position:'relative', overflow:'hidden', boxShadow:T.pricingShadow }}>
             <div style={{ height:2, background:`linear-gradient(90deg,transparent,${T.gold},transparent)` }} />
             <div className="price-inner" style={{ padding:'28px 24px', display:'flex', alignItems:'flex-start', gap:32 }}>
@@ -709,7 +698,6 @@ export default function MarketingPage() {
                 </Link>
                 <div style={{ marginTop:10, fontSize:9, color:T.text3 }}>✓ Cancel anytime</div>
               </div>
-              {/* Features list — hidden on mobile via CSS above, shown on desktop */}
               <div className="price-features-col" style={{ flexShrink:0, minWidth:220 }}>
                 <div style={{ fontSize:9, letterSpacing:'0.18em', color:T.text3, marginBottom:10, textTransform:'uppercase' }}>Everything included</div>
                 {['Live prices — all asset classes','AI voice "Hey Monday" wake word','High-impact economic calendar','News feed with sentiment scoring','Level 2 / order flow descriptions','Morning & EOD spoken briefings','Price + macro event alerts','Watchlist (unlimited assets)','All APIs called per question','Conversation history + audio replay'].map((f,i)=>(
@@ -721,7 +709,6 @@ export default function MarketingPage() {
               </div>
             </div>
           </div>
-          {/* Comparison table */}
           <div className="comp-grid-wrap" style={{ marginTop:14 }}>
             <div className="comp-grid" style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:1, background:T.border, minWidth:320 }}>
               {COMPARISONS.map((c,i)=>(
