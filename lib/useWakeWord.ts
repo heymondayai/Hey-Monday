@@ -29,7 +29,7 @@ const SAMPLE_RATE       = 16000
 const CHUNK_SAMPLES     = 1280          // 80ms per chunk
 const MEL_FRAMES_NEEDED = 76            // embedding model input window
 const MEL_STEP          = 8             // slide mel buffer by this many frames
-const DETECTION_THRESHOLD = 0.05       // score above this = detected
+const DETECTION_THRESHOLD = 0.08       // score above this = detected
 const COOLDOWN_MS       = 2000          // prevent re-firing for 2 seconds
 
 interface UseWakeWordOptions {
@@ -80,6 +80,9 @@ export function useWakeWord({
 
   //Consecutive Calls
   const consecutiveHitsRef = useRef(0)
+
+  //Scoring Ref
+  const scoreHistoryRef = useRef<number[]>([])
 
   // ── LOAD MODELS ─────────────────────────────────────────────────────────────
   const loadModels = useCallback(async () => {
@@ -180,13 +183,13 @@ export function useWakeWord({
 
           console.log('[WakeWord] score:', score.toFixed(4))
 
-          if (score > threshold) {
-  consecutiveHitsRef.current += 1
-} else {
-  consecutiveHitsRef.current = 0
-}
+          // Rolling average of last 4 scores
+          const scoreHistoryRef_scores = scoreHistoryRef.current
+          scoreHistoryRef_scores.push(score)
+          if (scoreHistoryRef_scores.length > 4) scoreHistoryRef_scores.shift()
+          const avgScore = scoreHistoryRef_scores.reduce((a, b) => a + b, 0) / scoreHistoryRef_scores.length
 
-if (consecutiveHitsRef.current >= 2) {
+if (avgScore > threshold) {
   const now = Date.now()
   if (now - lastDetectRef.current > COOLDOWN_MS) {
     lastDetectRef.current = now
@@ -277,6 +280,8 @@ if (consecutiveHitsRef.current >= 2) {
       pendingChunksRef.current = []
       processingLoopActiveRef.current = false
       lastDetectRef.current = 0
+      scoreHistoryRef.current = []
+
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -289,13 +294,13 @@ if (consecutiveHitsRef.current >= 2) {
       })
       streamRef.current = stream
 
-      const ctx = new AudioContext()
+      const ctx = new AudioContext({ sampleRate: SAMPLE_RATE })
       audioCtxRef.current = ctx
 
       const source = ctx.createMediaStreamSource(stream)
       sourceRef.current = source
 
-      const processor = ctx.createScriptProcessor(4096, 1, 1)
+      const processor = ctx.createScriptProcessor(8192, 1, 1)
       processorRef.current = processor
 
       const silentGain = ctx.createGain()
@@ -366,6 +371,7 @@ if (consecutiveHitsRef.current >= 2) {
     embBufferRef.current = []
     pendingChunksRef.current = []
     processingLoopActiveRef.current = false
+    scoreHistoryRef.current = []
 
     setListening(false)
   }, [])
