@@ -170,6 +170,7 @@ export default function MarketingPage() {
   const [activeStep, setActiveStep]   = useState(0)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
+  const hiwContentRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const t = setInterval(() => setChatStep(s => s < DEMO_CHAT.length ? s + 1 : s), 2800)
@@ -189,6 +190,12 @@ export default function MarketingPage() {
     window.addEventListener('scroll', handler, { passive: true })
     return () => window.removeEventListener('scroll', handler)
   }, [])
+
+  useEffect(() => {
+    if (hiwContentRef.current) {
+    hiwContentRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [activeStep])
 
   const scrollTo = (id: string) => {
     setMobileMenuOpen(false)
@@ -485,7 +492,7 @@ export default function MarketingPage() {
               ))}
             </div>
             {/* Content */}
-            <div className="hiw-content-col" style={{ background:T.pageBg, padding:'24px', minHeight:280 }}>
+            <div ref={hiwContentRef} className="hiw-content-col" style={{ background:T.pageBg, padding:'24px', minHeight:280 }}>
               <div style={{ height:2, background:`linear-gradient(90deg,${T.gold},transparent)`, marginBottom:20, width:['20%','40%','60%','80%','100%'][activeStep], transition:'width .4s ease' }} />
 
               {activeStep === 0 && (
