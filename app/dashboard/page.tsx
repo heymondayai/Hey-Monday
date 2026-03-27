@@ -1534,6 +1534,7 @@ function startThinkingChimes(): () => void {
                       <div style={{ fontSize: '12px', color: s.change ? (s.up ? T.green : T.red) : T.text8, fontFamily: "'DM Mono', monospace", fontWeight: 600, minWidth: '46px', textAlign: 'right' }}>{s.change ?? '—'}</div>
                     </div>
                   ))}
+                  
                   {/* Alerts */}
                   {alerts.length > 0 && (
                     <div style={{ padding: '12px 16px 6px', borderTop: `1px solid ${T.borderFaint}`, marginTop: '8px' }}>
@@ -1793,6 +1794,7 @@ function startThinkingChimes(): () => void {
             </div>
 
             {/* Alerts */}
+            {false && (
             <div style={{ borderTop: `1px solid ${T.border}`, padding: '10px 18px', flexShrink: 0, maxHeight: '260px', overflowY: 'auto' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                 <div style={{ fontSize: '10px', letterSpacing: '0.25em', textTransform: 'uppercase', color: T.goldText, fontWeight: 600 }}>Price Alerts</div>
@@ -1834,7 +1836,7 @@ function startThinkingChimes(): () => void {
               ))}
               {alerts.length >= 10 && <div style={{ fontSize: '10px', color: T.text8, fontStyle: 'italic', marginTop: '4px' }}>Max 10 alerts reached</div>}
             </div>
-
+            )}
             <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div onClick={() => router.push('/dashboard/settings')} style={{ fontSize: '11px', color: T.goldText, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>⚙ Settings</div>
               <div onClick={handleLogout} style={{ fontSize: '11px', color: T.text6, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Sign Out</div>
