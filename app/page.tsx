@@ -196,21 +196,12 @@ export default function MarketingPage() {
 
   // Auto-scroll HIW on step change
   useEffect(() => {
-    const isMobile = window.innerWidth <= 760
-
-    // Always scroll the active tab horizontally into view (centered)
-    const activeTab = stepTabRefs.current[activeStep]
-    if (activeTab) {
-      activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-    }
-
-    // On mobile only: scroll the content panel into view after tab scroll finishes
-    if (isMobile && hiwContentRef.current) {
-      setTimeout(() => {
-        hiwContentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 200)
-    }
-  }, [activeStep])
+  // Scroll the active step tab into view horizontally only — no vertical movement
+  const activeTab = stepTabRefs.current[activeStep]
+  if (activeTab) {
+    activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+  }
+}, [activeStep])
 
   const scrollTo = (id: string) => {
     setMobileMenuOpen(false)
