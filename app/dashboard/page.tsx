@@ -943,7 +943,7 @@ function startThinkingChimes(): () => void {
     await new Promise(r => setTimeout(r, 360))
     if (cancelled) return
     playChime('tick')
-    await new Promise(r => setTimeout(r, 1000))
+    await new Promise(r => setTimeout(r, 2000))
     if (!cancelled) loop()
   }
   loop()
