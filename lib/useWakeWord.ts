@@ -29,7 +29,7 @@ const SAMPLE_RATE       = 16000
 const CHUNK_SAMPLES     = 1280          // 80ms per chunk
 const MEL_FRAMES_NEEDED = 76            // embedding model input window
 const MEL_STEP          = 4             // slide mel buffer by this many frames
-const DETECTION_THRESHOLD = 0.05       // score above this = detected
+const DETECTION_THRESHOLD = 0.1       // score above this = detected
 const COOLDOWN_MS       = 2000          // prevent re-firing for 2 seconds
 
 interface UseWakeWordOptions {
@@ -303,7 +303,6 @@ export function useWakeWord({
       processor.onaudioprocess = (e: AudioProcessingEvent) => {
         const inputData = e.inputBuffer.getChannelData(0)
         const inputRate = ctx.sampleRate
-        console.log('[WakeWord] actual sampleRate:', inputRate)
 
         const ratio = inputRate / SAMPLE_RATE
         const outLen = Math.floor(inputData.length / ratio)

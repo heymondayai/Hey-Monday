@@ -417,9 +417,7 @@ export async function POST(req: Request) {
 
     const [intradayResult, economicEvents, earningsEvents, macroData, sectorData] = await Promise.all([
       fetchIntraday(intradaySymbols),
-      fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/calendar?from=${todayStr}&to=${calendarTo}&view=full`)
-  .then(r => r.json())
-  .then(d => d.events ?? []),
+      fetchEconomicCalendar(todayStr, calendarTo),
       fetchEarningsCalendar(intradaySymbols, 7),
       fetchMacroData(),
       fetchSectorPerformance(),
@@ -466,13 +464,7 @@ export async function POST(req: Request) {
       : ''
 
     const intradayContext = formatIntradayContext(intradayResult.data)
-    const calendarContext = economicEvents.length
-  ? `ECONOMIC CALENDAR (today + upcoming):\n` +
-    economicEvents
-      .filter((e: any) => e.impact === 'HIGH' || e.impact === 'MEDIUM')
-      .map((e: any) => `  ${e.date} ${e.timeET || '--'} [${e.impact}] ${e.name}${e.actual ? ` — Actual: ${e.actual}` : e.forecast ? ` — Est: ${e.forecast}` : ''}`)
-      .join('\n')
-  : ''
+    const calendarContext = formatEconomicCalendar(economicEvents, todayStr)
     const earningsContext = formatEarningsCalendar(earningsEvents)
     const macroContext = formatMacroData(macroData)
     const sectorContext = formatSectorPerformance(sectorData)
