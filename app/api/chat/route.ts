@@ -603,7 +603,7 @@ ${lengthRules}`
         : intent.requestType === 'simple' ? 60
         : intent.isOpenEndedWhyQuestion ? 120
         : intent.requestType === 'briefing' ? 130
-        : 100
+        : intent.needsMacro ? 160 : 100
 
     const requestBody: any = {
       model,
