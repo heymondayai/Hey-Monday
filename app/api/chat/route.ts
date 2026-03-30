@@ -251,7 +251,7 @@ function classifyIntent(
   const needsInsider = /insider|bought|sold|selling|buying|executive|ceo|cfo|officer|director/.test(lower)
   const needsAnalyst = /analyst|rating|price target|upgrade|downgrade|wall street|goldman|morgan|jpmorgan|ubs|citi|bank of america/.test(lower)
   const needsOptions = /option|call|put|unusual|flow|iv|implied vol|gamma|open interest|oi|strike|expir|contracts|derivatives/.test(lower)
-  const needsMacro = /macro|fed|fomc|cpi|inflation|yield|treasury|rate|unemployment|gdp|interest rate|10-year|2-year|jobs|payroll|pce/.test(lower)
+  const needsMacro = /macro|fed|fomc|cpi|inflation|yield|treasury|rate|unemployment|gdp|interest rate|10-year|2-year|jobs|payroll|pce|calendar|events|tomorrow|today|scheduled|this week|economic|release|data|high impact|news event/.test(lower)
   const needsSector = /sector|rotation|energy|tech|financials|healthcare|real estate|industrials|utilities|materials|consumer|xlk|xle|xlf|xlv|xlre|xli|xlu|xlb|xly|xlp/.test(lower)
   const needsFilings = /filing|8-k|10-q|10-k|sec|reported|disclosed|announced/.test(lower)
   const needsNews = /news|headline|headlines|why is|why did|why are|catalyst|what happened|what caused|what moved|driver|drivers/.test(lower)
