@@ -160,7 +160,11 @@ export async function fetchEconomicCalendar(
       const raw = await res.json()
       const events = Array.isArray(raw?.economics) ? raw.economics : []
       return events
-        .filter((e: any) => e.country === 'US' || e.country === 'USA' || !e.country)
+        .filter((e: any) => {
+  if (!e.country) return true
+  const c = e.country.toUpperCase()
+  return c === 'US' || c === 'USA' || c.includes('UNITED STATES') || c.includes('AMERICA')
+})
         .map((e: any) => {
           const imp = Number(e.importance)
           return {
@@ -174,7 +178,7 @@ export async function fetchEconomicCalendar(
             country:  'US',
           } as EconomicEvent
         })
-        .filter((e: EconomicEvent) => e.event && (e.impact === 'HIGH' || e.impact === 'MEDIUM'))
+        .filter((e: EconomicEvent) => e.event)
     }))
 
     return results.flat()
