@@ -472,11 +472,21 @@ export async function POST(req: Request) {
     const analystContext = tier2.analyst ? formatAnalystRatings(tier2.analyst, intent.focusSymbol ?? '') : ''
     const optionsContext = tier2.options ? formatOptionsFlow(tier2.options, intent.focusSymbol ?? '') : ''
 
-    const fullContextBlocks = [
-      watchlistContext, marketDataContext, newsContext, level2Context,
-      calendarContext, earningsContext, intradayContext, macroContext,
-      sectorContext, insiderContext, analystContext, optionsContext,
-    ].filter(Boolean).join('\n\n')
+    const isCalendarQuestion = intent.needsMacro
+const isBriefing = intent.requestType === 'briefing'
+
+const fullContextBlocks = [
+  watchlistContext,                                          // always — small
+  marketDataContext,                                         // always — small
+  isCalendarQuestion || isBriefing ? calendarContext : '',  // calendar/briefing only
+  earningsContext,                                           // always — small
+  isCalendarQuestion || isBriefing ? macroContext : '',      // macro questions
+  intent.needsSector || isBriefing ? sectorContext : '',     // sector questions
+  intent.needsNews || isBriefing ? newsContext : '',         // news questions
+  isBriefing ? intradayContext : '',                         // briefings only — this is huge
+  level2Context,                                             // only if passed
+  insiderContext, analystContext, optionsContext,             // conditional already
+].filter(Boolean).join('\n\n')
 
     const researchContextBlocks = buildResearchContext({
       focusSymbol: intent.focusSymbol, prices, news,
@@ -603,7 +613,7 @@ ${lengthRules}`
         : intent.requestType === 'simple' ? 60
         : intent.isOpenEndedWhyQuestion ? 120
         : intent.requestType === 'briefing' ? 130
-        : intent.needsMacro ? 160 : 100
+        : intent.needsMacro ? 180 : 100
 
     const requestBody: any = {
       model,
