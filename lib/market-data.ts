@@ -132,28 +132,52 @@ export async function fetchEconomicCalendar(
   from: string,
   to: string
 ): Promise<EconomicEvent[]> {
-  const key = process.env.FMP_API_KEY
+  const key = process.env.BENZINGA_API_KEY
   if (!key) return []
 
   try {
-    const url = `https://financialmodelingprep.com/api/v3/economic_calendar?from=${from}&to=${to}&apikey=${key}`
-    const res = await fetch(url, { next: { revalidate: 300 } })
+    // Enumerate each day in range and fetch from Benzinga
+    const days: string[] = []
+    const cursor = new Date(`${from}T12:00:00`)
+    const end = new Date(`${to}T12:00:00`)
+    while (cursor <= end) {
+      days.push(cursor.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }))
+      cursor.setDate(cursor.getDate() + 1)
+    }
 
-    if (!res.ok) return []
-    const raw: any[] = await res.json()
+    const results = await Promise.all(days.map(async (day) => {
+      const params = new URLSearchParams({
+        token: key,
+        'parameters[date_from]': day,
+        'parameters[date_to]': day,
+        'parameters[importance]': '1',
+      })
+      const res = await fetch(
+        `https://api.benzinga.com/api/v2.1/calendar/economics?${params}`,
+        { next: { revalidate: 300 } }
+      )
+      if (!res.ok) return []
+      const raw = await res.json()
+      const events = Array.isArray(raw?.economics) ? raw.economics : []
+      return events
+        .filter((e: any) => e.country === 'US' || e.country === 'USA' || !e.country)
+        .map((e: any) => {
+          const imp = Number(e.importance)
+          return {
+            date:     day,
+            time:     (e.time ?? '').slice(0, 5),
+            event:    (e.event_name ?? e.event ?? '').trim(),
+            impact:   imp === 3 ? 'HIGH' : imp === 2 ? 'MEDIUM' : 'LOW',
+            actual:   e.actual != null && e.actual !== '' ? String(e.actual) : null,
+            forecast: e.consensus != null && e.consensus !== '' ? String(e.consensus) : null,
+            previous: e.previous != null && e.previous !== '' ? String(e.previous) : null,
+            country:  'US',
+          } as EconomicEvent
+        })
+        .filter((e: EconomicEvent) => e.event && (e.impact === 'HIGH' || e.impact === 'MEDIUM'))
+    }))
 
-    return raw
-      .filter(e => e.impact === 'High' || e.impact === 'Medium' || e.impact === 'Low')
-      .map(e => ({
-        date:     e.date?.split(' ')[0] ?? '',
-        time:     e.date?.split(' ')[1]?.slice(0, 5) ?? '',
-        event:    e.event ?? '',
-        impact:   e.impact === 'High' ? 'HIGH' : e.impact === 'Medium' ? 'MEDIUM' : 'LOW',
-        actual:   e.actual != null ? String(e.actual) : null,
-        forecast: e.estimate != null ? String(e.estimate) : null,
-        previous: e.previous != null ? String(e.previous) : null,
-        country:  e.country ?? 'US',
-      }))
+    return results.flat()
   } catch {
     return []
   }

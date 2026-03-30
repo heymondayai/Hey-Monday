@@ -176,6 +176,17 @@ export default function MarketingPage() {
   const stepTabRefs   = useRef<(HTMLDivElement | null)[]>([])
 
   useEffect(() => {
+  if ('scrollRestoration' in history) {
+    history.scrollRestoration = 'manual'
+  }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      window.scrollTo(0, 0)
+    })
+  })
+}, [])
+
+  useEffect(() => {
     const t = setInterval(() => setChatStep(s => s < DEMO_CHAT.length ? s + 1 : s), 2800)
     return () => clearInterval(t)
   }, [])
