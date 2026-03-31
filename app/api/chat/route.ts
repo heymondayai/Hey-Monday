@@ -581,6 +581,7 @@ CORE RULES:
 4. Frame bullish/bearish views as scenario analysis, never as advice.
 5. Never tell the user to buy, sell, or size a position.
 6. If data is missing, say so in one sentence and stop.
+7. For calendar questions, treat HIGH and MEDIUM impact events as market-moving. Do not say "no high impact events" if MEDIUM impact events exist — list them.
 
 ${lengthRules}`
 
