@@ -31,7 +31,7 @@ export interface InsiderTransaction {
   symbol: string
   name: string
   transactionDate: string
-  transactionType: string // 'Buy' | 'Sale' | 'Sale - Planned' etc
+  transactionType: string
   shares: number
   value: number
   filingDate: string
@@ -43,7 +43,7 @@ export interface AnalystRating {
   rating: string
   priceTarget: number | null
   date: string
-  action: string // 'upgrade' | 'downgrade' | 'init' | 'reiterate'
+  action: string
 }
 
 export interface OptionsFlow {
@@ -62,7 +62,7 @@ export interface MacroData {
   fedFundsRate: string | null
   tenYearYield: string | null
   twoYearYield: string | null
-  yieldSpread: string | null   // 10Y minus 2Y
+  yieldSpread: string | null
   cpiYoY: string | null
   unemploymentRate: string | null
 }
@@ -70,7 +70,7 @@ export interface MacroData {
 export interface EarningsEvent {
   symbol: string
   date: string
-  time: 'bmo' | 'amc' | 'dmh' | '--'  // before market open, after market close, during market hours
+  time: 'bmo' | 'amc' | 'dmh' | '--'
   epsEstimate: number | null
   revenueEstimate: number | null
   epsActual: number | null
@@ -80,7 +80,7 @@ export interface EarningsEvent {
 export interface SecFiling {
   symbol: string
   filingDate: string
-  type: string   // '8-K', '10-Q', '10-K', '13F', etc
+  type: string
   title: string
   url: string
 }
@@ -90,7 +90,7 @@ export interface SecFiling {
 export async function fetchIntraday(
   symbols: string[],
   interval: '1min' | '5min' | '15min' = '5min',
-  outputsize: number = 100   // ~8h of 5min candles — covers pre-market + full session
+  outputsize: number = 100
 ): Promise<{ data: Record<string, Candle[]>; debug: string[] }> {
   const key = process.env.TWELVE_DATA_API_KEY
   const debug: string[] = []
@@ -99,18 +99,16 @@ export async function fetchIntraday(
 
   try {
     const syms = symbols.join(',')
-    // extended_hours=true includes pre-market (4 AM ET) and after-hours (up to 8 PM ET)
-    // Requires Twelve Data Growth plan ($29/mo) or higher
-    const url  = `https://api.twelvedata.com/time_series?symbol=${syms}&interval=${interval}&outputsize=${outputsize}&extended_hours=true&apikey=${key}`
-    const res  = await fetch(url, { next: { revalidate: 60 } })
+    const url = `https://api.twelvedata.com/time_series?symbol=${syms}&interval=${interval}&outputsize=${outputsize}&extended_hours=true&apikey=${key}`
+    const res = await fetch(url, { next: { revalidate: 60 } })
 
     if (!res.ok) { debug.push(`Twelve Data HTTP ${res.status}`); return { data: {}, debug } }
 
-    const raw    = await res.json()
+    const raw = await res.json()
     const result: Record<string, Candle[]> = {}
 
     for (const sym of symbols) {
-      const entry = raw[sym] ?? raw  // single symbol returns root-level
+      const entry = raw[sym] ?? raw
       if (!entry || entry.status === 'error' || !entry.values?.length) {
         debug.push(`${sym}: ${entry?.message ?? 'no data'}`)
         continue
@@ -126,7 +124,7 @@ export async function fetchIntraday(
   }
 }
 
-// ── FMP — ECONOMIC CALENDAR ──────────────────────────────────────────────────
+// ── BENZINGA — ECONOMIC CALENDAR ─────────────────────────────────────────────
 
 export async function fetchEconomicCalendar(
   from: string,
@@ -136,7 +134,6 @@ export async function fetchEconomicCalendar(
   if (!key) return []
 
   try {
-    // Enumerate each day in range and fetch from Benzinga
     const days: string[] = []
     const cursor = new Date(`${from}T12:00:00`)
     const end = new Date(`${to}T12:00:00`)
@@ -145,40 +142,48 @@ export async function fetchEconomicCalendar(
       cursor.setDate(cursor.getDate() + 1)
     }
 
-    const results = await Promise.all(days.map(async (day) => {
-      const params = new URLSearchParams({
-        token: key,
-        'parameters[date_from]': day,
-        'parameters[date_to]': day,
-        'parameters[importance]': '1',
-      })
-      const res = await fetch(
-        `https://api.benzinga.com/api/v2.1/calendar/economics?${params}`,
-        { next: { revalidate: 300 } }
-      )
-      if (!res.ok) return []
-      const raw = await res.json()
-      const events = Array.isArray(raw?.economics) ? raw.economics : []
-      return events
-        .filter((e: any) => {
-  if (!e.country) return true
-  const c = e.country.toUpperCase()
-  return c === 'US' || c === 'USA' || c.includes('UNITED STATES') || c.includes('AMERICA')
-})
-        .map((e: any) => {
-          const imp = Number(e.importance)
-          return {
-            date:     day,
-            time:     (e.time ?? '').slice(0, 5),
-            event:    (e.event_name ?? e.event ?? '').trim(),
-            impact:   imp === 3 ? 'HIGH' : imp === 2 ? 'MEDIUM' : 'LOW',
-            actual:   e.actual != null && e.actual !== '' ? String(e.actual) : null,
-            forecast: e.consensus != null && e.consensus !== '' ? String(e.consensus) : null,
-            previous: e.previous != null && e.previous !== '' ? String(e.previous) : null,
-            country:  'US',
-          } as EconomicEvent
+    const results = await Promise.all(days.map(async (day): Promise<EconomicEvent[]> => {
+      try {
+        const params = new URLSearchParams({
+          token: key,
+          'parameters[date_from]': day,
+          'parameters[date_to]': day,
+          'parameters[importance]': '1',
         })
-        .filter((e: EconomicEvent) => e.event)
+        const res = await fetch(
+          `https://api.benzinga.com/api/v2.1/calendar/economics?${params}`,
+          { cache: 'no-store' }
+        )
+        if (!res.ok) {
+          console.error('[calendar] Benzinga HTTP', res.status, 'for day', day)
+          return []
+        }
+        const raw = await res.json()
+        console.log('[calendar] Benzinga raw for', day, ':', JSON.stringify(raw).slice(0, 200))
+        const events: any[] = Array.isArray(raw?.economics) ? raw.economics : []
+        return events
+          .filter((e: any) => {
+            if (!e.country) return true
+            const c = e.country.toUpperCase()
+            return c === 'US' || c === 'USA' || c.includes('UNITED STATES') || c.includes('AMERICA')
+          })
+          .map((e: any): EconomicEvent => {
+            const imp = Number(e.importance)
+            return {
+              date:     day,
+              time:     (e.time ?? '').slice(0, 5),
+              event:    (e.event_name ?? e.event ?? '').trim(),
+              impact:   imp === 3 ? 'HIGH' : imp === 2 ? 'MEDIUM' : 'LOW',
+              actual:   e.actual != null && e.actual !== '' ? String(e.actual) : null,
+              forecast: e.consensus != null && e.consensus !== '' ? String(e.consensus) : null,
+              previous: e.previous != null && e.previous !== '' ? String(e.previous) : null,
+              country:  'US',
+            }
+          })
+          .filter((e: EconomicEvent) => e.event)
+      } catch {
+        return []
+      }
     }))
 
     return results.flat()
@@ -186,7 +191,6 @@ export async function fetchEconomicCalendar(
     return []
   }
 }
-
 
 // ── FINNHUB — INSIDER TRANSACTIONS ───────────────────────────────────────────
 
@@ -257,7 +261,6 @@ export async function fetchOptionsFlow(symbol: string): Promise<OptionsFlow[]> {
     if (!res.ok) return []
     const raw: any[] = await res.json()
 
-    // Filter to high-volume, near-money options as proxy for unusual flow
     return raw
       .filter((o: any) => o.openInterest > 1000 && o.volume > 500)
       .sort((a: any, b: any) => b.volume - a.volume)
@@ -414,7 +417,6 @@ export async function fetchSectorPerformance(): Promise<SectorPerformance[]> {
 }
 
 // ── CONTEXT FORMATTERS ────────────────────────────────────────────────────────
-// These convert raw data into the plain-text blocks injected into the system prompt.
 
 export function formatIntradayContext(data: Record<string, Candle[]>): string {
   if (!Object.keys(data).length) {
@@ -448,7 +450,7 @@ export function formatEconomicCalendar(events: EconomicEvent[], todayStr: string
   const today    = events.filter(e => e.date === todayStr)
   const upcoming = events.filter(e => e.date > todayStr)
 
-  const lines = ['ECONOMIC CALENDAR (real data from FMP — use these, do not fabricate):']
+  const lines = ['ECONOMIC CALENDAR (Benzinga — use these, do not fabricate):']
 
   if (today.length) {
     lines.push('\n  TODAY:')
@@ -462,7 +464,7 @@ export function formatEconomicCalendar(events: EconomicEvent[], todayStr: string
 
   if (upcoming.length) {
     lines.push('\n  UPCOMING:')
-    for (const e of upcoming.slice(0, 6)) {
+    for (const e of upcoming.slice(0, 8)) {
       const forecast = e.forecast ? `Est: ${e.forecast}` : ''
       const prev     = e.previous ? `Prev: ${e.previous}` : ''
       lines.push(`    ${e.date}  ${e.time || '--'} ET  [${e.impact}]  ${e.event}  ${forecast}  ${prev}`.trim())
