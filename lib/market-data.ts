@@ -150,9 +150,9 @@ export async function fetchEconomicCalendar(
           'parameters[date_to]': day,
           'parameters[importance]': '1',
         })
-        const res = await fetch(
+       const res = await fetch(
           `https://api.benzinga.com/api/v2.1/calendar/economics?${params}`,
-          { cache: 'no-store' }
+          { cache: 'no-store', headers: { accept: 'application/json' } }
         )
         console.log('[calendar] Benzinga status for', day, ':', res.status)
         if (!res.ok) {
