@@ -154,14 +154,12 @@ export async function fetchEconomicCalendar(
           `https://api.benzinga.com/api/v2.1/calendar/economics?${params}`,
           { cache: 'no-store', headers: { accept: 'application/json' } }
         )
-        console.log('[calendar] Benzinga status for', day, ':', res.status)
         if (!res.ok) {
           const errText = await res.text()
           console.error('[calendar] Benzinga HTTP', res.status, 'for day', day, 'body:', errText.slice(0, 300))
           return []
         }
         const raw = await res.json()
-        console.log('[calendar] Benzinga raw for', day, ':', JSON.stringify(raw).slice(0, 200))
         const events: any[] = Array.isArray(raw?.economics) ? raw.economics : []
         return events
           .filter((e: any) => {

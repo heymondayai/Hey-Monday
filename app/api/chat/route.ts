@@ -422,7 +422,6 @@ export async function POST(req: Request) {
       fetchMacroData(),
       fetchSectorPerformance(),
     ])
-    console.log('[chat] economicEvents count:', economicEvents.length, 'sample:', JSON.stringify(economicEvents.slice(0,2)))
 
     // ── CONDITIONAL SYMBOL-SPECIFIC FETCHES ─────────────────────────────────
     const tier2Promises: Promise<any>[] = []
