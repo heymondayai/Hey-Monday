@@ -155,7 +155,8 @@ export async function fetchEconomicCalendar(
           { cache: 'no-store' }
         )
         if (!res.ok) {
-          console.error('[calendar] Benzinga HTTP', res.status, 'for day', day)
+          const errText = await res.text()
+          console.error('[calendar] Benzinga HTTP', res.status, 'for day', day, 'body:', errText.slice(0, 300))
           return []
         }
         const raw = await res.json()
