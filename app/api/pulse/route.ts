@@ -110,83 +110,154 @@ function buildHeadline(params: {
   normalizedWatchlist: ReturnType<typeof normalizeWatchlist>
   latestMarketState: MarketStateRow
 }): string {
-  const { traderType, biggestGainer, biggestLoser, macroLead, normalizedWatchlist, latestMarketState } = params
+  const { traderType, biggestGainer, biggestLoser, normalizedWatchlist, latestMarketState } = params
   const { sentiment, bullCount, bearCount } = getMarketSentiment(normalizedWatchlist)
   const total = normalizedWatchlist.filter(w => w.changePct != null).length
-
   const firstEvent = latestMarketState?.calendar_events?.[0]
   const macro = latestMarketState?.macro_context?.[0]
+  const hour = new Date().getHours()
+  const dow = new Date().getDay()
 
-  // ── EVENT-DRIVEN (highest priority) ──────────────────────────────────────
   if (firstEvent?.name && firstEvent?.impact === 'HIGH') {
-    const eventShort = firstEvent.name.replace('Federal Reserve', 'Fed').replace('Nonfarm Payrolls', 'Payrolls')
-    if (sentiment === 'strongly_bullish' || sentiment === 'bullish')
-      return `Bulls position ahead of ${eventShort} — risk appetite holding`
-    if (sentiment === 'strongly_bearish' || sentiment === 'bearish')
-      return `Tape retreats as traders hedge into ${eventShort}`
-    return `Markets on hold — ${eventShort} looms as the session's defining moment`
+    const ev = firstEvent.name
+      .replace('Federal Reserve', 'Fed')
+      .replace('Nonfarm Payrolls', 'Payrolls')
+      .replace('Consumer Price Index', 'CPI')
+    if (sentiment === 'strongly_bullish' || sentiment === 'bullish') {
+      const opts = [
+        `Bulls loading up ahead of ${ev} — conviction high, risk appetite intact`,
+        `Tape running hot into ${ev} — traders betting the print confirms the move`,
+        `${ev} on the horizon and the market is leaning in, not flinching`,
+      ]
+      return opts[hour % opts.length]
+    }
+    if (sentiment === 'strongly_bearish' || sentiment === 'bearish') {
+      const opts = [
+        `Sellers staking out territory before ${ev} has a chance to speak`,
+        `Risk coming off the table — ${ev} has the market thinking twice`,
+        `Caution spreading ahead of ${ev} — nobody wants to be caught leaning wrong`,
+      ]
+      return opts[hour % opts.length]
+    }
+    const opts = [
+      `${ev} approaching — market holding its breath and its positions`,
+      `Everyone waiting on ${ev} to tell them what to do next`,
+      `The tape goes quiet as ${ev} gets closer — calm before the print`,
+    ]
+    return opts[hour % opts.length]
   }
 
-  // ── MACRO-DRIVEN ──────────────────────────────────────────────────────────
   if (macro?.label) {
-    const yieldContext = macro.label.includes('Yield') || macro.label.includes('yield')
-    if (yieldContext && (sentiment === 'bearish' || sentiment === 'strongly_bearish'))
-      return `Rate pressure resurfaces — growth names bear the brunt`
-    if (yieldContext && (sentiment === 'bullish' || sentiment === 'strongly_bullish'))
-      return `Equities shrug off rate pressure — buyers step in`
+    const isYield = macro.label.toLowerCase().includes('yield')
+    const isFed = macro.label.toLowerCase().includes('fed')
+    if (isYield && (sentiment === 'bearish' || sentiment === 'strongly_bearish')) {
+      const opts = [
+        `Rates doing what rates do — repricing growth expectations and taking names with them`,
+        `The bond market is making the equity argument harder — yields up, multiples down`,
+        `Higher-for-longer is back in the conversation and your watchlist is paying the price`,
+        `Yields aren't blinking, and the growth trade is suffering for that stubbornness`,
+      ]
+      return opts[dow % opts.length]
+    }
+    if (isYield && (sentiment === 'bullish' || sentiment === 'strongly_bullish')) {
+      const opts = [
+        `Equities finding a way higher despite the rates backdrop — resilience worth noting`,
+        `Buyers stepping over the yield hurdle — risk appetite proving stickier than expected`,
+        `The rate story hasn't changed but the market's reaction to it has — worth watching`,
+      ]
+      return opts[hour % opts.length]
+    }
+    if (isFed) {
+      const opts = [
+        `Fed policy still casting a long shadow — every tick in rates matters right now`,
+        `Powell's stance is priced in, or so the market thinks — until the next data point`,
+      ]
+      return opts[hour % opts.length]
+    }
   }
 
-  // ── DIVERGENCE (one name running, rest not following) ────────────────────
   if (biggestGainer && biggestLoser) {
     const gPct = biggestGainer.changePct ?? 0
     const lPct = biggestLoser.changePct ?? 0
     const spread = Math.abs(gPct - lPct)
-
-    if (spread > 6 && gPct > 3)
-      return `${biggestGainer.ticker} breaks away from the pack — no confirmation from the broader tape`
-    if (spread > 6 && lPct < -3)
-      return `${biggestLoser.ticker} sells off in isolation — rest of watchlist holding its ground`
-    if (spread > 4)
-      return `${biggestGainer.ticker} and ${biggestLoser.ticker} tell two different stories today`
+    if (spread > 6 && gPct > 3) {
+      const opts = [
+        `${biggestGainer.ticker} ignoring the memo the rest of the watchlist received — running solo`,
+        `${biggestGainer.ticker} in its own universe today — the tape hasn't caught up, or won't`,
+        `One name leading, nobody following — ${biggestGainer.ticker} writing a different story`,
+      ]
+      return opts[hour % opts.length]
+    }
+    if (spread > 6 && lPct < -3) {
+      const opts = [
+        `${biggestLoser.ticker} getting sold like someone knows something — rest of the book holding`,
+        `${biggestLoser.ticker} taking the stairs down while the watchlist takes the elevator sideways`,
+        `Isolated breakdown in ${biggestLoser.ticker} — dispersion rising, conviction uncertain`,
+      ]
+      return opts[hour % opts.length]
+    }
+    if (spread > 4) {
+      const opts = [
+        `${biggestGainer.ticker} and ${biggestLoser.ticker} — same watchlist, completely different sessions`,
+        `A tale of two names: ${biggestGainer.ticker} running while ${biggestLoser.ticker} breaks — the book can't agree on a direction`,
+        `Dispersion widening — ${biggestGainer.ticker} and ${biggestLoser.ticker} pulling the book apart`,
+      ]
+      return opts[dow % opts.length]
+    }
   }
 
-  // ── BROAD SENTIMENT ───────────────────────────────────────────────────────
   if (sentiment === 'strongly_bullish') {
-    const phrases = [
-      `Broad buying sweep — ${bullCount} of ${total} watchlist names in the green`,
-      `Risk appetite returns — your book lifting across the board`,
-      `Bulls in control — momentum building across the watchlist`,
+    const opts = [
+      `Clean sweep — ${bullCount} of ${total} names in the green and the tape has a real pulse today`,
+      `Broad-based buying with genuine participation — not just one name holding the index up`,
+      `Risk-on across the book — the kind of session where staying out costs more than getting in`,
+      `Everything working at once — a rising tide session with ${bullCount} of ${total} names confirming`,
     ]
-    return phrases[new Date().getHours() % phrases.length]
+    return opts[hour % opts.length]
   }
 
   if (sentiment === 'strongly_bearish') {
-    const phrases = [
-      `Broad-based selling — ${bearCount} of ${total} names under pressure`,
-      `Risk-off sweep hits the watchlist — sellers in command`,
-      `Distribution day — no safe harbor in the current book`,
+    const opts = [
+      `Nowhere to hide — ${bearCount} of ${total} names printing red and the bid is thin`,
+      `Broad liquidation underway — the question isn't what's weak, it's what's left standing`,
+      `Sellers running the table across ${bearCount} of ${total} names — limited pushback anywhere`,
+      `Distribution unfolding across the book — this is what a real sell day looks like`,
     ]
-    return phrases[new Date().getHours() % phrases.length]
+    return opts[hour % opts.length]
   }
 
   if (sentiment === 'bullish') {
-    if (biggestGainer) return `${biggestGainer.ticker} pacing a cautiously green session`
-    return `Watchlist grinding higher — no urgency, but buyers present`
+    const opts = [
+      biggestGainer
+        ? `${biggestGainer.ticker} setting the tone for a quietly constructive session`
+        : `Watchlist grinding higher — buyers present but not rushing`,
+      `Mild but real — the tape is leaning up and the book is following along`,
+      `Green session with asterisks — moving higher but nobody's pounding the table yet`,
+    ]
+    return opts[dow % opts.length]
   }
 
   if (sentiment === 'bearish') {
-    if (biggestLoser) return `${biggestLoser.ticker} weighing on a quietly red tape`
-    return `Sellers probing support — watchlist drifting lower without conviction`
+    const opts = [
+      biggestLoser
+        ? `${biggestLoser.ticker} dragging a session that was already looking for a reason to sell`
+        : `Quiet selling pressure — not panic, but nobody's buying this dip with conviction`,
+      `Sellers in light control — the path of least resistance is still lower for now`,
+      `Red tape, low conviction — feels more like exhaustion than real distribution`,
+    ]
+    return opts[dow % opts.length]
   }
 
-  // ── MIXED / FLAT ─────────────────────────────────────────────────────────
-  const mixedPhrases = [
-    'Conviction absent — market waiting for something to trade against',
-    'Tape going nowhere fast — coiling for a directional move',
-    'No trend, no edge — patience is the position right now',
-    'Range-bound session — neither side willing to commit',
+  const mixedOpts = [
+    `The market is doing its best impression of a shrug — range-bound and waiting for a catalyst`,
+    `Neither bull nor bear making a compelling case today — patience is the only real edge`,
+    `Conviction on vacation — the tape is coiling for something worth actually trading`,
+    `Flat is a direction too — the market conserving energy before the next real move`,
+    traderType === 'day'
+      ? `A session that rewards discipline over activity — the range hasn't given anyone an edge yet`
+      : `The setup isn't there yet — the best swing trades start with a tape that knows what it wants`,
   ]
-  return mixedPhrases[new Date().getDate() % mixedPhrases.length]
+  return mixedOpts[(hour + dow) % mixedOpts.length]
 }
 
 function buildSummary(params: {
