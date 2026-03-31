@@ -470,7 +470,8 @@ export function formatEconomicCalendar(events: EconomicEvent[], todayStr: string
     for (const e of upcomingFiltered.slice(0, 40)) {
       const forecast = e.forecast ? `Est: ${e.forecast}` : ''
       const prev     = e.previous ? `Prev: ${e.previous}` : ''
-      lines.push(`    ${e.date}  ${e.time || '--'} ET  [${e.impact}]  ${e.event}  ${forecast}  ${prev}`.trim())
+      const dayLabel = new Date(`${e.date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/New_York' })
+      lines.push(`    ${e.date} (${dayLabel})  ${e.time || '--'} ET  [${e.impact}]  ${e.event}  ${forecast}  ${prev}`.trim())
     }
   }
 
