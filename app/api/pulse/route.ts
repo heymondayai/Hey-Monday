@@ -111,71 +111,82 @@ function buildHeadline(params: {
   latestMarketState: MarketStateRow
 }): string {
   const { traderType, biggestGainer, biggestLoser, macroLead, normalizedWatchlist, latestMarketState } = params
-  const { sentiment, avgChange, bullCount, bearCount } = getMarketSentiment(normalizedWatchlist)
+  const { sentiment, bullCount, bearCount } = getMarketSentiment(normalizedWatchlist)
   const total = normalizedWatchlist.filter(w => w.changePct != null).length
 
-  // Event-driven headlines (highest priority)
   const firstEvent = latestMarketState?.calendar_events?.[0]
+  const macro = latestMarketState?.macro_context?.[0]
+
+  // ── EVENT-DRIVEN (highest priority) ──────────────────────────────────────
   if (firstEvent?.name && firstEvent?.impact === 'HIGH') {
-    if (sentiment === 'strongly_bullish' || sentiment === 'bullish') {
-      return `${firstEvent.name} in focus — your watchlist rallying into the print`
-    }
-    if (sentiment === 'strongly_bearish' || sentiment === 'bearish') {
-      return `Risk-off ahead of ${firstEvent.name} — watchlist selling into the event`
-    }
-    return `${firstEvent.name} on deck — tape positioning mixed ahead of release`
+    const eventShort = firstEvent.name.replace('Federal Reserve', 'Fed').replace('Nonfarm Payrolls', 'Payrolls')
+    if (sentiment === 'strongly_bullish' || sentiment === 'bullish')
+      return `Bulls position ahead of ${eventShort} — risk appetite holding`
+    if (sentiment === 'strongly_bearish' || sentiment === 'bearish')
+      return `Tape retreats as traders hedge into ${eventShort}`
+    return `Markets on hold — ${eventShort} looms as the session's defining moment`
   }
 
-  // Dominant mover headlines
-  if (biggestGainer && (biggestGainer.changePct ?? 0) > 3) {
-    if (bearCount > bullCount) {
-      return `${biggestGainer.ticker} surges ${formatSignedPct(biggestGainer.changePct)} but can't lift a broadly red watchlist`
-    }
-    return `${biggestGainer.ticker} leading the charge at ${formatSignedPct(biggestGainer.changePct)} — outpacing the rest of your names`
+  // ── MACRO-DRIVEN ──────────────────────────────────────────────────────────
+  if (macro?.label) {
+    const yieldContext = macro.label.includes('Yield') || macro.label.includes('yield')
+    if (yieldContext && (sentiment === 'bearish' || sentiment === 'strongly_bearish'))
+      return `Rate pressure resurfaces — growth names bear the brunt`
+    if (yieldContext && (sentiment === 'bullish' || sentiment === 'strongly_bullish'))
+      return `Equities shrug off rate pressure — buyers step in`
   }
 
-  if (biggestLoser && (biggestLoser.changePct ?? 0) < -3) {
-    if (bullCount > bearCount) {
-      return `${biggestLoser.ticker} drags at ${formatSignedPct(biggestLoser.changePct)} despite broader strength in your book`
-    }
-    return `${biggestLoser.ticker} leading the tape lower at ${formatSignedPct(biggestLoser.changePct)} — pressure across the watchlist`
-  }
-
-  // Sentiment-driven headlines
-  if (sentiment === 'strongly_bullish') {
-    const macro = macroLead ? ` with ${macroLead}` : ''
-    return `Broad-based strength${macro} — ${bullCount} of ${total} names pushing higher`
-  }
-
-  if (sentiment === 'strongly_bearish') {
-    const macro = macroLead ? ` as ${macroLead}` : ''
-    return `Broad-based selling${macro} — ${bearCount} of ${total} names under pressure`
-  }
-
-  if (sentiment === 'bullish') {
-    if (biggestGainer) return `Watchlist leaning green — ${biggestGainer.ticker} pacing the move at ${formatSignedPct(biggestGainer.changePct)}`
-    return `Your names tilting higher — ${bullCount}/${total} in positive territory`
-  }
-
-  if (sentiment === 'bearish') {
-    if (biggestLoser) return `Watchlist leaning red — ${biggestLoser.ticker} the weakest link at ${formatSignedPct(biggestLoser.changePct)}`
-    return `Mild selling pressure — ${bearCount}/${total} names in the red`
-  }
-
-  // Mixed / flat
+  // ── DIVERGENCE (one name running, rest not following) ────────────────────
   if (biggestGainer && biggestLoser) {
     const gPct = biggestGainer.changePct ?? 0
     const lPct = biggestLoser.changePct ?? 0
-    if (Math.abs(gPct) > 2 || Math.abs(lPct) > 2) {
-      return `${biggestGainer.ticker} and ${biggestLoser.ticker} pulling in opposite directions — divergence widening`
-    }
-    return `${biggestGainer.ticker} vs ${biggestLoser.ticker} — watchlist split with no clear directional conviction`
+    const spread = Math.abs(gPct - lPct)
+
+    if (spread > 6 && gPct > 3)
+      return `${biggestGainer.ticker} breaks away from the pack — no confirmation from the broader tape`
+    if (spread > 6 && lPct < -3)
+      return `${biggestLoser.ticker} sells off in isolation — rest of watchlist holding its ground`
+    if (spread > 4)
+      return `${biggestGainer.ticker} and ${biggestLoser.ticker} tell two different stories today`
   }
 
-  // Trader-type fallback (last resort, still better than generic)
-  if (traderType === 'day') return 'Tape is choppy — no clear intraday trend emerging yet'
-  if (traderType === 'longterm') return 'Market tone is consolidating — monitor macro catalysts for directional cues'
-  return 'Watchlist in wait-and-see mode — setup building, no breakout yet'
+  // ── BROAD SENTIMENT ───────────────────────────────────────────────────────
+  if (sentiment === 'strongly_bullish') {
+    const phrases = [
+      `Broad buying sweep — ${bullCount} of ${total} watchlist names in the green`,
+      `Risk appetite returns — your book lifting across the board`,
+      `Bulls in control — momentum building across the watchlist`,
+    ]
+    return phrases[new Date().getHours() % phrases.length]
+  }
+
+  if (sentiment === 'strongly_bearish') {
+    const phrases = [
+      `Broad-based selling — ${bearCount} of ${total} names under pressure`,
+      `Risk-off sweep hits the watchlist — sellers in command`,
+      `Distribution day — no safe harbor in the current book`,
+    ]
+    return phrases[new Date().getHours() % phrases.length]
+  }
+
+  if (sentiment === 'bullish') {
+    if (biggestGainer) return `${biggestGainer.ticker} pacing a cautiously green session`
+    return `Watchlist grinding higher — no urgency, but buyers present`
+  }
+
+  if (sentiment === 'bearish') {
+    if (biggestLoser) return `${biggestLoser.ticker} weighing on a quietly red tape`
+    return `Sellers probing support — watchlist drifting lower without conviction`
+  }
+
+  // ── MIXED / FLAT ─────────────────────────────────────────────────────────
+  const mixedPhrases = [
+    'Conviction absent — market waiting for something to trade against',
+    'Tape going nowhere fast — coiling for a directional move',
+    'No trend, no edge — patience is the position right now',
+    'Range-bound session — neither side willing to commit',
+  ]
+  return mixedPhrases[new Date().getDate() % mixedPhrases.length]
 }
 
 function buildSummary(params: {
@@ -189,64 +200,60 @@ function buildSummary(params: {
   const { sentiment, avgChange } = getMarketSentiment(normalizedWatchlist)
   const sentences: string[] = []
 
-  // Lead with the most important price action
+  // ── LEAD: narrative price action, no raw numbers ──────────────────────────
   if (biggestGainer && biggestLoser) {
     const spread = Math.abs((biggestGainer.changePct ?? 0) - (biggestLoser.changePct ?? 0))
-    if (spread > 4) {
-      sentences.push(
-        `${biggestGainer.ticker} at ${formatPrice(biggestGainer.price)} (${formatSignedPct(biggestGainer.changePct)}) and ${biggestLoser.ticker} at ${formatPrice(biggestLoser.price)} (${formatSignedPct(biggestLoser.changePct)}) are pulling your watchlist in opposite directions — that's a ${spread.toFixed(1)}pt spread worth watching.`
-      )
+    if (spread > 5) {
+      sentences.push(`${biggestGainer.ticker} and ${biggestLoser.ticker} are the session's defining divergence — one running, one breaking, with the rest of the book stuck in between.`)
+    } else if (sentiment === 'bullish' || sentiment === 'strongly_bullish') {
+      sentences.push(`${biggestGainer.ticker} is leading the move with ${biggestLoser.ticker} as the notable laggard — overall the book is tilting in the right direction.`)
+    } else if (sentiment === 'bearish' || sentiment === 'strongly_bearish') {
+      sentences.push(`${biggestLoser.ticker} is the weakest name in the book today, with ${biggestGainer.ticker} the lone bright spot holding against the broader selling.`)
     } else {
-      sentences.push(
-        `${biggestGainer.ticker} is the relative leader at ${formatPrice(biggestGainer.price)} (${formatSignedPct(biggestGainer.changePct)}), while ${biggestLoser.ticker} is the laggard at ${formatPrice(biggestLoser.price)} (${formatSignedPct(biggestLoser.changePct)}).`
-      )
+      sentences.push(`${biggestGainer.ticker} is the session's relative leader while ${biggestLoser.ticker} is the drag — the watchlist is split with no clear directional conviction.`)
     }
   } else if (biggestGainer) {
-    sentences.push(`${biggestGainer.ticker} at ${formatPrice(biggestGainer.price)} is carrying the watchlist, up ${formatSignedPct(biggestGainer.changePct)} — no other name showing comparable strength.`)
+    sentences.push(`${biggestGainer.ticker} is carrying the watchlist today — no other name matching its strength, which makes the move harder to trust as a broad signal.`)
   } else if (biggestLoser) {
-    sentences.push(`${biggestLoser.ticker} at ${formatPrice(biggestLoser.price)} is the key drag, down ${formatSignedPct(biggestLoser.changePct)} — no offsetting strength elsewhere in the book.`)
+    sentences.push(`${biggestLoser.ticker} is the main weight on the watchlist today — without a offsetting leader, the book is leaning defensive.`)
   } else {
-    sentences.push('Not enough verified price data to rank relative strength across the watchlist right now.')
+    sentences.push('Not enough price data to identify relative strength across the watchlist right now.')
   }
 
-  // Macro context — conversational, not just a data read
+  // ── MACRO LAYER ───────────────────────────────────────────────────────────
   const macro = latestMarketState?.macro_context?.[0]
   if (macro?.label && macro?.value) {
-    const implication = macro.implication
-    if (implication) {
-      sentences.push(`${macro.label} at ${macro.value} — ${implication.toLowerCase().replace(/\.$/, '')}.`)
+    if (macro.implication) {
+      sentences.push(`${macro.label} at ${macro.value} — ${macro.implication.toLowerCase().replace(/\.$/, '')}.`)
     } else {
-      sentences.push(`${macro.label} sits at ${macro.value}.`)
+      sentences.push(`Macro backdrop: ${macro.label} at ${macro.value}.`)
     }
   } else if (latestMarketState?.summary) {
     sentences.push(latestMarketState.summary)
   }
 
-  // Trader-type context — specific and actionable, not generic
+  // ── TRADER LENS: situational, not boilerplate ─────────────────────────────
   if (traderType === 'day') {
-    if (sentiment === 'strongly_bullish' || sentiment === 'bullish') {
-      sentences.push('For intraday positioning, confirm relative strength is holding on retests before adding — single green prints on low volume can reverse fast in this tape.')
-    } else if (sentiment === 'strongly_bearish' || sentiment === 'bearish') {
-      sentences.push('For intraday positioning, be cautious fading strength — sustained bearish tape tends to rip on short covering. Wait for a failed bounce before leaning short.')
-    } else {
-      sentences.push('Chop tends to favor range trades intraday — the key is waiting for the range extremes to set rather than chasing the first move off the open.')
-    }
+    if (sentiment === 'strongly_bullish' || sentiment === 'bullish')
+      sentences.push('Intraday edge favors the long side — but confirm momentum is holding on retests before adding size, green opens that fade by 10:30 tend to trap.')
+    else if (sentiment === 'strongly_bearish' || sentiment === 'bearish')
+      sentences.push('Bearish intraday setups are in play — be cautious fading aggressively though, short-covering rips in a weak tape can be violent and quick.')
+    else
+      sentences.push('Choppy tape is the day trader\'s worst environment — the edge is in waiting, not in forcing a trade from a range that hasn\'t resolved yet.')
   } else if (traderType === 'longterm') {
-    if (Math.abs(avgChange) < 0.5) {
-      sentences.push('For longer-term positioning, single-day noise in a tight range is rarely meaningful — focus on whether the macro trend is shifting, not daily prints.')
-    } else if (sentiment === 'strongly_bearish' || sentiment === 'bearish') {
-      sentences.push('For longer-term positioning, drawdowns in fundamentally sound names can be entry opportunities — but confirm the macro thesis hasn\'t changed before adding.')
-    } else {
-      sentences.push('For longer-term positioning, what matters more than today\'s print is whether earnings and macro trends remain intact over the next quarter.')
-    }
+    if (Math.abs(avgChange) < 0.5)
+      sentences.push('A quiet session changes nothing for longer time horizons — the macro trend and earnings trajectory matter far more than daily noise.')
+    else if (sentiment === 'bearish' || sentiment === 'strongly_bearish')
+      sentences.push('Drawdowns in fundamentally sound names are the long-term investor\'s entry opportunity — the question is whether the thesis is intact, not whether the price is down.')
+    else
+      sentences.push('Strength in the session is encouraging but rarely enough on its own — the macro trend, not a single green day, is what builds a durable thesis.')
   } else {
-    if (sentiment === 'mixed') {
-      sentences.push('For swing setups, mixed tapes often precede a directional move — watch for a catalyst to break the current range and confirm which side has control.')
-    } else if (sentiment === 'strongly_bullish' || sentiment === 'bullish') {
-      sentences.push('For swing positioning, the question is whether this strength can hold into the next session — follow-through above today\'s highs would be the confirmation signal.')
-    } else {
-      sentences.push('For swing positioning, the key question is whether today\'s weakness is distribution or just noise — a break of recent lows on volume would tip the hand.')
-    }
+    if (sentiment === 'mixed')
+      sentences.push('Mixed tapes often precede a directional break — the swing setup is building, not ready. Marking the range extremes now gives you the levels to trade against when it resolves.')
+    else if (sentiment === 'strongly_bullish' || sentiment === 'bullish')
+      sentences.push('Swing setups are improving — the question now is whether today\'s strength holds into the close and prints a higher high, which would shift the short-term structure.')
+    else
+      sentences.push('Swing positioning demands patience here — selling into weakness without a base risks getting shaken out before the real move develops.')
   }
 
   return sentences.join(' ')
