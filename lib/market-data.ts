@@ -154,6 +154,7 @@ export async function fetchEconomicCalendar(
           `https://api.benzinga.com/api/v2.1/calendar/economics?${params}`,
           { cache: 'no-store' }
         )
+        console.log('[calendar] Benzinga status for', day, ':', res.status)
         if (!res.ok) {
           const errText = await res.text()
           console.error('[calendar] Benzinga HTTP', res.status, 'for day', day, 'body:', errText.slice(0, 300))
@@ -182,7 +183,8 @@ export async function fetchEconomicCalendar(
             }
           })
           .filter((e: EconomicEvent) => e.event)
-      } catch {
+      } catch (err: any) {
+        console.error('[calendar] day fetch exception for', day, ':', err?.message)
         return []
       }
     }))
