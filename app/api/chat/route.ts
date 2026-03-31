@@ -474,7 +474,6 @@ export async function POST(req: Request) {
 
     const isCalendarQuestion = intent.needsMacro
 const isBriefing = intent.requestType === 'briefing'
-console.log('[chat] calendarContext:', calendarContext)
 
 const fullContextBlocks = [
   watchlistContext,                                          // always — small

@@ -467,7 +467,7 @@ export function formatEconomicCalendar(events: EconomicEvent[], todayStr: string
   const upcomingFiltered = upcoming.filter(e => e.impact === 'HIGH' || e.impact === 'MEDIUM')
   if (upcomingFiltered.length) {
     lines.push('\n  UPCOMING:')
-    for (const e of upcomingFiltered.slice(0, 20)) {
+    for (const e of upcomingFiltered.slice(0, 40)) {
       const forecast = e.forecast ? `Est: ${e.forecast}` : ''
       const prev     = e.previous ? `Prev: ${e.previous}` : ''
       lines.push(`    ${e.date}  ${e.time || '--'} ET  [${e.impact}]  ${e.event}  ${forecast}  ${prev}`.trim())
