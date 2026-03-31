@@ -412,7 +412,7 @@ export async function POST(req: Request) {
       : ['SPY', 'QQQ', 'NVDA', 'AAPL', 'TSLA', 'META', 'AMD']
 
     const calendarToDate = new Date(`${todayStr}T12:00:00`)
-    calendarToDate.setDate(calendarToDate.getDate() + 4)
+    calendarToDate.setDate(calendarToDate.getDate() + 7)
     const calendarTo = calendarToDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
     const [intradayResult, economicEvents, earningsEvents, macroData, sectorData] = await Promise.all([
@@ -484,7 +484,7 @@ const fullContextBlocks = [
   isCalendarQuestion || isBriefing ? macroContext : '',      // macro questions
   intent.needsSector || isBriefing ? sectorContext : '',     // sector questions
   intent.needsNews || isBriefing ? newsContext : '',         // news questions
-  isBriefing ? intradayContext : '',                         // briefings only — this is huge
+  isBriefing || intent.isOpenEndedWhyQuestion ? intradayContext : '',                    // briefings only — this is huge
   level2Context,                                             // only if passed
   insiderContext, analystContext, optionsContext,             // conditional already
 ].filter(Boolean).join('\n\n')
