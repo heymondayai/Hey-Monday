@@ -280,6 +280,7 @@ const DEFAULT_TICKER_DATA = [
 type ScheduledSummary = {
   id: string; user_id: string; name: string; run_at: string; prompt: string;
   icon: string; top_color: string; type: 'preset' | 'custom'; enabled: boolean;
+  recurrence?: 'none' | 'daily' | 'weekly'; recurrence_end?: string | null;
   created_at?: string; updated_at?: string;
 }
 
@@ -689,6 +690,8 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [summaryPrompt, setSummaryPrompt] = useState('')
   const [summaryIcon, setSummaryIcon] = useState('🌅')
   const [summaryTopColor, setSummaryTopColor] = useState('#e8b84b')
+  const [summaryRecurrence, setSummaryRecurrence] = useState<'none' | 'daily' | 'weekly'>('none')
+  const [summaryRecurrenceEnd, setSummaryRecurrenceEnd] = useState('')
   const [countdownTick, setCountdownTick] = useState(Date.now())
   const processedSummaryIdsRef = useRef<Set<string>>(new Set())
 
@@ -1161,7 +1164,7 @@ function startThinkingChimes(): () => void {
     if (scheduledJsDay === 0 || scheduledJsDay === 6) { alert('Scheduled summaries can only be created for Monday through Friday.'); return }
     const ok = await canScheduleOnEtDate(user.id, runAtIso)
     if (!ok) { alert('You can only have up to 6 scheduled summaries on the same day.'); return }
-    await supabase.from('scheduled_summaries').insert({ user_id: user.id, name: preset.name, run_at: runAtIso, prompt: preset.prompt, icon: preset.icon, top_color: preset.top_color, type: preset.type, enabled: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    await supabase.from('scheduled_summaries').insert({ user_id: user.id, name: preset.name, run_at: runAtIso, prompt: preset.prompt, icon: preset.icon, top_color: preset.top_color, type: preset.type, enabled: true, recurrence: summaryRecurrence, recurrence_end: summaryRecurrenceEnd || null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     await loadScheduledSummariesFromSupabase(user.id)
     setTimeout(() => {
   summaryModalScrollRef.current?.scrollTo({ top: summaryModalScrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -1175,8 +1178,8 @@ function startThinkingChimes(): () => void {
     const scheduledJsDay = new Date(new Date(runAtIso).toLocaleString('en-US', { timeZone: 'America/New_York' })).getDay()
     if (scheduledJsDay === 0 || scheduledJsDay === 6) { alert('Scheduled summaries can only be created for Monday through Friday.'); return }
     const ok = await canScheduleOnEtDate(user.id, runAtIso); if (!ok) { alert('You can only have up to 6 scheduled summaries on the same day.'); return }
-    await supabase.from('scheduled_summaries').insert({ user_id: user.id, name: summaryName.trim(), run_at: runAtIso, prompt: summaryPrompt.trim(), icon: summaryIcon, top_color: summaryTopColor, type: 'custom', enabled: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    setSummaryName(''); const rd = getDateTimeInputDefaults(); setSummaryDate(rd.date); setSummaryTime(rd.time); setSummaryPrompt(''); setSummaryIcon('🌅'); setSummaryTopColor('#e8b84b'); setShowSummaryEditor(false)
+    await supabase.from('scheduled_summaries').insert({ user_id: user.id, name: summaryName.trim(), run_at: runAtIso, prompt: summaryPrompt.trim(), icon: summaryIcon, top_color: summaryTopColor, type: 'custom', enabled: true, recurrence: summaryRecurrence, recurrence_end: summaryRecurrenceEnd || null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    setSummaryName(''); const rd = getDateTimeInputDefaults(); setSummaryDate(rd.date); setSummaryTime(rd.time); setSummaryPrompt(''); setSummaryIcon('🌅'); setSummaryTopColor('#e8b84b'); setSummaryRecurrence('none'); setSummaryRecurrenceEnd(''); setShowSummaryEditor(false)
     await loadScheduledSummariesFromSupabase(user.id)
   }
 
@@ -1193,7 +1196,20 @@ function startThinkingChimes(): () => void {
       const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: `Please deliver the following briefing now, speaking directly to the user based on current market data: ${summary.prompt}`, mode: 'summary', watchlist, traderType, prices: tickerData, history, news: [...watchlistNews, ...generalNews], intraday, userId: user.id }) })
       const data = await res.json(); const reply = data.reply || 'Scheduled summary could not be generated.'; const nowIso = new Date().toISOString()
       await supabase.from('briefings').insert({ user_id: user.id, title: summary.name, content: reply, audio_url: null, briefing_date: nowIso })
-      await supabase.from('scheduled_summaries').update({ enabled: false, updated_at: nowIso }).eq('id', summary.id).eq('user_id', user.id)
+      const rec = summary.recurrence ?? 'none'
+      if (rec !== 'none') {
+        const nextRunAt = new Date(summary.run_at)
+        if (rec === 'daily') nextRunAt.setDate(nextRunAt.getDate() + 1)
+        else if (rec === 'weekly') nextRunAt.setDate(nextRunAt.getDate() + 7)
+        const pastEnd = summary.recurrence_end ? nextRunAt.toISOString() > summary.recurrence_end : false
+        if (pastEnd) {
+          await supabase.from('scheduled_summaries').update({ enabled: false, updated_at: nowIso }).eq('id', summary.id).eq('user_id', user.id)
+        } else {
+          await supabase.from('scheduled_summaries').update({ run_at: nextRunAt.toISOString(), updated_at: nowIso }).eq('id', summary.id).eq('user_id', user.id)
+        }
+      } else {
+        await supabase.from('scheduled_summaries').update({ enabled: false, updated_at: nowIso }).eq('id', summary.id).eq('user_id', user.id)
+      }
       const timeStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date())
       setMessages((prev) => [...prev, { role: 'monday', time: timeStr, text: reply }])
       // Auto-play the briefing
@@ -1654,15 +1670,27 @@ function startThinkingChimes(): () => void {
                   {scheduledSummaries.length > 0 && (
                     <div>
                       <div style={{ fontSize: '11px', letterSpacing: '0.15em', textTransform: 'uppercase', color: T.gold, marginBottom: '10px', fontWeight: 600 }}>Upcoming</div>
-                      {scheduledSummaries.sort((a, b) => new Date(a.run_at).getTime() - new Date(b.run_at).getTime()).map(item => (
-                        <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${T.borderFaint3}` }}>
-                          <div>
-                            <div style={{ color: T.text, fontWeight: 600, fontSize: '13px' }}>{item.icon} {item.name}</div>
-                            <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>{formatSummaryRunAt(item.run_at)}</div>
-                          </div>
-                          <div onClick={() => void removeScheduledSummary(item.id)} style={{ color: T.red, cursor: 'pointer', padding: '5px 10px', border: `1px solid ${T.redBorder2}`, fontSize: '12px' }}>Remove</div>
-                        </div>
-                      ))}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', background: T.borderFaint3 }}>
+                        {scheduledSummaries.sort((a, b) => new Date(a.run_at).getTime() - new Date(b.run_at).getTime()).map(item => {
+                          const rec = item.recurrence ?? 'none'
+                          const msUntil = new Date(item.run_at).getTime() - countdownTick
+                          return (
+                            <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 12px', background: T.panelBg }}>
+                              <div style={{ width: '3px', alignSelf: 'stretch', background: item.top_color, borderRadius: '2px', flexShrink: 0 }} />
+                              <div style={{ fontSize: '16px', flexShrink: 0 }}>{item.icon}</div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '2px' }}>{item.name}</div>
+                                <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>{formatSummaryTimeOnly(item.run_at)}</div>
+                                {rec !== 'none' && <div style={{ fontSize: '10px', color: T.gold, marginTop: '2px' }}>↻ {rec}</div>}
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px', flexShrink: 0 }}>
+                                <div style={{ fontSize: '11px', color: msUntil <= 0 ? T.green : T.gold, fontFamily: "'DM Mono', monospace", fontWeight: 600 }}>{msUntil <= 0 ? 'READY' : formatCountdown(msUntil)}</div>
+                                <div onClick={() => void removeScheduledSummary(item.id)} style={{ fontSize: '11px', color: T.red, cursor: 'pointer', padding: '2px 8px', border: `1px solid ${T.redBorder}` }}>Remove</div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -2360,31 +2388,69 @@ function startThinkingChimes(): () => void {
                 </div>
                 <div>
                   <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, marginBottom: '12px', fontWeight: 600 }}>Custom Summary</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: '10px', marginBottom: '10px' }}>
-                    <input value={summaryName} onChange={(e) => setSummaryName(e.target.value)} placeholder="Summary name" style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '10px 12px', outline: 'none' }} />
-                    <input value={summaryTopColor} onChange={(e) => setSummaryTopColor(e.target.value)} placeholder="#e8b84b" style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '10px 12px', outline: 'none' }} />
+                  <input value={summaryName} onChange={(e) => setSummaryName(e.target.value)} placeholder="Summary name" style={{ width: '100%', background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '10px 12px', outline: 'none', marginBottom: '10px', boxSizing: 'border-box' as const }} />
+                  {/* Color accent swatches — replaces raw hex input */}
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', alignItems: 'center' }}>
+                    <div style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace", marginRight: '4px' }}>Accent:</div>
+                    {['#e8b84b','#4ade80','#7ab8e8','#f87171','#c084fc','#fb923c'].map(c => (
+                      <div key={c} onClick={() => setSummaryTopColor(c)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: c, cursor: 'pointer', border: `2px solid ${summaryTopColor === c ? T.text : 'transparent'}`, transition: 'border 0.15s' }} />
+                    ))}
                   </div>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
                     {SUMMARY_ICON_OPTIONS.map((icon) => (
                       <div key={icon} onClick={() => setSummaryIcon(icon)} style={{ width: '42px', height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', cursor: 'pointer', border: `1px solid ${summaryIcon === icon ? T.goldFaint9 : T.borderItem}`, background: summaryIcon === icon ? T.goldFaint2 : T.inputBg }}>{icon}</div>
                     ))}
                   </div>
-                  <textarea value={summaryPrompt} onChange={(e) => setSummaryPrompt(e.target.value)} placeholder="What should Monday summarize?" rows={4} style={{ width: '100%', background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '12px', outline: 'none', resize: 'vertical' }} />
-                  <div onClick={() => void addCustomSummary()} style={{ marginTop: '10px', display: 'inline-flex', padding: '10px 18px', background: T.goldFaint3, border: `1px solid ${T.goldFaint8}`, color: T.gold, cursor: 'pointer', fontWeight: 600 }}>Add Custom Summary</div>
+                  <textarea value={summaryPrompt} onChange={(e) => setSummaryPrompt(e.target.value)} placeholder="What should Monday summarize?" rows={4} style={{ width: '100%', background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '12px', outline: 'none', resize: 'vertical', marginBottom: '10px' }} />
+                  <div onClick={() => void addCustomSummary()} style={{ display: 'inline-flex', padding: '10px 18px', background: T.goldFaint3, border: `1px solid ${T.goldFaint8}`, color: T.gold, cursor: 'pointer', fontWeight: 600 }}>Add Custom Summary</div>
+                </div>
+                {/* ── Recurrence options (shared for both preset and custom) ── */}
+                <div>
+                  <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, marginBottom: '12px', fontWeight: 600 }}>Repeat Schedule</div>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                    {([{ id: 'none', label: 'Once' }, { id: 'daily', label: 'Daily' }, { id: 'weekly', label: 'Weekly' }] as const).map(opt => (
+                      <div key={opt.id} onClick={() => setSummaryRecurrence(opt.id)} style={{ padding: '7px 16px', border: `1px solid ${summaryRecurrence === opt.id ? T.goldFaint9 : T.borderItem}`, background: summaryRecurrence === opt.id ? T.goldFaint2 : 'transparent', color: summaryRecurrence === opt.id ? T.gold : T.text5, cursor: 'pointer', fontSize: '12px', fontWeight: 600, transition: 'all 0.15s' }}>{opt.label}</div>
+                    ))}
+                  </div>
+                  {summaryRecurrence !== 'none' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ fontSize: '12px', color: T.text5 }}>End date</div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <div onClick={() => setSummaryRecurrenceEnd('')} style={{ padding: '5px 12px', border: `1px solid ${summaryRecurrenceEnd === '' ? T.goldFaint9 : T.borderItem}`, background: summaryRecurrenceEnd === '' ? T.goldFaint2 : 'transparent', color: summaryRecurrenceEnd === '' ? T.gold : T.text5, cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>Indefinite</div>
+                        <input type="date" value={summaryRecurrenceEnd} onChange={e => setSummaryRecurrenceEnd(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${summaryRecurrenceEnd ? T.goldFaint9 : T.goldFaint7}`, color: summaryRecurrenceEnd ? T.text : T.text6, padding: '6px 10px', outline: 'none', fontSize: '12px' }} />
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, marginBottom: '12px', fontWeight: 600 }}>Upcoming Summaries</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {scheduledSummaries.length === 0 ? <div style={{ color: T.text6, fontStyle: 'italic' }}>No upcoming summaries.</div> : scheduledSummaries.sort((a, b) => new Date(a.run_at).getTime() - new Date(b.run_at).getTime()).map((item) => (
-                      <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '12px', background: T.inputBg, border: `1px solid ${T.borderFaint}` }}>
-                        <div>
-                          <div style={{ color: T.text, fontWeight: 600 }}>{item.icon} {item.name}</div>
-                          <div style={{ fontSize: '12px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>{formatSummaryRunAt(item.run_at)} · {item.type}</div>
-                        </div>
-                        <div onClick={() => void removeScheduledSummary(item.id)} style={{ color: T.red, cursor: 'pointer', border: `1px solid ${T.redBorder2}`, padding: '5px 10px', fontSize: '12px' }}>Remove</div>
-                      </div>
-                    ))}
-                  </div>
+                  {scheduledSummaries.length === 0 ? (
+                    <div style={{ color: T.text6, fontStyle: 'italic', fontSize: '13px' }}>No upcoming summaries.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', background: T.borderFaint3 }}>
+                      {scheduledSummaries.sort((a, b) => new Date(a.run_at).getTime() - new Date(b.run_at).getTime()).map((item) => {
+                        const msUntil = new Date(item.run_at).getTime() - countdownTick
+                        const rec = item.recurrence ?? 'none'
+                        return (
+                          <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', background: T.panelBg }}>
+                            <div style={{ width: '3px', alignSelf: 'stretch', background: item.top_color, borderRadius: '2px', flexShrink: 0 }} />
+                            <div style={{ fontSize: '18px', flexShrink: 0 }}>{item.icon}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '3px' }}>{item.name}</div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>{formatSummaryRunAt(item.run_at)}</span>
+                                {rec !== 'none' && <span style={{ fontSize: '10px', color: T.gold, background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '1px 6px', letterSpacing: '0.08em', textTransform: 'uppercase' }}>↻ {rec}{item.recurrence_end ? ` until ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(item.recurrence_end))}` : ''}</span>}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                              <div style={{ fontSize: '11px', color: msUntil <= 0 ? T.green : T.gold, fontFamily: "'DM Mono', monospace", fontWeight: 600, marginBottom: '6px' }}>{msUntil <= 0 ? 'READY' : formatCountdown(msUntil)}</div>
+                              <div onClick={() => void removeScheduledSummary(item.id)} style={{ fontSize: '11px', color: T.red, cursor: 'pointer', padding: '3px 8px', border: `1px solid ${T.redBorder}`, display: 'inline-block' }}>Remove</div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
