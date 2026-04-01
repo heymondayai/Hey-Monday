@@ -319,13 +319,19 @@ export async function GET(req: NextRequest) {
         }
       })
 
+    function timeToMinutes(t: string): number {
+      if (!t || t === '--' || t === 'bmo') return -60
+      if (t === 'amc') return 1200
+      if (t === 'dmh') return 600
+      const match = t.match(/^(\d{2}):(\d{2})/)
+      if (!match) return 9999
+      return parseInt(match[1]) * 60 + parseInt(match[2])
+    }
+
     let allEvents = dedupeEvents([...macroEvents, ...earningsCalendarEvents]).sort((a, b) => {
       const dateCmp = a.date.localeCompare(b.date)
       if (dateCmp !== 0) return dateCmp
-
-      if (a.time === '--' && b.time !== '--') return 1
-      if (b.time === '--' && a.time !== '--') return -1
-      return a.time.localeCompare(b.time)
+      return timeToMinutes(a.time) - timeToMinutes(b.time)
     })
 
     if (view === 'dashboard') {
