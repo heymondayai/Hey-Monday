@@ -814,22 +814,21 @@ function handleTouchEnd(e: React.TouchEvent) {
     const timer = setInterval(() => setCountdownTick(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
-  useEffect(() => {
-    const timer = setInterval(() => setCountdownTick(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [])
 
   // ── Schedule-aware wake word state ──
   const [wakeManualOverride, setWakeManualOverride] = useState(false)
+  const scheduleEffectReadyRef = useRef(false)
 
   useEffect(() => {
+    // Don't run until user prefs have loaded from Supabase
+    if (!user) return
+    scheduleEffectReadyRef.current = true
     if (scheduledOff && !wakeManualOverride) {
       setWakeOn(false)
-    } else if (!scheduledOff) {
-      setWakeManualOverride(false)
-      setWakeOn(true)
     }
-  }, [scheduledOff])
+    // Only restore to true if we were the ones who turned it off (scheduled)
+    // Don't blindly set true — user may have manually disabled
+  }, [scheduledOff, user])
 
   useEffect(() => {
     if (!wakeManualOverride) return
@@ -1240,6 +1239,16 @@ function startThinkingChimes(): () => void {
     wlSearchRef.current = setTimeout(() => searchTickers(val), 350)
   }
 
+  async function persistWakeOn(val: boolean) {
+    if (!user) return
+    await supabase.from('profiles').update({ wake_word_enabled: val }).eq('id', user.id)
+  }
+
+  async function persistSpeechOn(val: boolean) {
+    if (!user) return
+    await supabase.from('profiles').update({ voice_replies_enabled: val }).eq('id', user.id)
+  }
+
   async function saveTraderType() {
     if (!user || settingsType === traderType) { setShowSettings(false); return }
     setSavingType(true); await supabase.from('profiles').update({ trader_type: settingsType, updated_at: new Date().toISOString() }).eq('id', user.id)
@@ -1613,7 +1622,7 @@ const visibleDaySummaries = useMemo(() => {
                       <div style={{ fontSize: '9px', color: T.green, letterSpacing: '0.1em', textTransform: 'uppercase' }}>AI Market Intelligence</div>
                     </div>
                   </div>
-                  <div onClick={() => { if (speechOn && isSpeaking) stopCurrentAudio(); setSpeechOn(v => !v) }} style={{ fontSize: '11px', color: speechOn ? T.green : T.text6, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, padding: '5px 10px', cursor: 'pointer' }}>
+                  <div onClick={() => { const next = !speechOn; if (speechOn && isSpeaking) stopCurrentAudio(); setSpeechOn(next); void persistSpeechOn(next) }} style={{ fontSize: '11px', color: speechOn ? T.green : T.text6, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, padding: '5px 10px', cursor: 'pointer' }}>
                     {speechOn ? (isSpeaking ? '🔊 Speaking' : '🔊 Voice On') : '🔇 Voice Off'}
                   </div>
                 </div>
@@ -1682,7 +1691,7 @@ const visibleDaySummaries = useMemo(() => {
                   </div>
                 </div>
                 <div style={{ padding: '10px 16px', borderBottom: `1px solid ${T.borderFaint}` }}>
-                  <div onClick={() => { const turningOn = !wakeOn; setWakeOn(turningOn); if (turningOn && scheduledOff) { setWakeManualOverride(true) } else { setWakeManualOverride(false); if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current) } }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: wakeOn ? T.greenFaint3 : T.inputBg, border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`, cursor: 'pointer' }}>
+                  <div onClick={() => { const turningOn = !wakeOn; setWakeOn(turningOn); void persistWakeOn(turningOn); if (turningOn && scheduledOff) { setWakeManualOverride(true) } else { setWakeManualOverride(false); if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current) } }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: wakeOn ? T.greenFaint3 : T.inputBg, border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`, cursor: 'pointer' }}>
                     <div style={{ width: '26px', height: '15px', borderRadius: '8px', background: wakeOn ? T.green : T.text7, position: 'relative', flexShrink: 0 }}>
                       <div style={{ position: 'absolute', top: '1.5px', left: wakeOn ? '13px' : '1.5px', width: '12px', height: '12px', borderRadius: '50%', background: '#fff', transition: 'left 0.25s' }} />
                     </div>
@@ -1941,6 +1950,7 @@ const visibleDaySummaries = useMemo(() => {
   onClick={() => {
     const turningOn = !wakeOn
     setWakeOn(turningOn)
+    void persistWakeOn(turningOn)
     if (turningOn && scheduledOff) {
       setWakeManualOverride(true)
     } else {
@@ -2412,7 +2422,7 @@ const visibleDaySummaries = useMemo(() => {
                   <div style={{ fontSize: '10px', color: T.text5, flex: 1 }}>Listening for</div>
                   <div style={{ fontSize: '10px', color: T.gold, background: T.goldFaint2, padding: '2px 8px', border: `1px solid ${T.goldFaint7}`, letterSpacing: '0.1em', fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>Hey Monday</div>
                 </div>
-                <div onClick={() => { if (speechOn && isSpeaking) stopCurrentAudio(); setSpeechOn((v) => !v) }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: speechOn ? T.greenFaint2 : T.inputBg, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, padding: '8px 12px', cursor: 'pointer' }}>
+                <div onClick={() => { const next = !speechOn; if (speechOn && isSpeaking) stopCurrentAudio(); setSpeechOn(next); void persistSpeechOn(next) }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: speechOn ? T.greenFaint2 : T.inputBg, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, padding: '8px 12px', cursor: 'pointer' }}>
                   <div style={{ fontSize: '10px', color: T.text5 }}>Monday voice replies</div>
                   <div style={{ fontSize: '10px', color: speechOn ? T.green : T.text6, fontFamily: "'DM Mono', monospace", letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600 }}>{speechOn ? (isSpeaking ? 'On · Speaking' : 'On') : 'Off'}</div>
                 </div>
