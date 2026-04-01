@@ -195,7 +195,8 @@ function formatCalendarValue(value: string | null | undefined, unit: string): st
   const numeric = parseFloat(String(value).replace(/,/g, '').replace(/[^0-9.-]/g, ''))
   if (isNaN(numeric)) return `${value}${unit || ''}`
 
-  if (unit === 'M') {
+  // ---- MILLIONS ----
+  if (unit === 'M' || numeric >= 1_000_000) {
     const millions = numeric / 1_000_000
 
     let decimals = 3
@@ -205,16 +206,25 @@ function formatCalendarValue(value: string | null | undefined, unit: string): st
     return `${millions.toFixed(decimals).replace(/\.?0+$/, '')}M`
   }
 
-  if (unit === 'K') {
+  // ---- THOUSANDS ----
+  if (unit === 'K' || numeric >= 1_000) {
     const thousands = numeric / 1_000
-    return `${thousands.toFixed(0).replace(/\.?0+$/, '')}K`
+
+    let decimals = 1
+    if (thousands >= 100) decimals = 0
+    else if (thousands >= 10) decimals = 1
+    else decimals = 2
+
+    return `${thousands.toFixed(decimals).replace(/\.?0+$/, '')}K`
   }
 
+  // ---- PERCENT ----
   if (unit === '%') {
     return `${numeric}%`
   }
 
-  return `${value}${unit || ''}`
+  // ---- DEFAULT ----
+  return numeric.toString()
 }
 
 function getOutcomeColor(event: CalendarEvent, T: ThemeTokens): { color: string; label: string; isGood: boolean | null } {
