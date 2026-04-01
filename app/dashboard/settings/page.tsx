@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { useTheme } from '@/app/context/theme-context'
 
 const DARK = {
   pageBg: '#0a0a08',
@@ -108,7 +107,17 @@ function statusPill(status: string | null) {
 function SettingsPageInner() {
   const router = useRouter()
   const supabase = createClient()
-  const { isDark } = useTheme()
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true
+    try {
+      const raw = window.localStorage.getItem('heymonday_dashboard_prefs_v1')
+      if (!raw) return true
+      const parsed = JSON.parse(raw)
+      return typeof parsed.isDark === 'boolean' ? parsed.isDark : true
+    } catch {
+      return true
+    }
+  })
   const T = isDark ? DARK : LIGHT
 
   const [loading, setLoading] = useState(true)
@@ -438,18 +447,40 @@ function SettingsPageInner() {
             </div>
           </div>
 
-          <Link
-            href="/dashboard"
-            style={{
-              textDecoration: 'none',
-              ...actionBtn(false),
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            ← Back to Dashboard
-          </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div
+              onClick={() => {
+                const next = !isDark
+                setIsDark(next)
+                try {
+                  const raw = window.localStorage.getItem('heymonday_dashboard_prefs_v1')
+                  const parsed = raw ? JSON.parse(raw) : {}
+                  window.localStorage.setItem('heymonday_dashboard_prefs_v1', JSON.stringify({ ...parsed, isDark: next }))
+                } catch {}
+              }}
+              style={{
+                width: 36, height: 36, borderRadius: '50%',
+                border: `1px solid ${T.border2}`,
+                background: T.mutedBtn,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', fontSize: 15, color: T.gold,
+              }}
+            >
+              {isDark ? '☀' : '☾'}
+            </div>
+            <Link
+              href="/dashboard"
+              style={{
+                textDecoration: 'none',
+                ...actionBtn(false),
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              ← Back to Dashboard
+            </Link>
+          </div>
         </div>
 
         {(error || success) && (
@@ -683,8 +714,8 @@ function SettingsPageInner() {
       width: 42,
       height: 24,
       borderRadius: 999,
-      background: wakeWordEnabled ? 'rgba(201,146,42,0.15)' : T.inputBg,
-      border: `1px solid ${wakeWordEnabled ? T.gold : T.border}`,
+      background: voiceRepliesEnabled ? 'rgba(201,146,42,0.15)' : T.inputBg,
+      border: `1px solid ${voiceRepliesEnabled ? T.gold : T.border}`,
       display: 'flex',
       alignItems: 'center',
       padding: 2,
@@ -697,7 +728,7 @@ function SettingsPageInner() {
         width: 18,
         height: 18,
         borderRadius: '50%',
-        background: wakeWordEnabled ? T.gold : '#666',
+        background: voiceRepliesEnabled ? T.gold : '#666',
         transform: `translateX(${voiceRepliesEnabled ? '18px' : '0px'})`,
         transition: 'all 0.2s ease',
       }}
