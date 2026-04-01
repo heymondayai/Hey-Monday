@@ -428,6 +428,77 @@ function buildRunAtIsoFromLocalInput(dateValue: string, timeValue: string) {
   return new Date(probeUtc).toISOString()
 }
 
+function isWeekendEt(iso: string) {
+  const jsDay = new Date(
+    new Date(iso).toLocaleString('en-US', { timeZone: 'America/New_York' })
+  ).getDay()
+  return jsDay === 0 || jsDay === 6
+}
+
+function addNextBusinessDayFromIso(iso: string) {
+  const d = new Date(iso)
+  do {
+    d.setDate(d.getDate() + 1)
+  } while (isWeekendEt(d.toISOString()))
+  return d
+}
+
+function isOccurrenceWithinRecurrenceEnd(summary: ScheduledSummary, occurrenceIso: string) {
+  if (!summary.recurrence_end) return true
+  return getEtDateKeyFromIso(occurrenceIso) <= summary.recurrence_end
+}
+
+function expandSummaryOccurrencesInRange(
+  summary: ScheduledSummary,
+  rangeStart: Date,
+  rangeEnd: Date
+): ScheduledSummary[] {
+  const recurrence = summary.recurrence ?? 'none'
+
+  if (recurrence === 'none') {
+    if (isWeekendEt(summary.run_at)) return []
+    if (!isIsoInRange(summary.run_at, rangeStart, rangeEnd)) return []
+    return [summary]
+  }
+
+  const items: ScheduledSummary[] = []
+  let cursor = new Date(summary.run_at)
+
+  if (recurrence === 'daily') {
+    while (cursor.getTime() < rangeStart.getTime()) {
+      cursor = addNextBusinessDayFromIso(cursor.toISOString())
+    }
+  } else if (recurrence === 'weekly') {
+    while (cursor.getTime() < rangeStart.getTime()) {
+      cursor.setDate(cursor.getDate() + 7)
+    }
+  }
+
+  while (cursor.getTime() <= rangeEnd.getTime()) {
+    const iso = cursor.toISOString()
+
+    if (!isWeekendEt(iso) && isOccurrenceWithinRecurrenceEnd(summary, iso)) {
+      items.push({
+        ...summary,
+        id: `${summary.id}__${iso}`,
+        run_at: iso,
+      })
+    }
+
+    if (recurrence === 'daily') {
+      cursor = addNextBusinessDayFromIso(cursor.toISOString())
+    } else if (recurrence === 'weekly') {
+      const next = new Date(cursor)
+      next.setDate(next.getDate() + 7)
+      cursor = next
+    } else {
+      break
+    }
+  }
+
+  return items
+}
+
 function getDateTimeInputDefaults() {
   const now = new Date()
   const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
@@ -693,7 +764,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [summaryRecurrence, setSummaryRecurrence] = useState<'none' | 'daily' | 'weekly'>('none')
   const [summaryRecurrenceEnd, setSummaryRecurrenceEnd] = useState('')
   const [countdownTick, setCountdownTick] = useState(Date.now())
-  const processedSummaryIdsRef = useRef<Set<string>>(new Set())
+  const processedSummaryRunsRef = useRef<Set<string>>(new Set())
 
   // Expire activeBriefing 30 min after it auto-played
   useEffect(() => {
@@ -738,17 +809,26 @@ function handleTouchEnd(e: React.TouchEvent) {
   }, [])
 
   useEffect(() => {
-    if (!user || !scheduledSummaries.length) return
-    const interval = setInterval(async () => {
-      const now = Date.now()
-      const due = scheduledSummaries.filter((s) => s.enabled).filter((s) => new Date(s.run_at).getTime() <= now).filter((s) => !processedSummaryIdsRef.current.has(s.id)).sort((a, b) => new Date(a.run_at).getTime() - new Date(b.run_at).getTime())
-      if (!due.length) return
-      const nextDue = due[0]
-      processedSummaryIdsRef.current.add(nextDue.id)
-      await runScheduledSummary(nextDue)
-    }, 15000)
-    return () => clearInterval(interval)
-  }, [user, scheduledSummaries, speechOn, watchlist, traderType, tickerData, messages, watchlistNews, generalNews, intraday])
+  if (!user || !scheduledSummaries.length) return
+
+  const interval = setInterval(async () => {
+    const now = Date.now()
+
+    const due = scheduledSummaries
+      .filter((s) => s.enabled)
+      .filter((s) => new Date(s.run_at).getTime() <= now)
+      .filter((s) => !processedSummaryRunsRef.current.has(`${s.id}:${s.run_at}`))
+      .sort((a, b) => new Date(a.run_at).getTime() - new Date(b.run_at).getTime())
+
+    if (!due.length) return
+
+    const nextDue = due[0]
+    processedSummaryRunsRef.current.add(`${nextDue.id}:${nextDue.run_at}`)
+    await runScheduledSummary(nextDue)
+  }, 15000)
+
+  return () => clearInterval(interval)
+}, [user, scheduledSummaries, speechOn, watchlist, traderType, tickerData, messages, watchlistNews, generalNews, intraday])
 
   useEffect(() => {
     return () => {
@@ -1197,19 +1277,41 @@ function startThinkingChimes(): () => void {
       const data = await res.json(); const reply = data.reply || 'Scheduled summary could not be generated.'; const nowIso = new Date().toISOString()
       await supabase.from('briefings').insert({ user_id: user.id, title: summary.name, content: reply, audio_url: null, briefing_date: nowIso })
       const rec = summary.recurrence ?? 'none'
-      if (rec !== 'none') {
-        const nextRunAt = new Date(summary.run_at)
-        if (rec === 'daily') nextRunAt.setDate(nextRunAt.getDate() + 1)
-        else if (rec === 'weekly') nextRunAt.setDate(nextRunAt.getDate() + 7)
-        const pastEnd = summary.recurrence_end ? nextRunAt.toISOString() > summary.recurrence_end : false
-        if (pastEnd) {
-          await supabase.from('scheduled_summaries').update({ enabled: false, updated_at: nowIso }).eq('id', summary.id).eq('user_id', user.id)
-        } else {
-          await supabase.from('scheduled_summaries').update({ run_at: nextRunAt.toISOString(), updated_at: nowIso }).eq('id', summary.id).eq('user_id', user.id)
-        }
-      } else {
-        await supabase.from('scheduled_summaries').update({ enabled: false, updated_at: nowIso }).eq('id', summary.id).eq('user_id', user.id)
-      }
+
+if (rec !== 'none') {
+  let nextRunAt = new Date(summary.run_at)
+
+  if (rec === 'daily') {
+    nextRunAt = addNextBusinessDayFromIso(summary.run_at)
+  } else if (rec === 'weekly') {
+    nextRunAt.setDate(nextRunAt.getDate() + 7)
+  }
+
+  const nextRunAtIso = nextRunAt.toISOString()
+  const pastEnd = summary.recurrence_end
+    ? getEtDateKeyFromIso(nextRunAtIso) > summary.recurrence_end
+    : false
+
+  if (pastEnd) {
+    await supabase
+      .from('scheduled_summaries')
+      .update({ enabled: false, updated_at: nowIso })
+      .eq('id', summary.id)
+      .eq('user_id', user.id)
+  } else {
+    await supabase
+      .from('scheduled_summaries')
+      .update({ run_at: nextRunAtIso, updated_at: nowIso })
+      .eq('id', summary.id)
+      .eq('user_id', user.id)
+  }
+} else {
+  await supabase
+    .from('scheduled_summaries')
+    .update({ enabled: false, updated_at: nowIso })
+    .eq('id', summary.id)
+    .eq('user_id', user.id)
+}
       const timeStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date())
       setMessages((prev) => [...prev, { role: 'monday', time: timeStr, text: reply }])
       // Auto-play the briefing
@@ -1239,14 +1341,19 @@ function startThinkingChimes(): () => void {
   const summaryDay = useMemo(() => getSummaryDayBounds(summaryDayOffset), [summaryDayOffset])
 
   const visibleScheduledSummaries = useMemo(() => {
-    const rangeStart = summaryView === 'week' ? summaryWeek.start : summaryDay.start
-    const rangeEnd = summaryView === 'week' ? summaryWeek.end : summaryDay.end
-    return [...enabledSummaries].filter((s) => { const etDate = new Date(new Date(s.run_at).toLocaleString('en-US', { timeZone: 'America/New_York' })); const jsDay = etDate.getDay(); if (jsDay === 0 || jsDay === 6) return false; return isIsoInRange(s.run_at, rangeStart, rangeEnd) }).sort((a, b) => new Date(a.run_at).getTime() - new Date(b.run_at).getTime())
-  }, [enabledSummaries, summaryWeek, summaryDay, summaryView])
+  const rangeStart = summaryView === 'week' ? summaryWeek.start : summaryDay.start
+  const rangeEnd = summaryView === 'week' ? summaryWeek.end : summaryDay.end
 
-  const visibleDaySummaries = useMemo(() => {
-    return [...enabledSummaries].filter((s) => { const etDate = new Date(new Date(s.run_at).toLocaleString('en-US', { timeZone: 'America/New_York' })); const jsDay = etDate.getDay(); if (jsDay === 0 || jsDay === 6) return false; return isIsoInRange(s.run_at, summaryDay.start, summaryDay.end) }).sort((a, b) => new Date(a.run_at).getTime() - new Date(b.run_at).getTime())
-  }, [enabledSummaries, summaryDay])
+  return enabledSummaries
+    .flatMap((s) => expandSummaryOccurrencesInRange(s, rangeStart, rangeEnd))
+    .sort((a, b) => new Date(a.run_at).getTime() - new Date(b.run_at).getTime())
+}, [enabledSummaries, summaryWeek, summaryDay, summaryView])
+
+const visibleDaySummaries = useMemo(() => {
+  return enabledSummaries
+    .flatMap((s) => expandSummaryOccurrencesInRange(s, summaryDay.start, summaryDay.end))
+    .sort((a, b) => new Date(a.run_at).getTime() - new Date(b.run_at).getTime())
+}, [enabledSummaries, summaryDay])
 
   const scheduledSummariesByDay = useMemo(() => {
     const dayBuckets: Record<number, ScheduledSummary[]> = { 0: [], 1: [], 2: [], 3: [], 4: [] }
@@ -2376,6 +2483,24 @@ function startThinkingChimes(): () => void {
                   </div>
                 </div>
                 <div>
+                  {/* ── Recurrence options (shared for both preset and custom) ── */}
+                <div>
+                  <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, marginBottom: '12px', fontWeight: 600 }}>Repeat Schedule</div>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                    {([{ id: 'none', label: 'Once' }, { id: 'daily', label: 'Daily' }, { id: 'weekly', label: 'Weekly' }] as const).map(opt => (
+                      <div key={opt.id} onClick={() => setSummaryRecurrence(opt.id)} style={{ padding: '7px 16px', border: `1px solid ${summaryRecurrence === opt.id ? T.goldFaint9 : T.borderItem}`, background: summaryRecurrence === opt.id ? T.goldFaint2 : 'transparent', color: summaryRecurrence === opt.id ? T.gold : T.text5, cursor: 'pointer', fontSize: '12px', fontWeight: 600, transition: 'all 0.15s' }}>{opt.label}</div>
+                    ))}
+                  </div>
+                  {summaryRecurrence !== 'none' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ fontSize: '12px', color: T.text5 }}>End date</div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <div onClick={() => setSummaryRecurrenceEnd('')} style={{ padding: '5px 12px', border: `1px solid ${summaryRecurrenceEnd === '' ? T.goldFaint9 : T.borderItem}`, background: summaryRecurrenceEnd === '' ? T.goldFaint2 : 'transparent', color: summaryRecurrenceEnd === '' ? T.gold : T.text5, cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>Indefinite</div>
+                        <input type="date" value={summaryRecurrenceEnd} onChange={e => setSummaryRecurrenceEnd(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${summaryRecurrenceEnd ? T.goldFaint9 : T.goldFaint7}`, color: summaryRecurrenceEnd ? T.text : T.text6, padding: '6px 10px', outline: 'none', fontSize: '12px' }} />
+                      </div>
+                    </div>
+                  )}
+                </div>
                   <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, marginBottom: '12px', fontWeight: 600 }}>Quick Presets</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '10px' }}>
                     {SUMMARY_PRESETS.map((preset, i) => (
@@ -2403,24 +2528,6 @@ function startThinkingChimes(): () => void {
                   </div>
                   <textarea value={summaryPrompt} onChange={(e) => setSummaryPrompt(e.target.value)} placeholder="What should Monday summarize?" rows={4} style={{ width: '100%', background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '12px', outline: 'none', resize: 'vertical', marginBottom: '10px' }} />
                   <div onClick={() => void addCustomSummary()} style={{ display: 'inline-flex', padding: '10px 18px', background: T.goldFaint3, border: `1px solid ${T.goldFaint8}`, color: T.gold, cursor: 'pointer', fontWeight: 600 }}>Add Custom Summary</div>
-                </div>
-                {/* ── Recurrence options (shared for both preset and custom) ── */}
-                <div>
-                  <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, marginBottom: '12px', fontWeight: 600 }}>Repeat Schedule</div>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-                    {([{ id: 'none', label: 'Once' }, { id: 'daily', label: 'Daily' }, { id: 'weekly', label: 'Weekly' }] as const).map(opt => (
-                      <div key={opt.id} onClick={() => setSummaryRecurrence(opt.id)} style={{ padding: '7px 16px', border: `1px solid ${summaryRecurrence === opt.id ? T.goldFaint9 : T.borderItem}`, background: summaryRecurrence === opt.id ? T.goldFaint2 : 'transparent', color: summaryRecurrence === opt.id ? T.gold : T.text5, cursor: 'pointer', fontSize: '12px', fontWeight: 600, transition: 'all 0.15s' }}>{opt.label}</div>
-                    ))}
-                  </div>
-                  {summaryRecurrence !== 'none' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ fontSize: '12px', color: T.text5 }}>End date</div>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <div onClick={() => setSummaryRecurrenceEnd('')} style={{ padding: '5px 12px', border: `1px solid ${summaryRecurrenceEnd === '' ? T.goldFaint9 : T.borderItem}`, background: summaryRecurrenceEnd === '' ? T.goldFaint2 : 'transparent', color: summaryRecurrenceEnd === '' ? T.gold : T.text5, cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>Indefinite</div>
-                        <input type="date" value={summaryRecurrenceEnd} onChange={e => setSummaryRecurrenceEnd(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${summaryRecurrenceEnd ? T.goldFaint9 : T.goldFaint7}`, color: summaryRecurrenceEnd ? T.text : T.text6, padding: '6px 10px', outline: 'none', fontSize: '12px' }} />
-                      </div>
-                    </div>
-                  )}
                 </div>
                 <div>
                   <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, marginBottom: '12px', fontWeight: 600 }}>Upcoming Summaries</div>
