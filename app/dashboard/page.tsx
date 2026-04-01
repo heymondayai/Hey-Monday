@@ -622,8 +622,9 @@ export default function DashboardPage() {
   const [traderType, setTraderType] = useState<string>('swing')
   const [activeWl, setActiveWl] = useState(0)
   const [chatInput, setChatInput] = useState('')
-  const [wakeOn, setWakeOn] = useState(true)
-  const [speechOn, setSpeechOn] = useState(true)
+  const [wakeOn, setWakeOn] = useState(false)
+  const [speechOn, setSpeechOn] = useState(false)
+  const [prefsLoaded, setPrefsLoaded] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [isRecordingVoice, setIsRecordingVoice] = useState(false)
   const [isDark, setIsDark] = useState<boolean>(() => {
@@ -896,8 +897,9 @@ function handleTouchEnd(e: React.TouchEvent) {
       const { data: profile } = await supabase.from('profiles').select('trader_type, wake_word_enabled, voice_replies_enabled').eq('id', user.id).single()
       if (!profile?.trader_type) { router.push('/onboarding'); return }
       if (profile?.trader_type) { setTraderType(profile.trader_type); setSettingsType(profile.trader_type) }
-      if (typeof profile?.wake_word_enabled === 'boolean') setWakeOn(profile.wake_word_enabled)
-      if (typeof profile?.voice_replies_enabled === 'boolean') setSpeechOn(profile.voice_replies_enabled)
+      setWakeOn(profile?.wake_word_enabled !== false)
+      setSpeechOn(profile?.voice_replies_enabled !== false)
+      setPrefsLoaded(true)
       const { data: wlRows } = await supabase.from('watchlist').select('ticker, company_name, added_at').eq('user_id', user.id).order('added_at', { ascending: true })
       let resolvedWl: typeof watchlist
       if (wlRows?.length) {
@@ -1436,7 +1438,7 @@ const visibleDaySummaries = useMemo(() => {
   return (
     <>
       <WakeWordListener
-        enabled={wakeOn}
+        enabled={prefsLoaded && wakeOn}
         onDetected={() => {
           if (!isRecordingVoice && !isThinking) {
             lastWakeDetectionRef.current = Date.now()
