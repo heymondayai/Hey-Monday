@@ -5,6 +5,8 @@ import { EventsPanel, CalendarModal } from '@/components/EventsCalendar'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import WakeWordListener from '@/components/WakeWordListener'
+import WakeScheduleModal from '@/components/WakeScheduleModal'
+import { useWakeSchedule } from '@/lib/useWakeSchedule'
 
 function useIsMobile(breakpoint = 960) {
   const [isMobile, setIsMobile] = useState(false)
@@ -679,6 +681,7 @@ const [newsTab, setNewsTab] = useState<'watchlist' | 'general'>(() => {
   const [voiceTriggered, setVoiceTriggered] = useState(false)
 
   const isMobile = useIsMobile(960)
+  const { windows, scheduledOff, addWindow, removeWindow, updateWindow } = useWakeSchedule()
   const [mobilePanel, setMobilePanel] = useState<PanelId>('pulse')
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
 
@@ -782,6 +785,10 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [alertPrice, setAlertPrice] = useState('')
   const [alertSaving, setAlertSaving] = useState(false)
 
+  const [showWakeSchedule, setShowWakeSchedule] = useState(false)
+  const wakeOverrideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastWakeDetectionRef = useRef<number>(0)
+
   const supabase = createClient()
   const router = useRouter()
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -807,6 +814,34 @@ function handleTouchEnd(e: React.TouchEvent) {
     const timer = setInterval(() => setCountdownTick(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
+  useEffect(() => {
+    const timer = setInterval(() => setCountdownTick(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // ── Schedule-aware wake word state ──
+  const [wakeManualOverride, setWakeManualOverride] = useState(false)
+
+  useEffect(() => {
+    if (scheduledOff && !wakeManualOverride) {
+      setWakeOn(false)
+    } else if (!scheduledOff) {
+      setWakeManualOverride(false)
+      setWakeOn(true)
+    }
+  }, [scheduledOff])
+
+  useEffect(() => {
+    if (!wakeManualOverride) return
+    if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
+    wakeOverrideTimerRef.current = setTimeout(() => {
+      setWakeManualOverride(false)
+      if (scheduledOff) setWakeOn(false)
+    }, 30 * 60 * 1000)
+    return () => {
+      if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
+    }
+  }, [wakeManualOverride])
 
   useEffect(() => {
   if (!user || !scheduledSummaries.length) return
@@ -1393,6 +1428,12 @@ const visibleDaySummaries = useMemo(() => {
         enabled={wakeOn}
         onDetected={() => {
           if (!isRecordingVoice && !isThinking) {
+            lastWakeDetectionRef.current = Date.now()
+            // Reset the 30-min override timer on each detection
+            if (wakeManualOverride) {
+              setWakeManualOverride(false)
+              setTimeout(() => setWakeManualOverride(true), 50)
+            }
             startVoiceRecording()
           }
         }}
@@ -1639,13 +1680,21 @@ const visibleDaySummaries = useMemo(() => {
                   </div>
                 </div>
                 <div style={{ padding: '10px 16px', borderBottom: `1px solid ${T.borderFaint}` }}>
-                  <div onClick={() => setWakeOn(!wakeOn)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: wakeOn ? T.greenFaint3 : T.inputBg, border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`, cursor: 'pointer' }}>
+                  <div onClick={() => { const turningOn = !wakeOn; setWakeOn(turningOn); if (turningOn && scheduledOff) { setWakeManualOverride(true) } else { setWakeManualOverride(false); if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current) } }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: wakeOn ? T.greenFaint3 : T.inputBg, border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`, cursor: 'pointer' }}>
                     <div style={{ width: '26px', height: '15px', borderRadius: '8px', background: wakeOn ? T.green : T.text7, position: 'relative', flexShrink: 0 }}>
                       <div style={{ position: 'absolute', top: '1.5px', left: wakeOn ? '13px' : '1.5px', width: '12px', height: '12px', borderRadius: '50%', background: '#fff', transition: 'left 0.25s' }} />
                     </div>
                     <span style={{ fontSize: '10px', color: wakeOn ? T.green : T.text6, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: "'DM Mono', monospace" }}>
                       {wakeOn ? 'Hey Monday On' : 'Wake Word Off'}
                     </span>
+                  </div>
+                </div>
+                <div style={{ padding: '6px 16px', borderBottom: `1px solid ${T.borderFaint}` }}>
+                  <div onClick={() => { setShowWakeSchedule(true); setMobileDrawerOpen(false) }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: 'transparent', border: `1px solid ${T.borderItem}`, cursor: 'pointer' }}>
+                    <span style={{ fontSize: '12px' }}>🕐</span>
+                    <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace", letterSpacing: '0.1em', textTransform: 'uppercase' }}>Wake Schedule</span>
+                    {windows.length > 0 && <span style={{ marginLeft: 'auto', fontSize: '10px', color: T.gold }}>{windows.length}</span>}
+                    {scheduledOff && <span style={{ fontSize: '9px', color: T.red, fontFamily: "'DM Mono', monospace", background: T.redFaint, border: `1px solid ${T.redBorder}`, padding: '1px 5px' }}>OFF</span>}
                   </div>
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
@@ -1823,6 +1872,17 @@ const visibleDaySummaries = useMemo(() => {
           )}
           {showNewsModal && <NewsModal watchlistNews={watchlistNews} generalNews={generalNews} onClose={() => setShowNewsModal(false)} watchlistTickers={watchlist.map(s => s.ticker)} defaultTab={newsTab} T={T} />}
           {showCalendar && <CalendarModal onClose={() => setShowCalendar(false)} watchlistTickers={watchlist.map(s => s.ticker)} T={T} isDark={isDark} />}
+          {showWakeSchedule && (
+            <WakeScheduleModal
+              onClose={() => setShowWakeSchedule(false)}
+              T={T}
+              scheduledOff={scheduledOff}
+              windows={windows}
+              addWindow={addWindow}
+              removeWindow={removeWindow}
+              updateWindow={updateWindow}
+            />
+          )}
 
           <style>{`
             @keyframes scrollTicker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
@@ -1876,7 +1936,16 @@ const visibleDaySummaries = useMemo(() => {
   Hey <span style={{ color: T.gold }}>Monday</span>
 </div>
               <div
-  onClick={() => setWakeOn(!wakeOn)}
+  onClick={() => {
+    const turningOn = !wakeOn
+    setWakeOn(turningOn)
+    if (turningOn && scheduledOff) {
+      setWakeManualOverride(true)
+    } else {
+      setWakeManualOverride(false)
+      if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
+    }
+  }}
   style={{
     display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px',
     padding: '6px 10px 6px 8px',
@@ -1915,6 +1984,17 @@ const visibleDaySummaries = useMemo(() => {
     {wakeOn ? 'Hey Monday' : 'Wake Word Off'}
   </span>
 </div>
+
+<div onClick={() => setShowWakeSchedule(true)} style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px 4px 8px', cursor: 'pointer', border: `1px solid ${T.borderItem}`, background: 'transparent', width: 'fit-content' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = T.goldFaint7 }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = T.borderItem }}>
+                <span style={{ fontSize: '11px', color: T.text6 }}></span>
+                <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace", letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                  {windows.length > 0 ? `${windows.length} schedule${windows.length > 1 ? 's' : ''}` : 'Schedule'}
+                </span>
+                {scheduledOff && <span style={{ fontSize: '9px', color: T.red, fontFamily: "'DM Mono', monospace", background: T.redFaint, border: `1px solid ${T.redBorder}`, padding: '1px 5px' }}>OFF</span>}
+              </div>
+
               <div onClick={() => router.push('/dashboard/settings')} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginTop: '10px', padding: '5px 11px', background: activeTrader.bgColor, border: `1px solid ${activeTrader.borderColor}`, cursor: 'pointer' }}>
                 <span style={{ fontSize: '14px' }}>{activeTrader.icon}</span>
                 <span style={{ fontSize: '11px', color: activeTrader.color, fontWeight: 600, letterSpacing: '0.08em' }}>{activeTrader.label}</span>
@@ -2603,6 +2683,19 @@ const visibleDaySummaries = useMemo(() => {
 
         {/* ── Calendar modal ── */}
         {showCalendar && <CalendarModal onClose={() => setShowCalendar(false)} watchlistTickers={watchlist.map((s) => s.ticker)} T={T} isDark={isDark} />}
+
+        {/* ── Wake schedule modal ── */}
+        {showWakeSchedule && (
+          <WakeScheduleModal
+            onClose={() => setShowWakeSchedule(false)}
+            T={T}
+            scheduledOff={scheduledOff}
+            windows={windows}
+            addWindow={addWindow}
+            removeWindow={removeWindow}
+            updateWindow={updateWindow}
+          />
+        )}
 
         <style>{`
           @keyframes scrollTicker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
