@@ -112,8 +112,32 @@ function isUsMediumOrHighEvent(event: CalendarEvent): boolean {
   return country === 'USA' && (impact === 'MEDIUM' || impact === 'HIGH')
 }
 
+function timeETToMinutes(timeET: string, time: string): number {
+  if (!timeET || timeET === '--') {
+    if (!time || time === '--' || time === 'bmo') return -60
+    if (time === 'amc') return 1200
+    if (time === 'dmh') return 600
+    const raw = time.match(/^(\d{2}):(\d{2})/)
+    if (!raw) return 9999
+    return parseInt(raw[1]) * 60 + parseInt(raw[2])
+  }
+  if (timeET === 'Before Open') return -60
+  if (timeET === 'After Close') return 1200
+  if (timeET === 'During Market') return 600
+  const match = timeET.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)/i)
+  if (!match) return 9999
+  let h = parseInt(match[1])
+  const m = parseInt(match[2])
+  const period = match[3].toUpperCase()
+  if (period === 'PM' && h !== 12) h += 12
+  if (period === 'AM' && h === 12) h = 0
+  return h * 60 + m
+}
+
 function sortEventsByDateTime(a: CalendarEvent, b: CalendarEvent): number {
-  return `${a.date} ${a.timeET || a.time || ''}`.localeCompare(`${b.date} ${b.timeET || b.time || ''}`)
+  const dateCmp = a.date.localeCompare(b.date)
+  if (dateCmp !== 0) return dateCmp
+  return timeETToMinutes(a.timeET, a.time) - timeETToMinutes(b.timeET, b.time)
 }
 
 function tagWatchlistEvents(events: CalendarEvent[], watchlistTickers: string[]): CalendarEvent[] {
