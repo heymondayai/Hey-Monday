@@ -713,6 +713,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   const chatEndRef = useRef<HTMLDivElement>(null)
   const wlSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const watchlistRef = useRef(watchlist)
+  const summaryModalScrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { watchlistRef.current = watchlist }, [watchlist])
 
@@ -1162,6 +1163,9 @@ function startThinkingChimes(): () => void {
     if (!ok) { alert('You can only have up to 6 scheduled summaries on the same day.'); return }
     await supabase.from('scheduled_summaries').insert({ user_id: user.id, name: preset.name, run_at: runAtIso, prompt: preset.prompt, icon: preset.icon, top_color: preset.top_color, type: preset.type, enabled: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     await loadScheduledSummariesFromSupabase(user.id)
+    setTimeout(() => {
+  summaryModalScrollRef.current?.scrollTo({ top: summaryModalScrollRef.current.scrollHeight, behavior: 'smooth' })
+}, 100)
   }
 
   async function addCustomSummary() {
@@ -1616,10 +1620,25 @@ function startThinkingChimes(): () => void {
                   <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '18px', fontStyle: 'italic', color: T.text }}>Configure Summaries</div>
                   <div onClick={() => setShowSummaryEditor(false)} style={{ fontSize: '18px', color: T.text6, cursor: 'pointer', padding: '4px' }}>✕</div>
                 </div>
-                <div style={{ padding: '16px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    <input type="date" value={summaryDate} onChange={e => setSummaryDate(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '10px 12px', outline: 'none', fontSize: '14px' }} />
-                    <input type="time" value={summaryTime} onChange={e => setSummaryTime(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '10px 12px', outline: 'none', fontSize: '14px' }} />
+                <div ref={summaryModalScrollRef} style={{ padding: '16px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <input type="date" value={summaryDate} onChange={e => setSummaryDate(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '10px 12px', outline: 'none', fontSize: '14px' }} />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <input type="time" value={summaryTime} onChange={e => setSummaryTime(e.target.value)} style={{ flex: 1, background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '10px 12px', outline: 'none', fontSize: '14px' }} />
+                          <div style={{ fontSize: '10px', color: T.gold, fontFamily: "'DM Mono', monospace", background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '3px 7px', letterSpacing: '0.1em', flexShrink: 0 }}>ET</div>
+                        </div>
+                        <div style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace", paddingLeft: '2px' }}>
+                          {(() => {
+                            if (!summaryDate || !summaryTime) return null
+                            const iso = buildRunAtIsoFromLocalInput(summaryDate, summaryTime)
+                            const local = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZoneName: 'short' }).format(new Date(iso))
+                            return `Your local time: ${local}`
+                          })()}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   <div>
                     <div style={{ fontSize: '11px', letterSpacing: '0.15em', textTransform: 'uppercase', color: T.gold, marginBottom: '10px', fontWeight: 600 }}>Quick Presets</div>
