@@ -36,13 +36,15 @@ function WindowRow({
   win,
   onRemove,
   onToggleDay,
-  onChangeTime,
+  onChangeBothOff,
+  onChangeBothOn,
   T,
 }: {
   win: WakeWindow
   onRemove: () => void
   onToggleDay: (d: number) => void
-  onChangeTime: (field: 'offHour' | 'offMin' | 'onHour' | 'onMin', val: number) => void
+  onChangeBothOff: (h: number, m: number) => void
+  onChangeBothOn: (h: number, m: number) => void
   T: any
 }) {
   const offH = win.offHour ?? 22
@@ -79,45 +81,63 @@ function WindowRow({
       </div>
 
       {/* Time range */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-        <span style={{
-          fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace",
-          letterSpacing: '0.14em', textTransform: 'uppercase', width: '36px', flexShrink: 0,
-        }}>Off at</span>
-        <input
-          type="time"
-          value={`${String(offH).padStart(2, '0')}:${String(offM).padStart(2, '0')}`}
-          onChange={e => {
-            const [h, m] = e.target.value.split(':').map(Number)
-            if (!isNaN(h)) onChangeTime('offHour', h)
-            if (!isNaN(m)) onChangeTime('offMin', m)
-          }}
-          style={{
-            background: T.inputBg, border: `1px solid ${T.goldFaint7}`,
-            color: T.text, padding: '6px 10px', outline: 'none',
-            fontSize: '13px', fontFamily: "'DM Mono', monospace",
-          }}
-        />
-        <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>→</span>
-        <span style={{
-          fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace",
-          letterSpacing: '0.14em', textTransform: 'uppercase',
-        }}>On at</span>
-        <input
-          type="time"
-          value={`${String(onH).padStart(2, '0')}:${String(onM).padStart(2, '0')}`}
-          onChange={e => {
-            const [h, m] = e.target.value.split(':').map(Number)
-            if (!isNaN(h)) onChangeTime('onHour', h)
-            if (!isNaN(m)) onChangeTime('onMin', m)
-          }}
-          style={{
-            background: T.inputBg, border: `1px solid ${T.goldFaint7}`,
-            color: T.text, padding: '6px 10px', outline: 'none',
-            fontSize: '13px', fontFamily: "'DM Mono', monospace",
-          }}
-        />
-        <div style={{ marginLeft: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+
+        {/* Off at */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{
+            fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace",
+            letterSpacing: '0.14em', textTransform: 'uppercase',
+          }}>Off at</span>
+          <input
+            type="time"
+            value={`${String(offH).padStart(2, '0')}:${String(offM).padStart(2, '0')}`}
+            onChange={e => {
+              const parts = e.target.value.split(':').map(Number)
+              const h = parts[0]; const m = parts[1]
+              if (!isNaN(h) && !isNaN(m)) onChangeBothOff(h, m)
+            }}
+            style={{
+              background: T.inputBg, border: `1px solid ${T.goldFaint7}`,
+              color: T.text, padding: '6px 10px', outline: 'none',
+              fontSize: '13px', fontFamily: "'DM Mono', monospace",
+              colorScheme: 'dark',
+            }}
+          />
+          <span style={{ fontSize: '10px', color: T.text8, fontFamily: "'DM Mono', monospace" }}>
+            {toET(offH, offM)} ET
+          </span>
+        </div>
+
+        <div style={{ paddingTop: '22px', fontSize: '12px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>→</div>
+
+        {/* On at */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{
+            fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace",
+            letterSpacing: '0.14em', textTransform: 'uppercase',
+          }}>On at</span>
+          <input
+            type="time"
+            value={`${String(onH).padStart(2, '0')}:${String(onM).padStart(2, '0')}`}
+            onChange={e => {
+              const parts = e.target.value.split(':').map(Number)
+              const h = parts[0]; const m = parts[1]
+              if (!isNaN(h) && !isNaN(m)) onChangeBothOn(h, m)
+            }}
+            style={{
+              background: T.inputBg, border: `1px solid ${T.goldFaint7}`,
+              color: T.text, padding: '6px 10px', outline: 'none',
+              fontSize: '13px', fontFamily: "'DM Mono', monospace",
+              colorScheme: 'dark',
+            }}
+          />
+          <span style={{ fontSize: '10px', color: T.text8, fontFamily: "'DM Mono', monospace" }}>
+            {toET(onH, onM)} ET
+          </span>
+        </div>
+
+        <div style={{ marginLeft: 'auto', paddingTop: '20px' }}>
           <div onClick={onRemove} style={{
             fontSize: '11px', color: T.red, cursor: 'pointer',
             padding: '4px 9px', border: `1px solid ${T.redBorder}`,
@@ -125,14 +145,9 @@ function WindowRow({
         </div>
       </div>
 
-      {/* Summary — local time */}
+      {/* Summary */}
       <div style={{ fontSize: '11px', color: T.goldText2, fontFamily: "'DM Mono', monospace" }}>
         Wake word <span style={{ color: T.red }}>off</span> {fmt24to12(offH, offM)} → <span style={{ color: T.green }}>on</span> {fmt24to12(onH, onM)} · {describeDays(win.days)}
-      </div>
-
-      {/* ET time hint */}
-      <div style={{ fontSize: '10px', color: T.text8, fontFamily: "'DM Mono', monospace" }}>
-        ET: off {toET(offH, offM)} → on {toET(onH, onM)}
       </div>
     </div>
   )
@@ -205,7 +220,7 @@ export default function WakeScheduleModal({
               <span style={{ color: T.gold, fontFamily: "'DM Mono', monospace" }}>Hey Monday</span>{' '}
               is automatically silenced. All times are{' '}
               <span style={{ color: T.gold, fontFamily: "'DM Mono', monospace" }}>your local time</span>{' '}
-              ({localTz}). ET equivalent shown below each window.
+              ({localTz}) with ET shown below each input.
               Manually enabling during a scheduled window keeps it active for 30 minutes before reverting.
             </div>
           </div>
@@ -264,7 +279,8 @@ export default function WakeScheduleModal({
                   ? win.days.filter(x => x !== d)
                   : [...win.days, d],
               })}
-              onChangeTime={(field, val) => updateWindow(win.id, { [field]: val })}
+              onChangeBothOff={(h, m) => updateWindow(win.id, { offHour: h, offMin: m })}
+              onChangeBothOn={(h, m) => updateWindow(win.id, { onHour: h, onMin: m })}
             />
           ))}
         </div>
