@@ -159,7 +159,8 @@ export default function WakeScheduleModal({
             </div>
             <div style={{ fontSize: '12px', color: T.text5, lineHeight: 1.6 }}>
               Set windows when <span style={{ color: T.gold, fontFamily: "'DM Mono', monospace" }}>Hey Monday</span> is automatically silenced.
-              Manually enabling the wake word during a scheduled window will keep it active for 30 minutes before automatically reverting.
+              All times are <span style={{ color: T.gold, fontFamily: "'DM Mono', monospace" }}>your local time</span> ({Intl.DateTimeFormat().resolvedOptions().timeZone.replace(/_/g, ' ')}).
+              Manually enabling during a scheduled window keeps it active for 30 minutes before reverting.
             </div>
           </div>
           <div onClick={onClose} style={{ fontSize: '17px', color: T.text6, cursor: 'pointer', padding: '2px 6px', marginLeft: '16px', flexShrink: 0 }}>✕</div>
@@ -209,7 +210,7 @@ export default function WakeScheduleModal({
           background: T.inputBg,
         }}>
           <div style={{ fontSize: '11px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>
-            {windows.length}/5 windows · Changes save automatically
+            {windows.length}/5 windows · All times local · Changes save automatically
           </div>
           {windows.length < 5 && (
             <div onClick={handleAdd} style={{
