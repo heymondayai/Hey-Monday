@@ -109,6 +109,8 @@ const BUILTIN_TICKER_MAP: Record<string, string> = {
 
   FOMC: 'the Fed',
   CPI: 'C P I',
+  MOM: 'month over month',
+  YOY: 'year over year',
   GDP: 'G D P',
   PCE: 'P C E',
   NFP: 'the jobs report',
@@ -329,6 +331,11 @@ export function normalizeTTS(text: string, options: NormalizeTTSOptions = {}): s
       return `${expandSide(left)} to ${expandSide(right)}`
     }
   )
+
+  // 1b. Mixed-case acronyms
+  s = s.replace(/\bMoM\b/g, 'month over month')
+  s = s.replace(/\bYoY\b/g, 'year over year')
+  s = s.replace(/\bQoQ\b/g, 'quarter over quarter')
 
   // 2. Tickers / names
   for (const [ticker, spoken] of Object.entries(TICKER_MAP)) {
