@@ -2326,12 +2326,25 @@ function startThinkingChimes(): () => void {
                   <div onClick={() => setShowSummaryEditor(false)} style={{ fontSize: '18px', color: T.text6, cursor: 'pointer', padding: '4px' }}>✕</div>
                 </div>
               </div>
-              <div style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div ref={summaryModalScrollRef} style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
                 <div>
                   <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, marginBottom: '12px', fontWeight: 600 }}>Date & Time For New Summary</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '180px 160px', gap: '10px', marginBottom: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: '10px', marginBottom: '16px' }}>
                     <input type="date" value={summaryDate} onChange={(e) => setSummaryDate(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '10px 12px', outline: 'none' }} />
-                    <input type="time" value={summaryTime} onChange={(e) => setSummaryTime(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '10px 12px', outline: 'none' }} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <input type="time" value={summaryTime} onChange={(e) => setSummaryTime(e.target.value)} style={{ flex: 1, background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '10px 12px', outline: 'none' }} />
+                        <div style={{ fontSize: '10px', color: T.gold, fontFamily: "'DM Mono', monospace", background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '3px 7px', letterSpacing: '0.1em', flexShrink: 0 }}>ET</div>
+                      </div>
+                      <div style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace", paddingLeft: '2px' }}>
+                        {(() => {
+                          if (!summaryDate || !summaryTime) return null
+                          const iso = buildRunAtIsoFromLocalInput(summaryDate, summaryTime)
+                          const local = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZoneName: 'short' }).format(new Date(iso))
+                          return `Your local time: ${local}`
+                        })()}
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div>
