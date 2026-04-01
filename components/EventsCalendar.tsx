@@ -189,25 +189,68 @@ function isEventPast(dateStr: string, timeStr: string): boolean {
   try { return eventToUTC(dateStr, timeStr) < Date.now() } catch { return false }
 }
 
+function formatCalendarValue(value: string | null | undefined, unit: string): string {
+  if (!value) return '—'
+
+  const numeric = parseFloat(String(value).replace(/,/g, '').replace(/[^0-9.-]/g, ''))
+  if (isNaN(numeric)) return `${value}${unit || ''}`
+
+  if (unit === 'M') {
+    const millions = numeric / 1_000_000
+
+    let decimals = 3
+    if (millions >= 10) decimals = 2
+    else if (millions >= 1) decimals = 3
+
+    return `${millions.toFixed(decimals).replace(/\.?0+$/, '')}M`
+  }
+
+  if (unit === 'K') {
+    const thousands = numeric / 1_000
+    return `${thousands.toFixed(0).replace(/\.?0+$/, '')}K`
+  }
+
+  if (unit === '%') {
+    return `${numeric}%`
+  }
+
+  return `${value}${unit || ''}`
+}
+
 function getOutcomeColor(event: CalendarEvent, T: ThemeTokens): { color: string; label: string; isGood: boolean | null } {
   if (!event.actual) return { color: T.text5, label: '', isGood: null }
+
   const actual = parseFloat(event.actual.replace(/[^0-9.-]/g, ''))
   const forecast = event.forecast ? parseFloat(event.forecast.replace(/[^0-9.-]/g, '')) : null
   const previous = event.previous ? parseFloat(event.previous.replace(/[^0-9.-]/g, '')) : null
-  if (isNaN(actual)) return { color: T.gold, label: event.actual, isGood: null }
+  const formattedActual = formatCalendarValue(event.actual, event.unit)
+
+  if (isNaN(actual)) return { color: T.gold, label: formattedActual, isGood: null }
+
   const compare = forecast ?? previous
-  if (compare === null || isNaN(compare)) return { color: T.gold, label: event.actual, isGood: null }
+  if (compare === null || isNaN(compare)) return { color: T.gold, label: formattedActual, isGood: null }
+
   const diff = actual - compare
   const pctDiff = compare === 0 ? Math.abs(diff) : Math.abs(diff / compare)
-  const lowerIsBetter = ['INFLATION', 'JOBS'].includes(event.category) && !event.name.toLowerCase().includes('payroll') && !event.name.toLowerCase().includes('nonfarm')
-  const higherIsBetter = event.name.toLowerCase().includes('payroll') || event.name.toLowerCase().includes('nonfarm') || event.category === 'GROWTH' || event.category === 'CONSUMER'
+  const lowerIsBetter =
+    ['INFLATION', 'JOBS'].includes(event.category) &&
+    !event.name.toLowerCase().includes('payroll') &&
+    !event.name.toLowerCase().includes('nonfarm')
+  const higherIsBetter =
+    event.name.toLowerCase().includes('payroll') ||
+    event.name.toLowerCase().includes('nonfarm') ||
+    event.category === 'GROWTH' ||
+    event.category === 'CONSUMER'
+
   let isGood: boolean | null = null
   if (lowerIsBetter) isGood = diff < 0
   else if (higherIsBetter) isGood = diff > 0
   if (pctDiff < 0.005) isGood = null
+
   const color = isGood === true ? T.green : isGood === false ? T.red : T.gold
   const arrow = diff > 0 ? ' ↑' : diff < 0 ? ' ↓' : ''
-  return { color, label: `${event.actual}${event.unit}${arrow}`, isGood }
+
+  return { color, label: `${formattedActual}${arrow}`, isGood }
 }
 
 function getCategoryColor(cat: CalendarEvent['category'], T: ThemeTokens): string {
@@ -338,10 +381,18 @@ export function EventsPanel({ watchlistTickers, onOpenCalendar, T, isDark }: Eve
                 ) : timer ? (
                   <div style={{ fontSize: '11px', color: T.gold, fontFamily: "'DM Mono', monospace", background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '3px 7px' }}>⏳ {timer}</div>
                 ) : (
-                  <>
-                    {e.forecast && <div style={{ fontSize: '11px', color: T.text4, fontFamily: "'DM Mono', monospace" }}>est {e.forecast}{e.unit}</div>}
-                    {e.previous && <div style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>prev {e.previous}{e.unit}</div>}
-                  </>
+                 <>
+  {e.forecast && (
+    <div style={{ fontSize: '11px', color: T.text4, fontFamily: "'DM Mono', monospace" }}>
+      est {formatCalendarValue(e.forecast, e.unit)}
+    </div>
+  )}
+  {e.previous && (
+    <div style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>
+      prev {formatCalendarValue(e.previous, e.unit)}
+    </div>
+  )}
+</>
                 )}
               </div>
             </div>
@@ -480,17 +531,21 @@ export function CalendarModal({ onClose, watchlistTickers, T, isDark }: Calendar
                       </div>
                       <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexShrink: 0 }}>
                         {e.previous && (
-                          <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: '9px', color: T.text6, letterSpacing: '0.1em', marginBottom: '3px' }}>PREV</div>
-                            <div style={{ fontSize: '13px', color: T.text4, fontFamily: "'DM Mono', monospace" }}>{e.previous}{e.unit}</div>
-                          </div>
-                        )}
-                        {e.forecast && (
-                          <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: '9px', color: T.text6, letterSpacing: '0.1em', marginBottom: '3px' }}>EST</div>
-                            <div style={{ fontSize: '13px', color: T.text3, fontFamily: "'DM Mono', monospace" }}>{e.forecast}{e.unit}</div>
-                          </div>
-                        )}
+  <div style={{ textAlign: 'center' }}>
+    <div style={{ fontSize: '9px', color: T.text6, letterSpacing: '0.1em', marginBottom: '3px' }}>PREV</div>
+    <div style={{ fontSize: '13px', color: T.text4, fontFamily: "'DM Mono', monospace" }}>
+      {formatCalendarValue(e.previous, e.unit)}
+    </div>
+  </div>
+)}
+{e.forecast && (
+  <div style={{ textAlign: 'center' }}>
+    <div style={{ fontSize: '9px', color: T.text6, letterSpacing: '0.1em', marginBottom: '3px' }}>EST</div>
+    <div style={{ fontSize: '13px', color: T.text3, fontFamily: "'DM Mono', monospace" }}>
+      {formatCalendarValue(e.forecast, e.unit)}
+    </div>
+  </div>
+)}
                         <div style={{ textAlign: 'center', minWidth: '70px' }}>
                           <div style={{ fontSize: '9px', color: T.text6, letterSpacing: '0.1em', marginBottom: '3px' }}>ACTUAL</div>
                           {isPast ? (
