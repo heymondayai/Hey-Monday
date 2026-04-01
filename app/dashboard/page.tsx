@@ -894,9 +894,11 @@ function handleTouchEnd(e: React.TouchEvent) {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
       setUser(user)
-      const { data: profile } = await supabase.from('profiles').select('trader_type').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('trader_type, wake_word_enabled, voice_replies_enabled').eq('id', user.id).single()
       if (!profile?.trader_type) { router.push('/onboarding'); return }
       if (profile?.trader_type) { setTraderType(profile.trader_type); setSettingsType(profile.trader_type) }
+      if (typeof profile?.wake_word_enabled === 'boolean') setWakeOn(profile.wake_word_enabled)
+      if (typeof profile?.voice_replies_enabled === 'boolean') setSpeechOn(profile.voice_replies_enabled)
       const { data: wlRows } = await supabase.from('watchlist').select('ticker, company_name, added_at').eq('user_id', user.id).order('added_at', { ascending: true })
       let resolvedWl: typeof watchlist
       if (wlRows?.length) {

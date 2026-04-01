@@ -86,6 +86,8 @@ type ProfileRow = {
   current_period_end: string | null
   cancel_at_period_end: boolean | null
   billing_zip: string | null
+  wake_word_enabled: boolean | null
+  voice_replies_enabled: boolean | null
 }
 
 function fmtDate(value: string | null) {
@@ -175,7 +177,9 @@ function SettingsPageInner() {
           trial_ends_at,
           current_period_end,
           cancel_at_period_end,
-          billing_zip
+          billing_zip,
+          wake_word_enabled,
+          voice_replies_enabled
         `)
         .eq('id', user.id)
         .maybeSingle()
@@ -200,9 +204,8 @@ function SettingsPageInner() {
       )
       setTraderType((row?.trader_type as TraderType) || 'day')
 
-      // Placeholder preferences until you store these in DB
-      setWakeWordEnabled(true)
-      setVoiceRepliesEnabled(true)
+      setWakeWordEnabled(row?.wake_word_enabled !== false)
+      setVoiceRepliesEnabled(row?.voice_replies_enabled !== false)
 
       setLoading(false)
     }
@@ -253,7 +256,11 @@ function SettingsPageInner() {
 
     const { error } = await supabase
       .from('profiles')
-      .update({ trader_type: traderType })
+      .update({
+        trader_type: traderType,
+        wake_word_enabled: wakeWordEnabled,
+        voice_replies_enabled: voiceRepliesEnabled,
+      })
       .eq('id', userId)
 
     if (error) {
@@ -262,7 +269,7 @@ function SettingsPageInner() {
       return
     }
 
-    setProfile(prev => prev ? { ...prev, trader_type: traderType } : prev)
+    setProfile(prev => prev ? { ...prev, trader_type: traderType, wake_word_enabled: wakeWordEnabled, voice_replies_enabled: voiceRepliesEnabled } : prev)
     setSuccess('Preferences saved.')
     setSavingPrefs(false)
   }
