@@ -29,7 +29,7 @@ const SAMPLE_RATE       = 16000
 const CHUNK_SAMPLES     = 1280          // 80ms per chunk
 const MEL_FRAMES_NEEDED = 76            // embedding model input window
 const MEL_STEP          = 4             // slide mel buffer by this many frames
-const DETECTION_THRESHOLD = 0.13       // score above this = detected
+const DETECTION_THRESHOLD = 0.18       // score above this = detected
 const COOLDOWN_MS       = 2000          // prevent re-firing for 2 seconds
 
 interface UseWakeWordOptions {
