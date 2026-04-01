@@ -159,7 +159,7 @@ export default function WakeScheduleModal({
             </div>
             <div style={{ fontSize: '12px', color: T.text5, lineHeight: 1.6 }}>
               Set windows when <span style={{ color: T.gold, fontFamily: "'DM Mono', monospace" }}>Hey Monday</span> is automatically silenced.
-              Manually enabling the wake word during a scheduled window will keep it active for 30 minutes before reverting.
+              Manually enabling the wake word during a scheduled window will keep it active for 30 minutes before automatically reverting.
             </div>
           </div>
           <div onClick={onClose} style={{ fontSize: '17px', color: T.text6, cursor: 'pointer', padding: '2px 6px', marginLeft: '16px', flexShrink: 0 }}>✕</div>
