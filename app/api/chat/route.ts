@@ -17,6 +17,7 @@ import {
   formatEarningsCalendar,
   formatSectorPerformance,
 } from '@/lib/market-data'
+import { buildMarketState, MarketStateSnapshot } from '@/lib/market-state'
 
 // ── SONNET DAILY CAP ─────────────────────────────────────────────────────────
 const sonnetUsage = new Map<string, { count: number; dateET: string }>()
@@ -84,6 +85,7 @@ interface AnswerabilityInput {
   news?: any[]
   level2?: any
   intradayData?: any
+  marketState?: MarketStateSnapshot | null
   macroFetched: boolean
   sectorFetched: boolean
   insiderFetched: boolean
@@ -308,9 +310,37 @@ function classifyIntent(
 
 function canAnswerFromCurrentData(input: AnswerabilityInput): boolean {
   const {
-    message, intent, watchlistTickers, prices, news, level2, intradayData,
-    macroFetched, sectorFetched, insiderFetched, analystFetched, optionsFetched,
+    message,
+    intent,
+    watchlistTickers,
+    prices,
+    news,
+    level2,
+    intradayData,
+    marketState,
+    macroFetched,
+    sectorFetched,
+    insiderFetched,
+    analystFetched,
+    optionsFetched,
   } = input
+
+  if (marketState) {
+    const hasCalendar =
+      Array.isArray(marketState.calendarEvents) &&
+      marketState.calendarEvents.length > 0
+
+    const hasMacro =
+      Array.isArray(marketState.macroContext) &&
+      marketState.macroContext.length > 0
+
+    const hasNews =
+      Array.isArray(marketState.keyNews) &&
+      marketState.keyNews.length > 0
+
+    if (intent.needsMacro && (hasCalendar || hasMacro)) return true
+    if (intent.needsNews && hasNews) return true
+  }
 
   const lower = message.toLowerCase()
 
@@ -349,31 +379,49 @@ function canAnswerFromCurrentData(input: AnswerabilityInput): boolean {
 export async function POST(req: Request) {
   try {
     const {
-      message,
-      watchlist = [],
-      traderType,
-      prices = [],
-      news = [],
-      level2,
-      history = [],
-      userId,
-      mode = 'chat',
-    } = await req.json() as {
-      message: string
-      watchlist?: any[]
-      traderType?: string
-      prices?: any[]
-      news?: any[]
-      level2?: any
-      history?: { role: string; content: string }[]
-      userId?: string
-      mode?: 'chat' | 'summary'
-    }
+  message,
+  watchlist = [],
+  traderType,
+  prices = [],
+  news = [],
+  level2,
+  history = [],
+  marketState,
+  userId,
+  mode = 'chat',
+} = await req.json() as {
+  message: string
+  watchlist?: any[]
+  traderType?: string
+  prices?: any[]
+  news?: any[]
+  level2?: any
+  history?: { role: string; content: string }[]
+  marketState?: MarketStateSnapshot | null
+  userId?: string
+  mode?: 'chat' | 'summary'
+}
 
     const watchlistTickers: string[] = watchlist?.map((s: any) => s.ticker) ?? []
-    const priceSymbols: string[] = prices?.map((p: any) => p.sym).filter(Boolean) ?? []
+const priceSymbols: string[] = prices?.map((p: any) => p.sym).filter(Boolean) ?? []
 
-    const intent = classifyIntent(message, watchlistTickers, priceSymbols)
+const canonicalMarketState =
+  marketState ??
+  await buildMarketState({
+    watchlistTickers: watchlistTickers.length
+      ? watchlistTickers
+      : priceSymbols.length
+        ? priceSymbols
+        : ['SPY', 'QQQ', 'NVDA', 'AAPL', 'TSLA', 'META', 'AMD'],
+    keyNews: (news ?? []).slice(0, 12).map((n: any) => ({
+      symbol: n.ticker,
+      headline: n.headline,
+      source: n.source,
+      publishedAt: n.publishedAt,
+    })),
+  })
+
+const intent = classifyIntent(message, watchlistTickers, priceSymbols)
 
     const userKey = userId ?? 'anonymous'
     const sonnetAllowed = canUseSonnet(userKey)
@@ -412,16 +460,16 @@ export async function POST(req: Request) {
       : ['SPY', 'QQQ', 'NVDA', 'AAPL', 'TSLA', 'META', 'AMD']
 
     const calendarToDate = new Date(`${todayStr}T12:00:00`)
-    calendarToDate.setDate(calendarToDate.getDate() + 7)
-    const calendarTo = calendarToDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+calendarToDate.setDate(calendarToDate.getDate() + 45)
+const calendarTo = calendarToDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
-    const [intradayResult, economicEvents, earningsEvents, macroData, sectorData] = await Promise.all([
-      fetchIntraday(intradaySymbols),
-      fetchEconomicCalendar(todayStr, calendarTo),
-      fetchEarningsCalendar(intradaySymbols, 7),
-      fetchMacroData(),
-      fetchSectorPerformance(),
-    ])
+const [intradayResult, economicEvents, earningsEvents, macroData, sectorData] = await Promise.all([
+  fetchIntraday(intradaySymbols),
+  fetchEconomicCalendar(todayStr, calendarTo),
+  fetchEarningsCalendar(intradaySymbols, 14),
+  fetchMacroData(),
+  fetchSectorPerformance(),
+])
 
     // ── CONDITIONAL SYMBOL-SPECIFIC FETCHES ─────────────────────────────────
     const tier2Promises: Promise<any>[] = []
@@ -437,11 +485,20 @@ export async function POST(req: Request) {
 
     // ── ANSWERABILITY DECISION ───────────────────────────────────────────────
     const currentDataEnough = canAnswerFromCurrentData({
-      message, intent, watchlistTickers, prices, news, level2,
-      intradayData: intradayResult?.data,
-      macroFetched: !!macroData, sectorFetched: !!sectorData,
-      insiderFetched: !!tier2.insider, analystFetched: !!tier2.analyst, optionsFetched: !!tier2.options,
-    })
+  message,
+  intent,
+  watchlistTickers,
+  prices,
+  news,
+  level2,
+  intradayData: intradayResult?.data,
+  marketState: canonicalMarketState,
+  macroFetched: !!macroData,
+  sectorFetched: !!sectorData,
+  insiderFetched: !!tier2.insider,
+  analystFetched: !!tier2.analyst,
+  optionsFetched: !!tier2.options,
+})
 
     const needsResearchButBlocked = !currentDataEnough && !sonnetAllowed
     const useLiveSearch = !currentDataEnough && sonnetAllowed
@@ -464,28 +521,64 @@ export async function POST(req: Request) {
       : ''
 
     const intradayContext = formatIntradayContext(intradayResult.data)
-    const calendarContext = formatEconomicCalendar(economicEvents, todayStr)
-    const earningsContext = formatEarningsCalendar(earningsEvents)
-    const macroContext = formatMacroData(macroData)
-    const sectorContext = formatSectorPerformance(sectorData)
-    const insiderContext = tier2.insider ? formatInsiderTransactions(tier2.insider, intent.focusSymbol ?? '') : ''
-    const analystContext = tier2.analyst ? formatAnalystRatings(tier2.analyst, intent.focusSymbol ?? '') : ''
-    const optionsContext = tier2.options ? formatOptionsFlow(tier2.options, intent.focusSymbol ?? '') : ''
+const calendarContext = formatEconomicCalendar(economicEvents, todayStr)
+const earningsContext = formatEarningsCalendar(earningsEvents)
+const macroContext = formatMacroData(macroData)
+const sectorContext = formatSectorPerformance(sectorData)
+const insiderContext = tier2.insider ? formatInsiderTransactions(tier2.insider, intent.focusSymbol ?? '') : ''
+const analystContext = tier2.analyst ? formatAnalystRatings(tier2.analyst, intent.focusSymbol ?? '') : ''
+const optionsContext = tier2.options ? formatOptionsFlow(tier2.options, intent.focusSymbol ?? '') : ''
 
-    const isCalendarQuestion = intent.needsMacro
-const isBriefing = intent.requestType === 'briefing'
+const marketStateContext = [
+  `CANONICAL MARKET SNAPSHOT (${canonicalMarketState.snapshotTime}):`,
+  `Market status: ${canonicalMarketState.marketStatus}`,
+  canonicalMarketState.summary ? `Summary: ${canonicalMarketState.summary}` : '',
+  canonicalMarketState.watchlistSummary?.length
+    ? `Watchlist summary:\n${canonicalMarketState.watchlistSummary
+        .slice(0, 10)
+        .map((w: any) => `  ${w.symbol}: ${w.price ?? '—'} (${w.changePct ?? '—'}%)`)
+        .join('\n')}`
+    : '',
+  canonicalMarketState.calendarEvents?.length
+    ? `Economic calendar:\n${canonicalMarketState.calendarEvents
+        .slice(0, 40)
+        .map((e: any) => `  ${e.name}${e.time ? ` — ${e.time}` : ''}${e.impact ? ` — ${e.impact}` : ''}`)
+        .join('\n')}`
+    : '',
+  canonicalMarketState.earningsEvents?.length
+    ? `Earnings calendar:\n${canonicalMarketState.earningsEvents
+        .slice(0, 20)
+        .map((e: any) => `  ${e.symbol}${e.timing ? ` — ${e.timing}` : ''}`)
+        .join('\n')}`
+    : '',
+  canonicalMarketState.macroContext?.length
+    ? `Macro context:\n${canonicalMarketState.macroContext
+        .slice(0, 12)
+        .map((m: any) => `  ${m.label}: ${m.value}${m.implication ? ` (${m.implication})` : ''}`)
+        .join('\n')}`
+    : '',
+  canonicalMarketState.keyNews?.length
+    ? `Key news:\n${canonicalMarketState.keyNews
+        .slice(0, 12)
+        .map((n: any, i: number) => `  ${i + 1}. [${n.symbol ?? 'MKT'}] ${n.headline}`)
+        .join('\n')}`
+    : '',
+].filter(Boolean).join('\n\n')
 
 const fullContextBlocks = [
-  watchlistContext,                                          // always — small
-  marketDataContext,                                         // always — small
-  isCalendarQuestion || isBriefing ? calendarContext : '',  // calendar/briefing only
-  earningsContext,                                           // always — small
-  isCalendarQuestion || isBriefing ? macroContext : '',      // macro questions
-  intent.needsSector || isBriefing ? sectorContext : '',     // sector questions
-  intent.needsNews || isBriefing ? newsContext : '',         // news questions
-  isBriefing || intent.isOpenEndedWhyQuestion ? intradayContext : '',                    // briefings only — this is huge
-  level2Context,                                             // only if passed
-  insiderContext, analystContext, optionsContext,             // conditional already
+  marketStateContext,
+  watchlistContext,
+  marketDataContext,
+  newsContext,
+  intradayContext,
+  calendarContext,
+  earningsContext,
+  macroContext,
+  sectorContext,
+  level2Context,
+  insiderContext,
+  analystContext,
+  optionsContext,
 ].filter(Boolean).join('\n\n')
 
     const researchContextBlocks = buildResearchContext({
@@ -582,6 +675,9 @@ CORE RULES:
 5. Never tell the user to buy, sell, or size a position.
 6. If data is missing, say so in one sentence and stop.
 7. For calendar questions, treat HIGH and MEDIUM impact events as market-moving. Do not say "no high impact events" if MEDIUM impact events exist — list them.
+8. Treat the CANONICAL MARKET SNAPSHOT as the primary source of truth for upcoming economic events, calendar timing, macro context, and key headlines.
+9. Do not claim that tomorrow's or future events are unavailable if they appear in the canonical market snapshot.
+10. When asked for the next event, upcoming event, or next high-impact event, answer from the canonical market snapshot first.
 
 ${lengthRules}`
 

@@ -1184,7 +1184,22 @@ function startThinkingChimes(): () => void {
     stopThinkingChimesRef.current = startThinkingChimes()
     const history = messages.map((m) => ({ role: m.role === 'monday' ? 'assistant' : 'user', content: m.text }))
     try {
-      const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text, mode: 'chat', watchlist, traderType, prices: tickerData, history, news: [...watchlistNews, ...generalNews], intraday, userId: user?.id ?? 'anonymous' }) })
+      const res = await fetch('/api/chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    message: text,
+    mode: 'chat',
+    watchlist,
+    traderType,
+    prices: tickerData,
+    history,
+    news: [...watchlistNews, ...generalNews],
+    intraday,
+    marketState,
+    userId: user?.id ?? 'anonymous'
+  })
+})
       const data = await res.json(); const reply = data.reply || 'Sorry, I could not get a response.'
       if (user) await supabase.from('conversations').insert({ user_id: user.id, role: 'assistant', content: reply })
       setMessages((prev) => [...prev, { role: 'monday', time: timeStr, text: reply }])
@@ -1321,7 +1336,22 @@ function startThinkingChimes(): () => void {
     if (!user) return
     try {
       const history = messages.map((m) => ({ role: m.role === 'monday' ? 'assistant' : 'user', content: m.text }))
-      const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: `Please deliver the following briefing now, speaking directly to the user based on current market data: ${summary.prompt}`, mode: 'summary', watchlist, traderType, prices: tickerData, history, news: [...watchlistNews, ...generalNews], intraday, userId: user.id }) })
+      const res = await fetch('/api/chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    message: `Please deliver the following briefing now, speaking directly to the user based on current market data: ${summary.prompt}`,
+    mode: 'summary',
+    watchlist,
+    traderType,
+    prices: tickerData,
+    history,
+    news: [...watchlistNews, ...generalNews],
+    intraday,
+    marketState,
+    userId: user.id,
+  }),
+})
       const data = await res.json(); const reply = data.reply || 'Scheduled summary could not be generated.'; const nowIso = new Date().toISOString()
       await supabase.from('briefings').insert({ user_id: user.id, title: summary.name, content: reply, audio_url: null, briefing_date: nowIso })
       const rec = summary.recurrence ?? 'none'

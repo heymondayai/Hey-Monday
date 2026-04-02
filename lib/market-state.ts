@@ -214,7 +214,7 @@ function normalizeMacroContext(macro: MacroData): MarketMacroItem[] {
 function normalizeCalendarEvents(events: EconomicEvent[], todayStr: string): MarketCalendarItem[] {
   return events
     .filter((e) => e.date >= todayStr)
-    .slice(0, 6)
+    .slice(0, 40)
     .map((e) => ({
       time: e.time ? `${e.date} ${e.time} ET` : e.date,
       name: e.event,
@@ -295,7 +295,8 @@ const todayStr = getTodayStrET()
 const marketStatus = getMarketStatus()
 
 const calendarToDate = new Date(`${todayStr}T12:00:00`)
-calendarToDate.setDate(calendarToDate.getDate() + 4)
+calendarToDate.setDate(calendarToDate.getDate() + 45)
+
 const calendarTo = calendarToDate.toLocaleDateString('en-CA', {
   timeZone: 'America/New_York',
 })
@@ -303,7 +304,7 @@ const calendarTo = calendarToDate.toLocaleDateString('en-CA', {
 const [intradayResult, economicEvents, earningsEvents, macroData, sectorData] = await Promise.all([
   fetchIntraday(watchlistTickers),
   fetchEconomicCalendar(todayStr, calendarTo),
-  fetchEarningsCalendar(watchlistTickers, 7),
+  fetchEarningsCalendar(watchlistTickers, 14),
   fetchMacroData(),
   fetchSectorPerformance(),
 ])
