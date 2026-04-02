@@ -125,32 +125,85 @@ function shiftEtDate(isoDate: string, days: number): string {
   return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 }
 
+function normalizeMonthNameToNumber(month: string): string {
+  const map: Record<string, string> = {
+    january: '01',
+    february: '02',
+    march: '03',
+    april: '04',
+    may: '05',
+    june: '06',
+    july: '07',
+    august: '08',
+    september: '09',
+    october: '10',
+    november: '11',
+    december: '12',
+  }
+
+  return map[month.toLowerCase()]
+}
+
+function parseExplicitEtDate(message: string): string | null {
+  const lower = message.toLowerCase()
+  const today = getTodayEtIsoDate()
+  const currentYear = today.slice(0, 4)
+
+  const match = lower.match(
+    /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)?\s*(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b/i
+  )
+
+  if (!match) return null
+
+  const [, monthName, dayRaw, yearRaw] = match
+  const month = normalizeMonthNameToNumber(monthName)
+  const day = dayRaw.padStart(2, '0')
+  const year = yearRaw ?? currentYear
+
+  if (!month) return null
+
+  return `${year}-${month}-${day}`
+}
+
 function parseHistoricalIntradayRequest(message: string): IntradayDateRequest {
   const lower = message.toLowerCase()
   const today = getTodayEtIsoDate()
 
   if (/\btoday\b/.test(lower)) {
-    return { startDate: today, endDate: today, targetDate: today, isHistorical: false }
+    return {
+      startDate: today,
+      endDate: today,
+      targetDate: today,
+      isHistorical: false,
+    }
   }
 
   if (/\byesterday\b/.test(lower)) {
     const y = shiftEtDate(today, -1)
-    return { startDate: y, endDate: y, targetDate: y, isHistorical: true }
-  }
-
-  const explicit = lower.match(
-    /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?\b/i
-  )
-
-  if (explicit) {
-    const parsed = new Date(explicit[0])
-    if (!Number.isNaN(parsed.getTime())) {
-      const iso = parsed.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-      return { startDate: iso, endDate: iso, targetDate: iso, isHistorical: iso !== today }
+    return {
+      startDate: y,
+      endDate: y,
+      targetDate: y,
+      isHistorical: true,
     }
   }
 
-  return { startDate: today, endDate: today, targetDate: today, isHistorical: false }
+  const explicitDate = parseExplicitEtDate(message)
+  if (explicitDate) {
+    return {
+      startDate: explicitDate,
+      endDate: explicitDate,
+      targetDate: explicitDate,
+      isHistorical: explicitDate !== today,
+    }
+  }
+
+  return {
+    startDate: today,
+    endDate: today,
+    targetDate: today,
+    isHistorical: false,
+  }
 }
 
 function buildSafeFallback(intent: QuestionIntent): string {
@@ -512,6 +565,10 @@ const intent = classifyIntent(message, watchlistTickers, priceSymbols)
   : ['SPY', 'QQQ', 'NVDA', 'AAPL', 'TSLA', 'META', 'AMD']
 
 const intradayDateRequest = parseHistoricalIntradayRequest(message)
+console.log('[chat intraday date request]', {
+  message,
+  intradayDateRequest,
+})
 
 const calendarToDate = new Date(`${todayStr}T12:00:00`)
 calendarToDate.setDate(calendarToDate.getDate() + 45)
@@ -529,6 +586,22 @@ const [intradayResult, economicEvents, earningsEvents, macroData, sectorData] = 
   fetchMacroData(),
   fetchSectorPerformance(),
 ])
+
+console.log('[chat intraday fetch result]', {
+  requestedDate: intradayDateRequest.targetDate,
+  symbols: intradaySymbols,
+  debug: intradayResult.debug,
+  sampleKeys: Object.keys(intradayResult.data ?? {}),
+  firstNvdaCandle: intradayResult.data?.NVDA?.[0] ?? null,
+  lastNvdaCandle:
+    intradayResult.data?.NVDA?.length
+      ? intradayResult.data.NVDA[intradayResult.data.NVDA.length - 1]
+      : null,
+  economicEventsCount: economicEvents?.length ?? 0,
+  earningsEventsCount: earningsEvents?.length ?? 0,
+  macroDataKeys: macroData ? Object.keys(macroData) : [],
+  sectorDataCount: sectorData?.length ?? 0,
+})
 
     // ── CONDITIONAL SYMBOL-SPECIFIC FETCHES ─────────────────────────────────
     const tier2Promises: Promise<any>[] = []
@@ -688,7 +761,7 @@ RESPONSE RULES (HARD LIMITS):
           : intent.isOpenEndedWhyQuestion || intent.mentionsExactTimestamp
   ? `
 RESPONSE RULES:
-- Answer in 2–3 sentences maximum.
+- Answer in 2-3 sentences maximum.
 - If the user asked about an exact time or candle, first identify the 5-minute candle interval that contains that ET timestamp on the requested ET date.
 - If the user specified a past date and candles for that date are present, answer from that historical session instead of saying only today's candles are available.
 - State the containing interval clearly, for example "12:35pm on 2026-03-31 falls inside the 12:35pm-12:40pm ET candle."
