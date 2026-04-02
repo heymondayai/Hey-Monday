@@ -16,6 +16,32 @@ export interface Candle {
   volume: string
 }
 
+export interface IntradayCandleLookup {
+  symbol: string
+  requestedEt: string
+  matchedEt: string
+  exactMatch: boolean
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+  candleDirection: 'up' | 'down' | 'flat'
+}
+
+export interface IntradayMoveSummary {
+  symbol: string
+  startEt: string
+  endEt: string
+  startOpen: number
+  endClose: number
+  high: number
+  low: number
+  absoluteChange: number
+  percentChange: number
+  direction: 'up' | 'down' | 'flat'
+}
+
 export interface EconomicEvent {
   date: string
   time: string
@@ -419,26 +445,224 @@ export async function fetchSectorPerformance(): Promise<SectorPerformance[]> {
 
 // ── CONTEXT FORMATTERS ────────────────────────────────────────────────────────
 
-export function formatIntradayContext(data: Record<string, Candle[]>): string {
-  if (!Object.keys(data).length) {
-    return 'INTRADAY DATA: Unavailable. Do NOT fabricate intraday moves. If asked about a specific move, explain what economic events likely caused it based on the calendar.'
+function parseEtClockToMinutes(input: string): number | null {
+  const raw = input.trim().toLowerCase().replace(/\./g, '')
+  const match = raw.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
+  if (!match) return null
+
+  let hour = parseInt(match[1], 10)
+  const minute = parseInt(match[2] ?? '0', 10)
+  const meridiem = match[3]
+
+  if (minute < 0 || minute > 59) return null
+
+  if (meridiem === 'am') {
+    if (hour === 12) hour = 0
+  } else if (meridiem === 'pm') {
+    if (hour !== 12) hour += 12
   }
 
-  const lines = ['INTRADAY 5-MIN CANDLES — oldest at top. Reference these exact values, do not guess.']
+  if (hour < 0 || hour > 23) return null
+  return hour * 60 + minute
+}
+
+function candleEtLabel(datetime: string): string {
+  const timePart = datetime.split(' ')[1]?.slice(0, 5) ?? datetime
+  const [hh, mm] = timePart.split(':').map(Number)
+  const hour12 = hh % 12 === 0 ? 12 : hh % 12
+  const ampm = hh >= 12 ? 'pm' : 'am'
+  return `${hour12}:${String(mm).padStart(2, '0')}${ampm}`
+}
+
+function candleMinutesFromDatetime(datetime: string): number | null {
+  const timePart = datetime.split(' ')[1]?.slice(0, 5)
+  if (!timePart) return null
+  const [hh, mm] = timePart.split(':').map(Number)
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
+  return hh * 60 + mm
+}
+
+function safeCandleNumber(value: string): number {
+  const n = parseFloat(value)
+  return Number.isFinite(n) ? n : 0
+}
+
+export function findIntradayCandleAtOrNearest(
+  candles: Candle[],
+  requestedEt: string
+): IntradayCandleLookup | null {
+  if (!candles.length) return null
+
+  const requestedMinutes = parseEtClockToMinutes(requestedEt)
+  if (requestedMinutes === null) return null
+
+  let best: Candle | null = null
+  let bestDiff = Number.POSITIVE_INFINITY
+  let bestMinutes: number | null = null
+
+  for (const candle of candles) {
+    const candleMinutes = candleMinutesFromDatetime(candle.datetime)
+    if (candleMinutes === null) continue
+    const diff = Math.abs(candleMinutes - requestedMinutes)
+    if (diff < bestDiff) {
+      best = candle
+      bestDiff = diff
+      bestMinutes = candleMinutes
+    }
+  }
+
+  if (!best || bestMinutes === null) return null
+
+  const open = safeCandleNumber(best.open)
+  const high = safeCandleNumber(best.high)
+  const low = safeCandleNumber(best.low)
+  const close = safeCandleNumber(best.close)
+  const volume = parseInt(best.volume || '0', 10) || 0
+
+  const candleDirection =
+    close > open ? 'up' : close < open ? 'down' : 'flat'
+
+  return {
+    symbol: '',
+    requestedEt,
+    matchedEt: candleEtLabel(best.datetime),
+    exactMatch: bestDiff === 0,
+    open,
+    high,
+    low,
+    close,
+    volume,
+    candleDirection,
+  }
+}
+
+export function summarizeIntradayMoveWindow(
+  candles: Candle[],
+  startEt: string,
+  endEt: string
+): IntradayMoveSummary | null {
+  if (!candles.length) return null
+
+  const startMinutes = parseEtClockToMinutes(startEt)
+  const endMinutes = parseEtClockToMinutes(endEt)
+  if (startMinutes === null || endMinutes === null) return null
+
+  const minMins = Math.min(startMinutes, endMinutes)
+  const maxMins = Math.max(startMinutes, endMinutes)
+
+  const windowCandles = candles.filter((c) => {
+    const mins = candleMinutesFromDatetime(c.datetime)
+    return mins !== null && mins >= minMins && mins <= maxMins
+  })
+
+  if (!windowCandles.length) return null
+
+  const first = windowCandles[0]
+  const last = windowCandles[windowCandles.length - 1]
+
+  const startOpen = safeCandleNumber(first.open)
+  const endClose = safeCandleNumber(last.close)
+  const absoluteChange = endClose - startOpen
+  const percentChange = startOpen !== 0 ? (absoluteChange / startOpen) * 100 : 0
+
+  const high = Math.max(...windowCandles.map((c) => safeCandleNumber(c.high)))
+  const low = Math.min(...windowCandles.map((c) => safeCandleNumber(c.low)))
+
+  return {
+    symbol: '',
+    startEt: candleEtLabel(first.datetime),
+    endEt: candleEtLabel(last.datetime),
+    startOpen,
+    endClose,
+    high,
+    low,
+    absoluteChange,
+    percentChange,
+    direction: absoluteChange > 0 ? 'up' : absoluteChange < 0 ? 'down' : 'flat',
+  }
+}
+
+export function buildIntradayQuestionContext(
+  data: Record<string, Candle[]>,
+  message: string,
+  focusSymbol?: string | null
+): string {
+  const requestedTimes = [...message.matchAll(/\b(\d{1,2}(?::\d{2})?\s?(?:am|pm))\b/gi)].map((m) => m[1])
+  const symbols = focusSymbol
+    ? [focusSymbol]
+    : Object.keys(data)
+
+  const lines: string[] = []
+
+  for (const symbol of symbols) {
+    const candles = data[symbol]
+    if (!candles?.length) continue
+
+    const firstEt = candleEtLabel(candles[0].datetime)
+    const lastEt = candleEtLabel(candles[candles.length - 1].datetime)
+
+    lines.push(`INTRADAY COVERAGE FOR ${symbol}: ${firstEt} to ${lastEt} ET`)
+
+    for (const requestedEt of requestedTimes) {
+      const lookup = findIntradayCandleAtOrNearest(candles, requestedEt)
+      if (!lookup) continue
+
+      lines.push(
+        `${symbol} candle for requested ${requestedEt.toLowerCase()} ET -> matched ${lookup.matchedEt} ET (${lookup.exactMatch ? 'exact' : 'nearest'}): ` +
+        `O:${lookup.open.toFixed(2)} H:${lookup.high.toFixed(2)} L:${lookup.low.toFixed(2)} C:${lookup.close.toFixed(2)} ` +
+        `Vol:${lookup.volume.toLocaleString()} Direction:${lookup.candleDirection}`
+      )
+    }
+
+    const lower = message.toLowerCase()
+    if (/\b1:06\b/.test(lower) && /\b2:40\b/.test(lower)) {
+      const move = summarizeIntradayMoveWindow(candles, '1:06pm', '2:40pm')
+      if (move) {
+        lines.push(
+          `${symbol} move window 1:06pm to 2:40pm ET: ${move.direction} ` +
+          `${move.absoluteChange.toFixed(2)} (${move.percentChange.toFixed(2)}%), ` +
+          `from ${move.startOpen.toFixed(2)} to ${move.endClose.toFixed(2)}, range ${move.low.toFixed(2)}-${move.high.toFixed(2)}`
+        )
+      }
+    }
+  }
+
+  return lines.join('\n')
+}
+
+export function formatIntradayContext(data: Record<string, Candle[]>): string {
+  if (!Object.keys(data).length) {
+    return 'INTRADAY DATA: Unavailable. Do NOT fabricate intraday moves. If asked about a specific move, say the intraday feed is unavailable.'
+  }
+
+  const lines = [
+    'INTRADAY 5-MIN CANDLES — oldest at top. Use these exact candles only.',
+    'For exact-time questions, use the matched candle nearest that ET timestamp and explicitly say whether it was exact or nearest.',
+    'For move questions, analyze the broader move window, not just one candle in isolation.',
+  ]
 
   for (const [sym, candles] of Object.entries(data)) {
     if (!candles.length) continue
-    const first   = candles[0]
-    const last    = candles[candles.length - 1]
-    const movePct = ((parseFloat(last.close) - parseFloat(first.open)) / parseFloat(first.open) * 100).toFixed(2)
-    const sign    = parseFloat(movePct) >= 0 ? '+' : ''
-    const lo      = Math.min(...candles.map(c => parseFloat(c.low))).toFixed(2)
-    const hi      = Math.max(...candles.map(c => parseFloat(c.high))).toFixed(2)
 
-    lines.push(`\n  ${sym}  window: ${sign}${movePct}%  range: ${lo}–${hi}`)
+    const first = candles[0]
+    const last = candles[candles.length - 1]
+    const firstOpen = parseFloat(first.open)
+    const lastClose = parseFloat(last.close)
+    const movePct = firstOpen !== 0 ? ((lastClose - firstOpen) / firstOpen) * 100 : 0
+    const lo = Math.min(...candles.map((c) => parseFloat(c.low)))
+    const hi = Math.max(...candles.map((c) => parseFloat(c.high)))
+
+    lines.push(
+      `\n${sym} coverage: ${candleEtLabel(first.datetime)} to ${candleEtLabel(last.datetime)} ET | ` +
+      `window ${movePct >= 0 ? '+' : ''}${movePct.toFixed(2)}% | range ${lo.toFixed(2)}-${hi.toFixed(2)}`
+    )
+
     for (const c of candles) {
-      const t = c.datetime.split(' ')[1]?.slice(0, 5) ?? c.datetime
-      lines.push(`    ${t}  O:${c.open}  H:${c.high}  L:${c.low}  C:${c.close}  Vol:${parseInt(c.volume).toLocaleString()}`)
+      const t = candleEtLabel(c.datetime)
+      lines.push(
+        `  ${t} ET  O:${parseFloat(c.open).toFixed(2)} H:${parseFloat(c.high).toFixed(2)} ` +
+        `L:${parseFloat(c.low).toFixed(2)} C:${parseFloat(c.close).toFixed(2)} Vol:${(parseInt(c.volume || '0', 10) || 0).toLocaleString()}`
+      )
     }
   }
 

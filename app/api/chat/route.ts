@@ -16,6 +16,7 @@ import {
   formatMacroData,
   formatEarningsCalendar,
   formatSectorPerformance,
+  buildIntradayQuestionContext,
 } from '@/lib/market-data'
 import { buildMarketState, MarketStateSnapshot } from '@/lib/market-state'
 
@@ -260,7 +261,9 @@ function classifyIntent(
   const needsLevel2 = /level 2|l2|order flow|book|depth|bid stack|ask stack|liquidity|tape|prints|dom/.test(lower)
 
   const mentionsBreaking = /just|right now|latest|breaking|current|live|today's|just happened|just reported|just announced|news on|what's going on/.test(lower)
-  const mentionsExactTimestamp = /\bwhen\b|\btime\b|\bwhat time\b|\btimestamp\b|\bexactly when\b|\bat \d/.test(lower)
+  const mentionsExactTimestamp =
+  /\bwhen\b|\btime\b|\bwhat time\b|\btimestamp\b|\bexactly when\b|\bat \d/.test(lower) ||
+  /\b\d{1,2}:\d{2}\s?(am|pm)\b/.test(lower)
 
   const knownSymbols = [
     ...watchlist, ...priceSymbols,
@@ -351,8 +354,10 @@ function canAnswerFromCurrentData(input: AnswerabilityInput): boolean {
   if (intent.needsNews && (!news || news.length === 0)) return false
   if (intent.needsLevel2 && !level2) return false
 
-  const asksPriceOrMove = /price|trading|up|down|move|moving|chart|levels|support|resistance|trend|watchlist/.test(lower)
-  if (asksPriceOrMove && (!prices || prices.length === 0) && !intradayData) return false
+  const asksPriceOrMove = /price|trading|up|down|drop|dropped|rally|rallied|move|moving|chart|candle|candlestick|levels|support|resistance|trend|watchlist/.test(lower)
+if (asksPriceOrMove && (!prices || prices.length === 0) && !intradayData) return false
+
+if (intent.mentionsExactTimestamp && !intradayData) return false
 
   if (intent.needsMacro && !macroFetched) return false
   if (intent.needsSector && !sectorFetched) return false
@@ -521,6 +526,11 @@ const [intradayResult, economicEvents, earningsEvents, macroData, sectorData] = 
       : ''
 
     const intradayContext = formatIntradayContext(intradayResult.data)
+const exactIntradayQuestionContext = buildIntradayQuestionContext(
+  intradayResult.data,
+  message,
+  intent.focusSymbol
+)
 const calendarContext = formatEconomicCalendar(economicEvents, todayStr)
 const earningsContext = formatEarningsCalendar(earningsEvents)
 const macroContext = formatMacroData(macroData)
@@ -571,6 +581,7 @@ const fullContextBlocks = [
   marketDataContext,
   newsContext,
   intradayContext,
+  exactIntradayQuestionContext,
   calendarContext,
   earningsContext,
   macroContext,
@@ -619,12 +630,15 @@ RESPONSE RULES (HARD LIMITS):
 - Do NOT add: intraday range, volume, news context, analyst commentary, macro color, or any other unsolicited detail.
 - The user asked a simple question. Give a simple answer. Stop.
 `
-          : intent.isOpenEndedWhyQuestion
-            ? `
+          : intent.isOpenEndedWhyQuestion || intent.mentionsExactTimestamp
+  ? `
 RESPONSE RULES:
 - Answer in 2–3 sentences maximum.
-- Lead with the primary cause, add one supporting factor only if essential.
-- Stop. Do not add macro color, volume commentary, or extra context.
+- If the user asked about an exact time or candle, first confirm the exact matched candle time and give the OHLC result in plain English.
+- If the user asked "why did it drop" or "what happened," analyze the broader move window, not a single candle in isolation.
+- Do not say a stock rallied just because one candle was green if the surrounding move was down.
+- If no clear catalyst is present in the supplied data, say there is no clear catalyst in the current feed.
+- Stop after the direct answer.
 `
             : useLiveSearch
               ? `
@@ -678,6 +692,10 @@ CORE RULES:
 8. Treat the CANONICAL MARKET SNAPSHOT as the primary source of truth for upcoming economic events, calendar timing, macro context, and key headlines.
 9. Do not claim that tomorrow's or future events are unavailable if they appear in the canonical market snapshot.
 10. When asked for the next event, upcoming event, or next high-impact event, answer from the canonical market snapshot first.
+11. For exact intraday timestamp questions, use the matched candle nearest that ET time and state whether it was exact or nearest.
+12. For move questions like "why did it drop" or "what happened from 1:06 to 2:40", analyze the move across the whole requested window, not one candle in isolation.
+13. Never describe the move as bullish or a rally if the broader requested move window was down.
+14. If the current feed does not show a clear catalyst, say there is no clear catalyst in the current feed rather than inventing one.
 
 ${lengthRules}`
 
