@@ -20,7 +20,9 @@ export interface IntradayCandleLookup {
   symbol: string
   requestedEt: string
   matchedEt: string
-  exactMatch: boolean
+  intervalStartEt: string
+  intervalEndEt: string
+  exactBoundaryMatch: boolean
   open: number
   high: number
   low: number
@@ -466,6 +468,14 @@ function parseEtClockToMinutes(input: string): number | null {
   return hour * 60 + minute
 }
 
+function minutesToEtLabel(totalMinutes: number): string {
+  const hh = Math.floor(totalMinutes / 60)
+  const mm = totalMinutes % 60
+  const hour12 = hh % 12 === 0 ? 12 : hh % 12
+  const ampm = hh >= 12 ? 'pm' : 'am'
+  return `${hour12}:${String(mm).padStart(2, '0')}${ampm}`
+}
+
 function candleEtLabel(datetime: string): string {
   const timePart = datetime.split(' ')[1]?.slice(0, 5) ?? datetime
   const [hh, mm] = timePart.split(':').map(Number)
@@ -487,37 +497,41 @@ function safeCandleNumber(value: string): number {
   return Number.isFinite(n) ? n : 0
 }
 
-export function findIntradayCandleAtOrNearest(
+export function findIntradayCandleContainingTime(
   candles: Candle[],
-  requestedEt: string
+  requestedEt: string,
+  intervalMinutes: number = 5
 ): IntradayCandleLookup | null {
   if (!candles.length) return null
 
   const requestedMinutes = parseEtClockToMinutes(requestedEt)
   if (requestedMinutes === null) return null
 
-  let best: Candle | null = null
-  let bestDiff = Number.POSITIVE_INFINITY
-  let bestMinutes: number | null = null
+  let containing: Candle | null = null
+  let containingStartMinutes: number | null = null
 
   for (const candle of candles) {
-    const candleMinutes = candleMinutesFromDatetime(candle.datetime)
-    if (candleMinutes === null) continue
-    const diff = Math.abs(candleMinutes - requestedMinutes)
-    if (diff < bestDiff) {
-      best = candle
-      bestDiff = diff
-      bestMinutes = candleMinutes
+    const startMinutes = candleMinutesFromDatetime(candle.datetime)
+    if (startMinutes === null) continue
+
+    const endMinutes = startMinutes + intervalMinutes
+
+    if (requestedMinutes >= startMinutes && requestedMinutes < endMinutes) {
+      containing = candle
+      containingStartMinutes = startMinutes
+      break
     }
   }
 
-  if (!best || bestMinutes === null) return null
+  if (!containing || containingStartMinutes === null) {
+    return null
+  }
 
-  const open = safeCandleNumber(best.open)
-  const high = safeCandleNumber(best.high)
-  const low = safeCandleNumber(best.low)
-  const close = safeCandleNumber(best.close)
-  const volume = parseInt(best.volume || '0', 10) || 0
+  const open = safeCandleNumber(containing.open)
+  const high = safeCandleNumber(containing.high)
+  const low = safeCandleNumber(containing.low)
+  const close = safeCandleNumber(containing.close)
+  const volume = parseInt(containing.volume || '0', 10) || 0
 
   const candleDirection =
     close > open ? 'up' : close < open ? 'down' : 'flat'
@@ -525,8 +539,10 @@ export function findIntradayCandleAtOrNearest(
   return {
     symbol: '',
     requestedEt,
-    matchedEt: candleEtLabel(best.datetime),
-    exactMatch: bestDiff === 0,
+    matchedEt: candleEtLabel(containing.datetime),
+    intervalStartEt: minutesToEtLabel(containingStartMinutes),
+    intervalEndEt: minutesToEtLabel(containingStartMinutes + intervalMinutes),
+    exactBoundaryMatch: requestedMinutes === containingStartMinutes,
     open,
     high,
     low,
@@ -588,9 +604,7 @@ export function buildIntradayQuestionContext(
   focusSymbol?: string | null
 ): string {
   const requestedTimes = [...message.matchAll(/\b(\d{1,2}(?::\d{2})?\s?(?:am|pm))\b/gi)].map((m) => m[1])
-  const symbols = focusSymbol
-    ? [focusSymbol]
-    : Object.keys(data)
+  const symbols = focusSymbol ? [focusSymbol] : Object.keys(data)
 
   const lines: string[] = []
 
@@ -604,11 +618,12 @@ export function buildIntradayQuestionContext(
     lines.push(`INTRADAY COVERAGE FOR ${symbol}: ${firstEt} to ${lastEt} ET`)
 
     for (const requestedEt of requestedTimes) {
-      const lookup = findIntradayCandleAtOrNearest(candles, requestedEt)
+      const lookup = findIntradayCandleContainingTime(candles, requestedEt)
       if (!lookup) continue
 
       lines.push(
-        `${symbol} candle for requested ${requestedEt.toLowerCase()} ET -> matched ${lookup.matchedEt} ET (${lookup.exactMatch ? 'exact' : 'nearest'}): ` +
+        `${symbol} requested ${requestedEt.toLowerCase()} ET falls inside the ${lookup.intervalStartEt}-${lookup.intervalEndEt} ET candle ` +
+        `(labeled ${lookup.matchedEt}${lookup.exactBoundaryMatch ? ', exact boundary match' : ''}): ` +
         `O:${lookup.open.toFixed(2)} H:${lookup.high.toFixed(2)} L:${lookup.low.toFixed(2)} C:${lookup.close.toFixed(2)} ` +
         `Vol:${lookup.volume.toLocaleString()} Direction:${lookup.candleDirection}`
       )
@@ -632,12 +647,12 @@ export function buildIntradayQuestionContext(
 
 export function formatIntradayContext(data: Record<string, Candle[]>): string {
   if (!Object.keys(data).length) {
-    return 'INTRADAY DATA: Unavailable. Do NOT fabricate intraday moves. If asked about a specific move, say the intraday feed is unavailable.'
+    return 'INTRADAY DATA: Unavailable. Do NOT fabricate intraday moves. If asked about a specific move or candle, say the intraday feed is unavailable.'
   }
 
   const lines = [
     'INTRADAY 5-MIN CANDLES — oldest at top. Use these exact candles only.',
-    'For exact-time questions, use the matched candle nearest that ET timestamp and explicitly say whether it was exact or nearest.',
+    'For exact-time questions, use the 5-minute candle interval that contains the ET timestamp, not the nearest later candle.',
     'For move questions, analyze the broader move window, not just one candle in isolation.',
   ]
 
@@ -658,9 +673,14 @@ export function formatIntradayContext(data: Record<string, Candle[]>): string {
     )
 
     for (const c of candles) {
-      const t = candleEtLabel(c.datetime)
+      const startMins = candleMinutesFromDatetime(c.datetime)
+      if (startMins === null) continue
+
+      const intervalStart = minutesToEtLabel(startMins)
+      const intervalEnd = minutesToEtLabel(startMins + 5)
+
       lines.push(
-        `  ${t} ET  O:${parseFloat(c.open).toFixed(2)} H:${parseFloat(c.high).toFixed(2)} ` +
+        `  ${intervalStart}-${intervalEnd} ET  O:${parseFloat(c.open).toFixed(2)} H:${parseFloat(c.high).toFixed(2)} ` +
         `L:${parseFloat(c.low).toFixed(2)} C:${parseFloat(c.close).toFixed(2)} Vol:${(parseInt(c.volume || '0', 10) || 0).toLocaleString()}`
       )
     }

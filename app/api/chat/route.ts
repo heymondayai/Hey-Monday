@@ -634,7 +634,10 @@ RESPONSE RULES (HARD LIMITS):
   ? `
 RESPONSE RULES:
 - Answer in 2–3 sentences maximum.
-- If the user asked about an exact time or candle, first confirm the exact matched candle time and give the OHLC result in plain English.
+- If the user asked about an exact time or candle, first identify the 5-minute candle interval that contains that ET timestamp.
+- State the containing interval clearly, for example "2:39pm falls inside the 2:35pm-2:40pm ET candle."
+- Then give the OHLC result in plain English and describe whether that candle was up, down, or roughly neutral.
+- Do not use a nearest later candle if the timestamp falls inside an earlier 5-minute candle interval.
 - If the user asked "why did it drop" or "what happened," analyze the broader move window, not a single candle in isolation.
 - Do not say a stock rallied just because one candle was green if the surrounding move was down.
 - If no clear catalyst is present in the supplied data, say there is no clear catalyst in the current feed.
