@@ -115,22 +115,52 @@ export interface SecFiling {
 
 // ── TWELVE DATA — INTRADAY CANDLES ───────────────────────────────────────────
 
+export interface FetchIntradayOptions {
+  interval?: '1min' | '5min' | '15min'
+  outputsize?: number
+  startDate?: string
+  endDate?: string
+}
+
 export async function fetchIntraday(
   symbols: string[],
-  interval: '1min' | '5min' | '15min' = '5min',
-  outputsize: number = 100
+  options: FetchIntradayOptions = {}
 ): Promise<{ data: Record<string, Candle[]>; debug: string[] }> {
   const key = process.env.TWELVE_DATA_API_KEY
   const debug: string[] = []
 
-  if (!key) { debug.push('TWELVE_DATA_API_KEY not set'); return { data: {}, debug } }
+  const {
+    interval = '5min',
+    outputsize = 100,
+    startDate,
+    endDate,
+  } = options
+
+  if (!key) {
+    debug.push('TWELVE_DATA_API_KEY not set')
+    return { data: {}, debug }
+  }
 
   try {
     const syms = symbols.join(',')
-    const url = `https://api.twelvedata.com/time_series?symbol=${syms}&interval=${interval}&outputsize=${outputsize}&extended_hours=true&apikey=${key}`
+    const params = new URLSearchParams({
+      symbol: syms,
+      interval,
+      outputsize: String(outputsize),
+      extended_hours: 'true',
+      apikey: key,
+    })
+
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+
+    const url = `https://api.twelvedata.com/time_series?${params.toString()}`
     const res = await fetch(url, { next: { revalidate: 60 } })
 
-    if (!res.ok) { debug.push(`Twelve Data HTTP ${res.status}`); return { data: {}, debug } }
+    if (!res.ok) {
+      debug.push(`Twelve Data HTTP ${res.status}`)
+      return { data: {}, debug }
+    }
 
     const raw = await res.json()
     const result: Record<string, Candle[]> = {}
@@ -141,8 +171,12 @@ export async function fetchIntraday(
         debug.push(`${sym}: ${entry?.message ?? 'no data'}`)
         continue
       }
+
       result[sym] = [...entry.values].reverse()
-      debug.push(`${sym}: ${result[sym].length} candles`)
+      debug.push(
+        `${sym}: ${result[sym].length} candles` +
+        `${startDate || endDate ? ` [${startDate ?? 'latest'} -> ${endDate ?? 'latest'}]` : ''}`
+      )
     }
 
     return { data: result, debug }
@@ -497,12 +531,24 @@ function safeCandleNumber(value: string): number {
   return Number.isFinite(n) ? n : 0
 }
 
+function candleDatePart(datetime: string): string | null {
+  const part = datetime.split(' ')[0]
+  return /^\d{4}-\d{2}-\d{2}$/.test(part) ? part : null
+}
+
+function filterCandlesByEtDate(candles: Candle[], targetDate?: string | null): Candle[] {
+  if (!targetDate) return candles
+  return candles.filter((c) => candleDatePart(c.datetime) === targetDate)
+}
+
 export function findIntradayCandleContainingTime(
   candles: Candle[],
   requestedEt: string,
-  intervalMinutes: number = 5
+  intervalMinutes: number = 5,
+  targetDate?: string | null
 ): IntradayCandleLookup | null {
-  if (!candles.length) return null
+  const dateFiltered = filterCandlesByEtDate(candles, targetDate)
+  if (!dateFiltered.length) return null
 
   const requestedMinutes = parseEtClockToMinutes(requestedEt)
   if (requestedMinutes === null) return null
@@ -510,7 +556,7 @@ export function findIntradayCandleContainingTime(
   let containing: Candle | null = null
   let containingStartMinutes: number | null = null
 
-  for (const candle of candles) {
+  for (const candle of dateFiltered) {
     const startMinutes = candleMinutesFromDatetime(candle.datetime)
     if (startMinutes === null) continue
 
@@ -555,9 +601,11 @@ export function findIntradayCandleContainingTime(
 export function summarizeIntradayMoveWindow(
   candles: Candle[],
   startEt: string,
-  endEt: string
+  endEt: string,
+  targetDate?: string | null
 ): IntradayMoveSummary | null {
-  if (!candles.length) return null
+  const dateFiltered = filterCandlesByEtDate(candles, targetDate)
+  if (!dateFiltered.length) return null
 
   const startMinutes = parseEtClockToMinutes(startEt)
   const endMinutes = parseEtClockToMinutes(endEt)
@@ -566,7 +614,7 @@ export function summarizeIntradayMoveWindow(
   const minMins = Math.min(startMinutes, endMinutes)
   const maxMins = Math.max(startMinutes, endMinutes)
 
-  const windowCandles = candles.filter((c) => {
+  const windowCandles = dateFiltered.filter((c) => {
     const mins = candleMinutesFromDatetime(c.datetime)
     return mins !== null && mins >= minMins && mins <= maxMins
   })
@@ -601,7 +649,8 @@ export function summarizeIntradayMoveWindow(
 export function buildIntradayQuestionContext(
   data: Record<string, Candle[]>,
   message: string,
-  focusSymbol?: string | null
+  focusSymbol?: string | null,
+  targetDate?: string | null
 ): string {
   const requestedTimes = [...message.matchAll(/\b(\d{1,2}(?::\d{2})?\s?(?:am|pm))\b/gi)].map((m) => m[1])
   const symbols = focusSymbol ? [focusSymbol] : Object.keys(data)
@@ -612,13 +661,28 @@ export function buildIntradayQuestionContext(
     const candles = data[symbol]
     if (!candles?.length) continue
 
-    const firstEt = candleEtLabel(candles[0].datetime)
-    const lastEt = candleEtLabel(candles[candles.length - 1].datetime)
+    const dateFiltered = filterCandlesByEtDate(candles, targetDate)
+    if (!dateFiltered.length) {
+      if (targetDate) {
+        lines.push(`INTRADAY COVERAGE FOR ${symbol}: no candles found for ${targetDate}`)
+      }
+      continue
+    }
 
-    lines.push(`INTRADAY COVERAGE FOR ${symbol}: ${firstEt} to ${lastEt} ET`)
+    const firstEt = candleEtLabel(dateFiltered[0].datetime)
+    const lastEt = candleEtLabel(dateFiltered[dateFiltered.length - 1].datetime)
+
+    lines.push(
+      `INTRADAY COVERAGE FOR ${symbol}${targetDate ? ` ON ${targetDate}` : ''}: ${firstEt} to ${lastEt} ET`
+    )
 
     for (const requestedEt of requestedTimes) {
-      const lookup = findIntradayCandleContainingTime(candles, requestedEt)
+      const lookup = findIntradayCandleContainingTime(
+        dateFiltered,
+        requestedEt,
+        5,
+        targetDate
+      )
       if (!lookup) continue
 
       lines.push(
@@ -630,16 +694,16 @@ export function buildIntradayQuestionContext(
     }
 
     const lower = message.toLowerCase()
-    if (/\b1:06\b/.test(lower) && /\b2:40\b/.test(lower)) {
-      const move = summarizeIntradayMoveWindow(candles, '1:06pm', '2:40pm')
-      if (move) {
-        lines.push(
-          `${symbol} move window 1:06pm to 2:40pm ET: ${move.direction} ` +
-          `${move.absoluteChange.toFixed(2)} (${move.percentChange.toFixed(2)}%), ` +
-          `from ${move.startOpen.toFixed(2)} to ${move.endClose.toFixed(2)}, range ${move.low.toFixed(2)}-${move.high.toFixed(2)}`
-        )
-      }
-    }
+if (/\b1:06\b/.test(lower) && /\b2:40\b/.test(lower)) {
+  const move = summarizeIntradayMoveWindow(dateFiltered, '1:06pm', '2:40pm', targetDate)
+  if (move) {
+    lines.push(
+      `${symbol} move window 1:06pm to 2:40pm ET: ${move.direction} ` +
+      `${move.absoluteChange.toFixed(2)} (${move.percentChange.toFixed(2)}%), ` +
+      `from ${move.startOpen.toFixed(2)} to ${move.endClose.toFixed(2)}, range ${move.low.toFixed(2)}-${move.high.toFixed(2)}`
+    )
+  }
+}
   }
 
   return lines.join('\n')

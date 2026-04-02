@@ -106,6 +106,53 @@ function normalizeTimeReference(text: string): string {
     .replace(/\bthis evening\b/gi, 'later')
 }
 
+interface IntradayDateRequest {
+  startDate?: string
+  endDate?: string
+  targetDate?: string | null
+  isHistorical: boolean
+}
+
+function getTodayEtIsoDate(): string {
+  return new Date().toLocaleDateString('en-CA', {
+    timeZone: 'America/New_York',
+  })
+}
+
+function shiftEtDate(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T12:00:00`)
+  d.setDate(d.getDate() + days)
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+}
+
+function parseHistoricalIntradayRequest(message: string): IntradayDateRequest {
+  const lower = message.toLowerCase()
+  const today = getTodayEtIsoDate()
+
+  if (/\btoday\b/.test(lower)) {
+    return { startDate: today, endDate: today, targetDate: today, isHistorical: false }
+  }
+
+  if (/\byesterday\b/.test(lower)) {
+    const y = shiftEtDate(today, -1)
+    return { startDate: y, endDate: y, targetDate: y, isHistorical: true }
+  }
+
+  const explicit = lower.match(
+    /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?\b/i
+  )
+
+  if (explicit) {
+    const parsed = new Date(explicit[0])
+    if (!Number.isNaN(parsed.getTime())) {
+      const iso = parsed.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+      return { startDate: iso, endDate: iso, targetDate: iso, isHistorical: iso !== today }
+    }
+  }
+
+  return { startDate: today, endDate: today, targetDate: today, isHistorical: false }
+}
+
 function buildSafeFallback(intent: QuestionIntent): string {
   if (intent.requestType === 'simple') {
     return "I don't have that exact data in the current feed."
@@ -461,15 +508,22 @@ const intent = classifyIntent(message, watchlistTickers, priceSymbols)
 
     // ── UNIVERSAL FETCHES ────────────────────────────────────────────────────
     const intradaySymbols = watchlistTickers.length
-      ? watchlistTickers
-      : ['SPY', 'QQQ', 'NVDA', 'AAPL', 'TSLA', 'META', 'AMD']
+  ? watchlistTickers
+  : ['SPY', 'QQQ', 'NVDA', 'AAPL', 'TSLA', 'META', 'AMD']
 
-    const calendarToDate = new Date(`${todayStr}T12:00:00`)
+const intradayDateRequest = parseHistoricalIntradayRequest(message)
+
+const calendarToDate = new Date(`${todayStr}T12:00:00`)
 calendarToDate.setDate(calendarToDate.getDate() + 45)
 const calendarTo = calendarToDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
 const [intradayResult, economicEvents, earningsEvents, macroData, sectorData] = await Promise.all([
-  fetchIntraday(intradaySymbols),
+  fetchIntraday(intradaySymbols, {
+    interval: '5min',
+    outputsize: intradayDateRequest.isHistorical ? 500 : 100,
+    startDate: intradayDateRequest.startDate,
+    endDate: intradayDateRequest.endDate,
+  }),
   fetchEconomicCalendar(todayStr, calendarTo),
   fetchEarningsCalendar(intradaySymbols, 14),
   fetchMacroData(),
@@ -529,7 +583,8 @@ const [intradayResult, economicEvents, earningsEvents, macroData, sectorData] = 
 const exactIntradayQuestionContext = buildIntradayQuestionContext(
   intradayResult.data,
   message,
-  intent.focusSymbol
+  intent.focusSymbol,
+  intradayDateRequest.targetDate
 )
 const calendarContext = formatEconomicCalendar(economicEvents, todayStr)
 const earningsContext = formatEarningsCalendar(earningsEvents)
@@ -634,10 +689,11 @@ RESPONSE RULES (HARD LIMITS):
   ? `
 RESPONSE RULES:
 - Answer in 2–3 sentences maximum.
-- If the user asked about an exact time or candle, first identify the 5-minute candle interval that contains that ET timestamp.
-- State the containing interval clearly, for example "2:39pm falls inside the 2:35pm-2:40pm ET candle."
+- If the user asked about an exact time or candle, first identify the 5-minute candle interval that contains that ET timestamp on the requested ET date.
+- If the user specified a past date and candles for that date are present, answer from that historical session instead of saying only today's candles are available.
+- State the containing interval clearly, for example "12:35pm on 2026-03-31 falls inside the 12:35pm-12:40pm ET candle."
 - Then give the OHLC result in plain English and describe whether that candle was up, down, or roughly neutral.
-- Do not use a nearest later candle if the timestamp falls inside an earlier 5-minute candle interval.
+- If the requested ET date is not present in the current feed, say that exact date is not available in the current intraday dataset.
 - If the user asked "why did it drop" or "what happened," analyze the broader move window, not a single candle in isolation.
 - Do not say a stock rallied just because one candle was green if the surrounding move was down.
 - If no clear catalyst is present in the supplied data, say there is no clear catalyst in the current feed.
