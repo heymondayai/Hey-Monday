@@ -652,58 +652,57 @@ export function buildIntradayQuestionContext(
   focusSymbol?: string | null,
   targetDate?: string | null
 ): string {
-  const requestedTimes = [...message.matchAll(/\b(\d{1,2}(?::\d{2})?\s?(?:am|pm))\b/gi)].map((m) => m[1])
-  const symbols = focusSymbol ? [focusSymbol] : Object.keys(data)
+  if (!data || !Object.keys(data).length) {
+    return ''
+  }
 
+  const lower = message.toLowerCase()
   const lines: string[] = []
 
-  for (const symbol of symbols) {
-    const candles = data[symbol]
-    if (!candles?.length) continue
+  const extractTime = (msg: string): string | null => {
+    const match = msg.match(/\b(\d{1,2}):(\d{2})\s?(am|pm)\b/i)
+    if (!match) return null
 
-    const dateFiltered = filterCandlesByEtDate(candles, targetDate)
+    let [_, h, m, ap] = match
+    let hour = parseInt(h)
+    const minute = parseInt(m)
+
+    if (ap.toLowerCase() === 'pm' && hour !== 12) hour += 12
+    if (ap.toLowerCase() === 'am' && hour === 12) hour = 0
+
+    const hh = hour.toString().padStart(2, '0')
+    return `${hh}:${m}`
+  }
+
+  const requestedTime = extractTime(lower)
+
+  if (!requestedTime) return ''
+
+  for (const [symbol, candles] of Object.entries(data)) {
+    if (focusSymbol && symbol !== focusSymbol) continue
+
+    // 🔥 FILTER BY DATE (THIS IS THE FIX)
+    const dateFiltered = targetDate
+      ? candles.filter(c => c.datetime?.startsWith(targetDate))
+      : candles
+
     if (!dateFiltered.length) {
-      if (targetDate) {
-        lines.push(`INTRADAY COVERAGE FOR ${symbol}: no candles found for ${targetDate}`)
-      }
+      lines.push(`No intraday data found for ${symbol} on ${targetDate}`)
       continue
     }
 
-    const firstEt = candleEtLabel(dateFiltered[0].datetime)
-    const lastEt = candleEtLabel(dateFiltered[dateFiltered.length - 1].datetime)
+    const lookup = findIntradayCandleContainingTime(dateFiltered, requestedTime)
 
-    lines.push(
-      `INTRADAY COVERAGE FOR ${symbol}${targetDate ? ` ON ${targetDate}` : ''}: ${firstEt} to ${lastEt} ET`
-    )
-
-    for (const requestedEt of requestedTimes) {
-      const lookup = findIntradayCandleContainingTime(
-        dateFiltered,
-        requestedEt,
-        5,
-        targetDate
-      )
-      if (!lookup) continue
-
-      lines.push(
-        `${symbol} requested ${requestedEt.toLowerCase()} ET falls inside the ${lookup.intervalStartEt}-${lookup.intervalEndEt} ET candle ` +
-        `(labeled ${lookup.matchedEt}${lookup.exactBoundaryMatch ? ', exact boundary match' : ''}): ` +
-        `O:${lookup.open.toFixed(2)} H:${lookup.high.toFixed(2)} L:${lookup.low.toFixed(2)} C:${lookup.close.toFixed(2)} ` +
-        `Vol:${lookup.volume.toLocaleString()} Direction:${lookup.candleDirection}`
-      )
+    if (!lookup) {
+      lines.push(`No candle found for ${symbol} at ${requestedTime} ET on ${targetDate}`)
+      continue
     }
 
-    const lower = message.toLowerCase()
-if (/\b1:06\b/.test(lower) && /\b2:40\b/.test(lower)) {
-  const move = summarizeIntradayMoveWindow(dateFiltered, '1:06pm', '2:40pm', targetDate)
-  if (move) {
     lines.push(
-      `${symbol} move window 1:06pm to 2:40pm ET: ${move.direction} ` +
-      `${move.absoluteChange.toFixed(2)} (${move.percentChange.toFixed(2)}%), ` +
-      `from ${move.startOpen.toFixed(2)} to ${move.endClose.toFixed(2)}, range ${move.low.toFixed(2)}-${move.high.toFixed(2)}`
+      `${symbol} ${lookup.intervalStartEt}-${lookup.intervalEndEt} ET candle (${targetDate}): ` +
+      `open ${lookup.open}, high ${lookup.high}, low ${lookup.low}, close ${lookup.close}, ` +
+      `${lookup.candleDirection} candle, volume ${lookup.volume}`
     )
-  }
-}
   }
 
   return lines.join('\n')
