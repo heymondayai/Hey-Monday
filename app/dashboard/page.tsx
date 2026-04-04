@@ -787,8 +787,9 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [alertSaving, setAlertSaving] = useState(false)
 
   const [showWakeSchedule, setShowWakeSchedule] = useState(false)
-  const wakeOverrideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastWakeDetectionRef = useRef<number>(0)
+const wakeOverrideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+const lastWakeDetectionRef = useRef<number>(0)
+const wakePreferredOnRef = useRef(true)
 
   const supabase = createClient()
   const router = useRouter()
@@ -819,7 +820,6 @@ function handleTouchEnd(e: React.TouchEvent) {
  // ── Schedule-aware wake word state ──
 const [wakeManualOverride, setWakeManualOverride] = useState(false)
 const scheduleEffectReadyRef = useRef(false)
-const wakeWasTurnedOffByScheduleRef = useRef(false)
 
 useEffect(() => {
   // Don't run until user prefs have loaded from Supabase
@@ -829,16 +829,13 @@ useEffect(() => {
   if (scheduledOff) {
     if (!wakeManualOverride && wakeOn) {
       setWakeOn(false)
-      wakeWasTurnedOffByScheduleRef.current = true
     }
     return
   }
 
-  // Schedule is no longer active:
-  // only turn wake word back on if the schedule was the thing that turned it off
-  if (!wakeManualOverride && wakeWasTurnedOffByScheduleRef.current) {
-    setWakeOn(true)
-    wakeWasTurnedOffByScheduleRef.current = false
+  // Schedule ended: restore to the user's preferred wake setting
+  if (!wakeManualOverride && wakeOn !== wakePreferredOnRef.current) {
+    setWakeOn(wakePreferredOnRef.current)
   }
 }, [scheduledOff, user, wakeManualOverride, wakeOn])
 
@@ -850,7 +847,8 @@ useEffect(() => {
     setWakeManualOverride(false)
     if (scheduledOff) {
       setWakeOn(false)
-      wakeWasTurnedOffByScheduleRef.current = true
+    } else {
+      setWakeOn(wakePreferredOnRef.current)
     }
   }, 30 * 60 * 1000)
 
@@ -913,7 +911,9 @@ useEffect(() => {
       const { data: profile } = await supabase.from('profiles').select('trader_type, wake_word_enabled, voice_replies_enabled').eq('id', user.id).single()
       if (!profile?.trader_type) { router.push('/onboarding'); return }
       if (profile?.trader_type) { setTraderType(profile.trader_type); setSettingsType(profile.trader_type) }
-      setWakeOn(profile?.wake_word_enabled !== false)
+      const initialWakeOn = profile?.wake_word_enabled !== false
+setWakeOn(initialWakeOn)
+wakePreferredOnRef.current = initialWakeOn
       setSpeechOn(profile?.voice_replies_enabled !== false)
       setPrefsLoaded(true)
       const { data: wlRows } = await supabase.from('watchlist').select('ticker, company_name, added_at').eq('user_id', user.id).order('added_at', { ascending: true })
@@ -1741,16 +1741,16 @@ const visibleDaySummaries = useMemo(() => {
                 <div style={{ padding: '10px 16px', borderBottom: `1px solid ${T.borderFaint}` }}>
                   <div onClick={() => {
   const turningOn = !wakeOn
-  setWakeOn(turningOn)
-  void persistWakeOn(turningOn)
+wakePreferredOnRef.current = turningOn
+setWakeOn(turningOn)
+void persistWakeOn(turningOn)
 
-  if (turningOn && scheduledOff) {
-    setWakeManualOverride(true)
-  } else {
-    setWakeManualOverride(false)
-    wakeWasTurnedOffByScheduleRef.current = false
-    if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
-  }
+if (turningOn && scheduledOff) {
+  setWakeManualOverride(true)
+} else {
+  setWakeManualOverride(false)
+  if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
+}
 }}style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: wakeOn ? T.greenFaint3 : T.inputBg, border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`, cursor: 'pointer' }}>
                     <div style={{ width: '26px', height: '15px', borderRadius: '8px', background: wakeOn ? T.green : T.text7, position: 'relative', flexShrink: 0 }}>
                       <div style={{ position: 'absolute', top: '1.5px', left: wakeOn ? '13px' : '1.5px', width: '12px', height: '12px', borderRadius: '50%', background: '#fff', transition: 'left 0.25s' }} />
@@ -2009,16 +2009,16 @@ const visibleDaySummaries = useMemo(() => {
               <div
   onClick={() => {
   const turningOn = !wakeOn
-  setWakeOn(turningOn)
-  void persistWakeOn(turningOn)
+wakePreferredOnRef.current = turningOn
+setWakeOn(turningOn)
+void persistWakeOn(turningOn)
 
-  if (turningOn && scheduledOff) {
-    setWakeManualOverride(true)
-  } else {
-    setWakeManualOverride(false)
-    wakeWasTurnedOffByScheduleRef.current = false
-    if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
-  }
+if (turningOn && scheduledOff) {
+  setWakeManualOverride(true)
+} else {
+  setWakeManualOverride(false)
+  if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
+}
 }}
   style={{
     display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px',
