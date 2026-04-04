@@ -816,32 +816,48 @@ function handleTouchEnd(e: React.TouchEvent) {
     return () => clearInterval(timer)
   }, [])
 
-  // ── Schedule-aware wake word state ──
-  const [wakeManualOverride, setWakeManualOverride] = useState(false)
-  const scheduleEffectReadyRef = useRef(false)
+ // ── Schedule-aware wake word state ──
+const [wakeManualOverride, setWakeManualOverride] = useState(false)
+const scheduleEffectReadyRef = useRef(false)
+const wakeWasTurnedOffByScheduleRef = useRef(false)
 
-  useEffect(() => {
-    // Don't run until user prefs have loaded from Supabase
-    if (!user) return
-    scheduleEffectReadyRef.current = true
-    if (scheduledOff && !wakeManualOverride) {
+useEffect(() => {
+  // Don't run until user prefs have loaded from Supabase
+  if (!user) return
+  scheduleEffectReadyRef.current = true
+
+  if (scheduledOff) {
+    if (!wakeManualOverride && wakeOn) {
       setWakeOn(false)
+      wakeWasTurnedOffByScheduleRef.current = true
     }
-    // Only restore to true if we were the ones who turned it off (scheduled)
-    // Don't blindly set true — user may have manually disabled
-  }, [scheduledOff, user])
+    return
+  }
 
-  useEffect(() => {
-    if (!wakeManualOverride) return
-    if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
-    wakeOverrideTimerRef.current = setTimeout(() => {
-      setWakeManualOverride(false)
-      if (scheduledOff) setWakeOn(false)
-    }, 30 * 60 * 1000)
-    return () => {
-      if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
+  // Schedule is no longer active:
+  // only turn wake word back on if the schedule was the thing that turned it off
+  if (!wakeManualOverride && wakeWasTurnedOffByScheduleRef.current) {
+    setWakeOn(true)
+    wakeWasTurnedOffByScheduleRef.current = false
+  }
+}, [scheduledOff, user, wakeManualOverride, wakeOn])
+
+useEffect(() => {
+  if (!wakeManualOverride) return
+  if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
+
+  wakeOverrideTimerRef.current = setTimeout(() => {
+    setWakeManualOverride(false)
+    if (scheduledOff) {
+      setWakeOn(false)
+      wakeWasTurnedOffByScheduleRef.current = true
     }
-  }, [wakeManualOverride])
+  }, 30 * 60 * 1000)
+
+  return () => {
+    if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
+  }
+}, [wakeManualOverride, scheduledOff])
 
   useEffect(() => {
   if (!user || !scheduledSummaries.length) return
@@ -1197,8 +1213,8 @@ function startThinkingChimes(): () => void {
     news: [...watchlistNews, ...generalNews],
     intraday,
     marketState,
-    userId: user?.id ?? 'anonymous'
-  })
+    userId: user?.id ?? 'anonymous',
+  }),
 })
       const data = await res.json(); const reply = data.reply || 'Sorry, I could not get a response.'
       if (user) await supabase.from('conversations').insert({ user_id: user.id, role: 'assistant', content: reply })
@@ -1723,7 +1739,19 @@ const visibleDaySummaries = useMemo(() => {
                   </div>
                 </div>
                 <div style={{ padding: '10px 16px', borderBottom: `1px solid ${T.borderFaint}` }}>
-                  <div onClick={() => { const turningOn = !wakeOn; setWakeOn(turningOn); void persistWakeOn(turningOn); if (turningOn && scheduledOff) { setWakeManualOverride(true) } else { setWakeManualOverride(false); if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current) } }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: wakeOn ? T.greenFaint3 : T.inputBg, border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`, cursor: 'pointer' }}>
+                  <div onClick={() => {
+  const turningOn = !wakeOn
+  setWakeOn(turningOn)
+  void persistWakeOn(turningOn)
+
+  if (turningOn && scheduledOff) {
+    setWakeManualOverride(true)
+  } else {
+    setWakeManualOverride(false)
+    wakeWasTurnedOffByScheduleRef.current = false
+    if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
+  }
+}}style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: wakeOn ? T.greenFaint3 : T.inputBg, border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`, cursor: 'pointer' }}>
                     <div style={{ width: '26px', height: '15px', borderRadius: '8px', background: wakeOn ? T.green : T.text7, position: 'relative', flexShrink: 0 }}>
                       <div style={{ position: 'absolute', top: '1.5px', left: wakeOn ? '13px' : '1.5px', width: '12px', height: '12px', borderRadius: '50%', background: '#fff', transition: 'left 0.25s' }} />
                     </div>
@@ -1980,16 +2008,18 @@ const visibleDaySummaries = useMemo(() => {
 </div>
               <div
   onClick={() => {
-    const turningOn = !wakeOn
-    setWakeOn(turningOn)
-    void persistWakeOn(turningOn)
-    if (turningOn && scheduledOff) {
-      setWakeManualOverride(true)
-    } else {
-      setWakeManualOverride(false)
-      if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
-    }
-  }}
+  const turningOn = !wakeOn
+  setWakeOn(turningOn)
+  void persistWakeOn(turningOn)
+
+  if (turningOn && scheduledOff) {
+    setWakeManualOverride(true)
+  } else {
+    setWakeManualOverride(false)
+    wakeWasTurnedOffByScheduleRef.current = false
+    if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
+  }
+}}
   style={{
     display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px',
     padding: '6px 10px 6px 8px',
