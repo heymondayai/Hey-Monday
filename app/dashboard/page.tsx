@@ -291,8 +291,6 @@ type PastBriefing = {
   audio_url?: string | null; briefing_date: string;
 }
 
-const SUMMARY_ICON_OPTIONS = ['🌅', '🔔', '☀️', '⚡', '🌙', '📊', '🧠', '🚨', '📈', '📝']
-
 const SUMMARY_PRESETS = [
   { name: 'Pre-Market',  prompt: 'Give me a pre-market briefing for today focused on my watchlist, biggest catalysts, and macro risks.', icon: '🌅', top_color: '#e8b84b', type: 'preset' as const },
   { name: 'Open Pulse',  prompt: 'Give me a market open pulse with the strongest and weakest names on my watchlist plus the biggest early driver.', icon: '🔔', top_color: '#4ade80', type: 'preset' as const },
@@ -763,7 +761,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [summaryDate, setSummaryDate] = useState(initialDateTime.date)
   const [summaryTime, setSummaryTime] = useState(initialDateTime.time)
   const [summaryPrompt, setSummaryPrompt] = useState('')
-  const [summaryIcon, setSummaryIcon] = useState('🌅')
+  const [summaryIcon, setSummaryIcon] = useState('')
   const [summaryTopColor, setSummaryTopColor] = useState('#e8b84b')
   const [summaryRecurrence, setSummaryRecurrence] = useState<'none' | 'daily' | 'weekly'>('none')
   const [summaryRecurrenceEnd, setSummaryRecurrenceEnd] = useState('')
@@ -1337,8 +1335,8 @@ function startThinkingChimes(): () => void {
     const scheduledJsDay = new Date(new Date(runAtIso).toLocaleString('en-US', { timeZone: 'America/New_York' })).getDay()
     if (scheduledJsDay === 0 || scheduledJsDay === 6) { alert('Scheduled summaries can only be created for Monday through Friday.'); return }
     const ok = await canScheduleOnEtDate(user.id, runAtIso); if (!ok) { alert('You can only have up to 6 scheduled summaries on the same day.'); return }
-    await supabase.from('scheduled_summaries').insert({ user_id: user.id, name: summaryName.trim(), run_at: runAtIso, prompt: summaryPrompt.trim(), icon: summaryIcon, top_color: summaryTopColor, type: 'custom', enabled: true, recurrence: summaryRecurrence, recurrence_end: summaryRecurrenceEnd || null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    setSummaryName(''); const rd = getDateTimeInputDefaults(); setSummaryDate(rd.date); setSummaryTime(rd.time); setSummaryPrompt(''); setSummaryIcon('🌅'); setSummaryTopColor('#e8b84b'); setSummaryRecurrence('none'); setSummaryRecurrenceEnd(''); setShowSummaryEditor(false)
+    await supabase.from('scheduled_summaries').insert({ user_id: user.id, name: summaryName.trim(), run_at: runAtIso, prompt: summaryPrompt.trim(), icon: '', top_color: summaryTopColor, type: 'custom', enabled: true, recurrence: summaryRecurrence, recurrence_end: summaryRecurrenceEnd || null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    setSummaryName(''); const rd = getDateTimeInputDefaults(); setSummaryDate(rd.date); setSummaryTime(rd.time); setSummaryPrompt(''); setSummaryIcon(''); setSummaryTopColor('#e8b84b'); setSummaryRecurrence('none'); setSummaryRecurrenceEnd(''); setShowSummaryEditor(false)
     await loadScheduledSummariesFromSupabase(user.id)
   }
 
@@ -2334,7 +2332,7 @@ if (turningOn && scheduledOff) {
                       <div style={{ display: 'flex', alignItems: 'center' }}>
                         {(['watchlist', 'general'] as const).map((tab) => (
                           <div key={tab} onClick={() => handleNewsTab(tab)} style={{ fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600, padding: '13px 14px', cursor: 'pointer', color: newsTab === tab ? T.gold : T.text6, borderBottom: `2px solid ${newsTab === tab ? T.gold : 'transparent'}`, transition: 'all 0.15s' }}>
-                            {tab === 'watchlist' ? '📋 Watchlist' : '🌐 General'}
+                            {tab === 'watchlist' ? 'Watchlist' : 'General'}
                           </div>
                         ))}
                       </div>
@@ -2659,9 +2657,9 @@ if (turningOn && scheduledOff) {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '10px' }}>
                     {SUMMARY_PRESETS.map((preset, i) => (
                       <div key={i} onClick={() => { const runAtIso = buildRunAtIsoFromLocalInput(summaryDate, summaryTime); void addPresetSummary(preset, runAtIso) }} style={{ padding: '12px', border: `1px solid ${T.borderFaint}`, background: T.inputBg, cursor: 'pointer' }}>
-                        <div style={{ fontSize: '14px', color: T.text, fontWeight: 600 }}>{preset.icon} {preset.name}</div>
-                        <div style={{ fontSize: '11px', color: T.text5, marginTop: '4px', fontFamily: "'DM Mono', monospace" }}>Uses selected date/time above</div>
-                      </div>
+                      <div style={{ fontSize: '14px', color: T.text, fontWeight: 600 }}>{preset.name}</div>
+                      <div style={{ fontSize: '11px', color: T.text5, marginTop: '4px', fontFamily: "'DM Mono', monospace" }}>Uses selected date/time above</div>
+                    </div>
                     ))}
                   </div>
                 </div>
@@ -2673,11 +2671,6 @@ if (turningOn && scheduledOff) {
                     <div style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace", marginRight: '4px' }}>Accent:</div>
                     {['#e8b84b','#4ade80','#7ab8e8','#f87171','#c084fc','#fb923c'].map(c => (
                       <div key={c} onClick={() => setSummaryTopColor(c)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: c, cursor: 'pointer', border: `2px solid ${summaryTopColor === c ? T.text : 'transparent'}`, transition: 'border 0.15s' }} />
-                    ))}
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                    {SUMMARY_ICON_OPTIONS.map((icon) => (
-                      <div key={icon} onClick={() => setSummaryIcon(icon)} style={{ width: '42px', height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', cursor: 'pointer', border: `1px solid ${summaryIcon === icon ? T.goldFaint9 : T.borderItem}`, background: summaryIcon === icon ? T.goldFaint2 : T.inputBg }}>{icon}</div>
                     ))}
                   </div>
                   <textarea value={summaryPrompt} onChange={(e) => setSummaryPrompt(e.target.value)} placeholder="What should Monday summarize?" rows={4} style={{ width: '100%', background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '12px', outline: 'none', resize: 'vertical', marginBottom: '10px' }} />
