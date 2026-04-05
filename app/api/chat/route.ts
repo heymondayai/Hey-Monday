@@ -544,18 +544,42 @@ const intent = classifyIntent(message, watchlistTickers, priceSymbols)
     const isPM = etParts.find((p) => p.type === 'dayPeriod')?.value?.toUpperCase() === 'PM'
     const hour24 = isPM && etHour !== 12 ? etHour + 12 : (!isPM && etHour === 12 ? 0 : etHour)
 
-    const marketOpen = (hour24 > 9 || (hour24 === 9 && etMin >= 30)) && hour24 < 16
-    const preMarket = hour24 >= 4 && (hour24 < 9 || (hour24 === 9 && etMin < 30))
-    const afterHours = hour24 >= 16 && hour24 < 20
+    const dayOfWeek = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  weekday: 'short',
+}).format(now)
+
+const isWeekend = dayOfWeek === 'Sat' || dayOfWeek === 'Sun'
+
+    const marketOpen =
+  !isWeekend &&
+  (hour24 > 9 || (hour24 === 9 && etMin >= 30)) &&
+  hour24 < 16
+    const preMarket =
+  !isWeekend &&
+  hour24 >= 4 &&
+  (hour24 < 9 || (hour24 === 9 && etMin < 30))
+
+    const afterHours =
+  !isWeekend &&
+  hour24 >= 16 &&
+  hour24 < 20 
 
     const etTime = `${etParts.find((p) => p.type === 'hour')?.value}:${etParts.find((p) => p.type === 'minute')?.value} ${(etParts.find((p) => p.type === 'dayPeriod')?.value ?? '').toUpperCase().split('').join(' ')} ET`
     const etDate = `${etParts.find((p) => p.type === 'weekday')?.value}, ${etParts.find((p) => p.type === 'month')?.value} ${etParts.find((p) => p.type === 'day')?.value}, ${etParts.find((p) => p.type === 'year')?.value}`
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
     let marketStatus = 'MARKET IS CLOSED'
-    if (marketOpen) marketStatus = 'MARKET IS OPEN'
-    if (preMarket) marketStatus = 'PRE-MARKET SESSION (4 AM – 9:30 AM ET)'
-    if (afterHours) marketStatus = 'AFTER-HOURS SESSION (4 PM – 8 PM ET)'
+
+if (isWeekend) {
+  marketStatus = 'MARKET IS CLOSED (WEEKEND)'
+} else if (marketOpen) {
+  marketStatus = 'MARKET IS OPEN'
+} else if (preMarket) {
+  marketStatus = 'PRE-MARKET SESSION (4 AM – 9:30 AM ET)'
+} else if (afterHours) {
+  marketStatus = 'AFTER-HOURS SESSION (4 PM – 8 PM ET)'
+}
 
     const minutesToClose = marketOpen ? ((16 - hour24) * 60 - etMin) : null
 
