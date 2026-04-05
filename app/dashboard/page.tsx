@@ -1362,7 +1362,7 @@ function startThinkingChimes(): () => void {
     if (scheduledJsDay === 0 || scheduledJsDay === 6) { alert('Scheduled summaries can only be created for Monday through Friday.'); return }
     const ok = await canScheduleOnEtDate(user.id, runAtIso)
     if (!ok) { alert('You can only have up to 6 scheduled summaries on the same day.'); return }
-    await supabase.from('scheduled_summaries').insert({ user_id: user.id, name: preset.name, run_at: runAtIso, prompt: preset.prompt, top_color: preset.top_color, type: preset.type, enabled: true, recurrence: summaryRecurrence, recurrence_end: summaryRecurrenceEnd || null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    await supabase.from('scheduled_summaries').insert({ user_id: user.id, name: preset.name, run_at: runAtIso, prompt: preset.prompt, icon: '', top_color: preset.top_color, type: preset.type, enabled: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     await loadScheduledSummariesFromSupabase(user.id)
     setTimeout(() => {
   summaryModalScrollRef.current?.scrollTo({ top: summaryModalScrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -1376,7 +1376,7 @@ function startThinkingChimes(): () => void {
     const scheduledJsDay = new Date(new Date(runAtIso).toLocaleString('en-US', { timeZone: 'America/New_York' })).getDay()
     if (scheduledJsDay === 0 || scheduledJsDay === 6) { alert('Scheduled summaries can only be created for Monday through Friday.'); return }
     const ok = await canScheduleOnEtDate(user.id, runAtIso); if (!ok) { alert('You can only have up to 6 scheduled summaries on the same day.'); return }
-    await supabase.from('scheduled_summaries').insert({ user_id: user.id, name: summaryName.trim(), run_at: runAtIso, prompt: summaryPrompt.trim(), icon: '', top_color: summaryTopColor, type: 'custom', enabled: true, recurrence: summaryRecurrence, recurrence_end: summaryRecurrenceEnd || null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    await supabase.from('scheduled_summaries').insert({ user_id: user.id, name: summaryName.trim(), run_at: runAtIso, prompt: summaryPrompt.trim(), icon: '', top_color: summaryTopColor, type: 'custom', enabled: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     setSummaryName(''); const rd = getDateTimeInputDefaults(); setSummaryDate(rd.date); setSummaryTime(rd.time); setSummaryPrompt(''); setSummaryIcon(''); setSummaryTopColor('#e8b84b'); setSummaryRecurrence('none'); setSummaryRecurrenceEnd(''); setShowSummaryEditor(false)
     await loadScheduledSummariesFromSupabase(user.id)
   }
@@ -1942,7 +1942,6 @@ if (turningOn && scheduledOff) {
                           return (
                             <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 12px', background: T.panelBg }}>
                               <div style={{ width: '3px', alignSelf: 'stretch', background: item.top_color, borderRadius: '2px', flexShrink: 0 }} />
-                              <div style={{ fontSize: '16px', flexShrink: 0 }}>{item.icon}</div>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '2px' }}>{item.name}</div>
                                 <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>{formatSummaryTimeOnly(item.run_at)}</div>
