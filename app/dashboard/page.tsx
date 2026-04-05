@@ -292,11 +292,51 @@ type PastBriefing = {
 }
 
 const SUMMARY_PRESETS = [
-  { name: 'Pre-Market',  prompt: 'Give me a pre-market briefing for today focused on my watchlist, biggest catalysts, and macro risks.', icon: '🌅', top_color: '#e8b84b', type: 'preset' as const },
-  { name: 'Open Pulse',  prompt: 'Give me a market open pulse with the strongest and weakest names on my watchlist plus the biggest early driver.', icon: '🔔', top_color: '#4ade80', type: 'preset' as const },
-  { name: 'Midday',      prompt: 'Give me a midday summary of my watchlist, sector rotation, and what matters most into the afternoon.', icon: '☀️', top_color: '#7ab8e8', type: 'preset' as const },
-  { name: 'Power Hour',  prompt: 'Give me a power hour summary with strongest movers, closing themes, and any setups into the close.', icon: '⚡', top_color: '#e8b84b', type: 'preset' as const },
-  { name: 'End of Day',  prompt: 'Give me an end of day recap focused on my watchlist, major catalysts, and what matters for tomorrow.', icon: '🌙', top_color: '#c084fc', type: 'preset' as const },
+  {
+    name: 'Pre-Market',
+    prompt: 'Give me a pre-market briefing for today focused on my watchlist, biggest catalysts, and macro risks.',
+    top_color: '#e8b84b',
+    type: 'preset' as const,
+    blurb: 'Before the open',
+    hoverTitle: 'Pre-market game plan',
+    hoverCopy: 'Covers your watchlist, overnight movers, major headlines, macro events, and the biggest risks heading into the open.',
+  },
+  {
+    name: 'Open Pulse',
+    prompt: 'Give me a market open pulse with the strongest and weakest names on my watchlist plus the biggest early driver.',
+    top_color: '#4ade80',
+    type: 'preset' as const,
+    blurb: 'First move after the bell',
+    hoverTitle: 'Opening momentum read',
+    hoverCopy: 'Covers early strength and weakness, opening drivers, immediate watchlist movement, and what looks actionable right after the bell.',
+  },
+  {
+    name: 'Midday',
+    prompt: 'Give me a midday summary of my watchlist, sector rotation, and what matters most into the afternoon.',
+    top_color: '#7ab8e8',
+    type: 'preset' as const,
+    blurb: 'Mid-session reset',
+    hoverTitle: 'Midday positioning check',
+    hoverCopy: 'Covers watchlist trends, sector rotation, market tone, and what matters most heading into the second half of the session.',
+  },
+  {
+    name: 'Power Hour',
+    prompt: 'Give me a power hour summary with strongest movers, closing themes, and any setups into the close.',
+    top_color: '#e8b84b',
+    type: 'preset' as const,
+    blurb: 'Into the close',
+    hoverTitle: 'Power hour focus',
+    hoverCopy: 'Covers strongest movers, late-session momentum, closing themes, and anything worth watching into the final hour.',
+  },
+  {
+    name: 'End of Day',
+    prompt: 'Give me an end of day recap focused on my watchlist, major catalysts, and what matters for tomorrow.',
+    top_color: '#c084fc',
+    type: 'preset' as const,
+    blurb: 'Wrap up the session',
+    hoverTitle: 'End-of-day recap',
+    hoverCopy: 'Covers the biggest moves, key catalysts, how your watchlist finished, and what matters most for the next session.',
+  },
 ]
 
 function formatCountdown(ms: number) {
@@ -767,6 +807,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [summaryRecurrenceEnd, setSummaryRecurrenceEnd] = useState('')
   const [countdownTick, setCountdownTick] = useState(Date.now())
   const processedSummaryRunsRef = useRef<Set<string>>(new Set())
+  const [hoveredPreset, setHoveredPreset] = useState<string | null>(null)
 
   // Expire activeBriefing 30 min after it auto-played
   useEffect(() => {
@@ -1321,7 +1362,7 @@ function startThinkingChimes(): () => void {
     if (scheduledJsDay === 0 || scheduledJsDay === 6) { alert('Scheduled summaries can only be created for Monday through Friday.'); return }
     const ok = await canScheduleOnEtDate(user.id, runAtIso)
     if (!ok) { alert('You can only have up to 6 scheduled summaries on the same day.'); return }
-    await supabase.from('scheduled_summaries').insert({ user_id: user.id, name: preset.name, run_at: runAtIso, prompt: preset.prompt, icon: preset.icon, top_color: preset.top_color, type: preset.type, enabled: true, recurrence: summaryRecurrence, recurrence_end: summaryRecurrenceEnd || null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    await supabase.from('scheduled_summaries').insert({ user_id: user.id, name: preset.name, run_at: runAtIso, prompt: preset.prompt, top_color: preset.top_color, type: preset.type, enabled: true, recurrence: summaryRecurrence, recurrence_end: summaryRecurrenceEnd || null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     await loadScheduledSummariesFromSupabase(user.id)
     setTimeout(() => {
   summaryModalScrollRef.current?.scrollTo({ top: summaryModalScrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -1886,7 +1927,6 @@ if (turningOn && scheduledOff) {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {SUMMARY_PRESETS.map((preset, i) => (
                         <div key={i} onClick={() => { const iso = buildRunAtIsoFromLocalInput(summaryDate, summaryTime); void addPresetSummary(preset, iso) }} style={{ padding: '12px', border: `1px solid ${T.borderFaint}`, background: T.inputBg, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span style={{ fontSize: '18px' }}>{preset.icon}</span>
                           <span style={{ fontSize: '14px', color: T.text, fontWeight: 600 }}>{preset.name}</span>
                         </div>
                       ))}
@@ -2655,12 +2695,94 @@ if (turningOn && scheduledOff) {
                 </div>
                   <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, marginBottom: '12px', fontWeight: 600 }}>Quick Presets</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '10px' }}>
-                    {SUMMARY_PRESETS.map((preset, i) => (
-                      <div key={i} onClick={() => { const runAtIso = buildRunAtIsoFromLocalInput(summaryDate, summaryTime); void addPresetSummary(preset, runAtIso) }} style={{ padding: '12px', border: `1px solid ${T.borderFaint}`, background: T.inputBg, cursor: 'pointer' }}>
-                      <div style={{ fontSize: '14px', color: T.text, fontWeight: 600 }}>{preset.name}</div>
-                      <div style={{ fontSize: '11px', color: T.text5, marginTop: '4px', fontFamily: "'DM Mono', monospace" }}>Uses selected date/time above</div>
-                    </div>
-                    ))}
+                    {SUMMARY_PRESETS.map((preset, i) => {
+  const isHovered = hoveredPreset === preset.name
+
+  return (
+    <div
+      key={i}
+      onMouseEnter={() => setHoveredPreset(preset.name)}
+      onMouseLeave={() => setHoveredPreset(null)}
+      onClick={() => {
+        const runAtIso = buildRunAtIsoFromLocalInput(summaryDate, summaryTime)
+        void addPresetSummary(preset, runAtIso)
+      }}
+      style={{
+        position: 'relative',
+        padding: '14px 14px 12px',
+        border: `1px solid ${isHovered ? T.goldFaint8 : T.borderFaint}`,
+        background: isHovered ? T.goldFaint : T.inputBg,
+        cursor: 'pointer',
+        transition: 'all 160ms ease',
+        boxShadow: isHovered ? `0 0 0 1px ${T.goldFaint4} inset` : 'none',
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ fontSize: '14px', color: T.text, fontWeight: 600 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+          {preset.name}
+          {isHovered ? <span style={{ fontSize: '10px', color: T.goldText4, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Preview</span> : null}
+        </span>
+        </div>
+
+        <div
+          style={{
+            fontSize: '11px',
+            color: isHovered ? T.goldText4 : T.text5,
+            fontFamily: "'DM Mono', monospace",
+            letterSpacing: '0.04em',
+            transition: 'color 160ms ease',
+          }}
+        >
+          {preset.blurb}
+        </div>
+
+        <div
+          style={{
+            marginTop: '4px',
+            overflow: 'hidden',
+            maxHeight: isHovered ? '90px' : '0px',
+            opacity: isHovered ? 1 : 0,
+            transform: isHovered ? 'translateY(0)' : 'translateY(-4px)',
+            transition: 'all 180ms ease',
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            style={{
+              padding: '10px 11px',
+              background: T.goldFaint2,
+              border: `1px solid ${T.goldFaint6}`,
+            }}
+          >
+            <div
+              style={{
+                fontSize: '10px',
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                color: T.gold,
+                fontWeight: 700,
+                marginBottom: '6px',
+              }}
+            >
+              {preset.hoverTitle}
+            </div>
+
+            <div
+              style={{
+                fontSize: '12px',
+                lineHeight: 1.45,
+                color: T.text2,
+              }}
+            >
+              {preset.hoverCopy}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+})}
                   </div>
                 </div>
                 <div>
