@@ -1124,19 +1124,26 @@ wakePreferredOnRef.current = initialWakeOn
 }
 
 function startThinkingChimes(): () => void {
+  if (!speechOn) return () => {}
+
   let cancelled = false
+
   async function loop() {
-    if (cancelled) return
+    if (cancelled || !speechOn) return
     playChime('tick')
+
     await new Promise(r => setTimeout(r, 360))
-    if (cancelled) return
+    if (cancelled || !speechOn) return
     playChime('tick')
+
     await new Promise(r => setTimeout(r, 360))
-    if (cancelled) return
+    if (cancelled || !speechOn) return
     playChime('tick')
+
     await new Promise(r => setTimeout(r, 2000))
-    if (!cancelled) loop()
+    if (!cancelled && speechOn) loop()
   }
+
   loop()
   return () => { cancelled = true }
 }
