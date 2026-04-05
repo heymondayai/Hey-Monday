@@ -10,6 +10,7 @@ import {
   MacroData,
   SectorPerformance,
 } from '@/lib/market-data'
+import { getNyseEquitiesStatus } from '@/lib/market-hours'
 
 export interface MarketMover {
   symbol: string
@@ -67,30 +68,6 @@ export interface MarketStateSnapshot {
   watchlistSummary: MarketWatchlistItem[]
   summary: string
   rawPayload: Record<string, unknown>
-}
-
-function getMarketStatus(): string {
-  const now = new Date()
-  const etParts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(now)
-
-  const hour = parseInt(etParts.find((p) => p.type === 'hour')?.value || '0')
-  const minute = parseInt(etParts.find((p) => p.type === 'minute')?.value || '0')
-  const totalMinutes = hour * 60 + minute
-
-  const preMarketStart = 4 * 60
-  const regularOpen = 9 * 60 + 30
-  const regularClose = 16 * 60
-  const afterHoursClose = 20 * 60
-
-  if (totalMinutes >= regularOpen && totalMinutes < regularClose) return 'MARKET IS OPEN'
-  if (totalMinutes >= preMarketStart && totalMinutes < regularOpen) return 'PRE-MARKET SESSION'
-  if (totalMinutes >= regularClose && totalMinutes < afterHoursClose) return 'AFTER-HOURS SESSION'
-  return 'MARKET IS CLOSED'
 }
 
 function getTodayStrET(): string {
@@ -292,7 +269,7 @@ export async function buildMarketState(params?: {
       : ['SPY', 'QQQ', 'NVDA', 'AAPL', 'TSLA', 'META', 'AMD']
 
 const todayStr = getTodayStrET()
-const marketStatus = getMarketStatus()
+const { label: marketStatus } = getNyseEquitiesStatus()
 
 const calendarToDate = new Date(`${todayStr}T12:00:00`)
 calendarToDate.setDate(calendarToDate.getDate() + 45)
