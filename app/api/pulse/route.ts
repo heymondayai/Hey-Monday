@@ -115,7 +115,9 @@ function buildHeadline(params: {
   const total = normalizedWatchlist.filter(w => w.changePct != null).length
 
   const firstEvent = latestMarketState?.calendar_events?.[0]
-  const macro = latestMarketState?.macro_context?.[0]
+  const macro = latestMarketState?.macro_context?.find(
+    (m: any) => m.label && m.value && !m.label.includes('10Y') && !m.label.includes('Treasury')
+  ) ?? null
 
   // ── EVENT-DRIVEN (highest priority) ──────────────────────────────────────
   if (firstEvent?.name && firstEvent?.impact === 'HIGH') {
@@ -129,11 +131,17 @@ function buildHeadline(params: {
 
   // ── MACRO-DRIVEN ──────────────────────────────────────────────────────────
   if (macro?.label) {
-    const yieldContext = macro.label.includes('Yield') || macro.label.includes('yield')
-    if (yieldContext && (sentiment === 'bearish' || sentiment === 'strongly_bearish'))
-      return `Rate pressure resurfaces — growth names bear the brunt`
-    if (yieldContext && (sentiment === 'bullish' || sentiment === 'strongly_bullish'))
-      return `Equities shrug off rate pressure — buyers step in`
+    const isFed = macro.label.includes('Fed')
+    const isCpi = macro.label.includes('CPI') || macro.label.includes('Inflation')
+    const isUnemployment = macro.label.includes('Unemployment')
+    if (isFed && (sentiment === 'bearish' || sentiment === 'strongly_bearish'))
+      return `Fed policy overhang keeps the lid on — sellers finding no resistance`
+    if (isFed && (sentiment === 'bullish' || sentiment === 'strongly_bullish'))
+      return `Bulls betting the Fed blinks — risk appetite creeping back`
+    if (isCpi && sentiment === 'bearish')
+      return `Inflation narrative back in focus — growth names taking the hit`
+    if (isUnemployment && sentiment === 'bullish')
+      return `Labor market strength underpins the bid — buyers stepping up`
   }
 
   // ── DIVERGENCE (one name running, rest not following) ────────────────────
@@ -221,7 +229,12 @@ function buildSummary(params: {
   }
 
   // ── MACRO LAYER ───────────────────────────────────────────────────────────
-  const macro = latestMarketState?.macro_context?.[0]
+  const macro = latestMarketState?.macro_context?.find(
+    (m: any) => m.label && m.value &&
+    !m.label.includes('10Y') &&
+    !m.label.includes('Treasury') &&
+    !m.label.includes('2Y')
+  ) ?? null
   if (macro?.label && macro?.value) {
     if (macro.implication) {
       sentences.push(`${macro.label} at ${macro.value} — ${macro.implication.toLowerCase().replace(/\.$/, '')}.`)
@@ -229,7 +242,8 @@ function buildSummary(params: {
       sentences.push(`Macro backdrop: ${macro.label} at ${macro.value}.`)
     }
   } else if (latestMarketState?.summary) {
-    sentences.push(latestMarketState.summary)
+    const summaryWithoutYield = latestMarketState.summary.replace(/10Y yield is [^.]+\./g, '').trim()
+    if (summaryWithoutYield) sentences.push(summaryWithoutYield)
   }
 
   // ── TRADER LENS: situational, not boilerplate ─────────────────────────────
@@ -277,7 +291,12 @@ function buildRiskNote(params: {
   }
 
   // Macro risk
-  const macro = latestMarketState?.macro_context?.[0]
+  const macro = latestMarketState?.macro_context?.find(
+    (m: any) => m.label && m.value &&
+    !m.label.includes('10Y') &&
+    !m.label.includes('Treasury') &&
+    !m.label.includes('2Y')
+  ) ?? null
   if (macro?.label && macro?.value) {
     if (sentiment === 'strongly_bullish' || sentiment === 'bullish') {
       return `Don't let a strong session create false confidence while ${macro.label} stays at ${macro.value} — macro headwinds don't disappear on green days, they compress the runway for follow-through.`
