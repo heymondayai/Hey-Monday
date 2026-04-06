@@ -23,7 +23,7 @@ import { getNyseEquitiesStatus } from '@/lib/market-hours'
 
 // ── SONNET DAILY CAP ─────────────────────────────────────────────────────────
 const sonnetUsage = new Map<string, { count: number; dateET: string }>()
-const SONNET_DAILY_CAP = 5
+const SONNET_DAILY_CAP = 10
 
 function getTodayET(): string {
   return new Intl.DateTimeFormat('en-US', {
@@ -358,7 +358,7 @@ function classifyIntent(
   const needsMacro = /macro|fed|fomc|cpi|inflation|yield|treasury|rate|unemployment|gdp|interest rate|10-year|2-year|jobs|payroll|pce|calendar|events|tomorrow|today|scheduled|this week|economic|release|data|high impact|news event/.test(lower)
   const needsSector = /sector|rotation|energy|tech|financials|healthcare|real estate|industrials|utilities|materials|consumer|xlk|xle|xlf|xlv|xlre|xli|xlu|xlb|xly|xlp/.test(lower)
   const needsFilings = /filing|8-k|10-q|10-k|sec|reported|disclosed|announced/.test(lower)
-  const needsNews = /news|headline|headlines|why is|why did|why are|catalyst|what happened|what caused|what moved|driver|drivers/.test(lower)
+  const needsNews = /news|headline|headlines|why is|why did|why are|catalyst|what happened|what caused|what moved|driver|drivers|what's going on|going on|just dropped|just spiked|just crashed|just moved|dropped fast|spiked fast/.test(lower)
   const needsLevel2 = /level 2|l2|order flow|book|depth|bid stack|ask stack|liquidity|tape|prints|dom/.test(lower)
 
   const mentionsBreaking = /just|right now|latest|breaking|current|live|today's|just happened|just reported|just announced|news on|what's going on/.test(lower)
@@ -451,7 +451,7 @@ function canAnswerFromCurrentData(input: AnswerabilityInput): boolean {
   if (intent.offWatchlistSymbol) return false
   if (/\b(powell|yellen|jerome|gensler|trump|biden|elon|musk|cook|jensen|huang|zuckerberg|pichai|bezos|dimon)\b/.test(lower)) return false
   if (/\b(merger|acquisition|buyout|bankruptcy|lawsuit|fda|press release|conference call|earnings call)\b/.test(lower)) return false
-  if (intent.mentionsBreaking && (!news || news.length === 0)) return false
+  if (intent.mentionsBreaking) return false
   if (intent.needsNews && (!news || news.length === 0)) return false
   if (intent.needsLevel2 && !level2) return false
 
@@ -820,6 +820,7 @@ CORE RULES:
 12. For move questions like "why did it drop" or "what happened from 1:06 to 2:40", analyze the move across the whole requested window, not one candle in isolation.
 13. Never describe the move as bullish or a rally if the broader requested move window was down.
 14. If the current feed does not show a clear catalyst, say there is no clear catalyst in the current feed rather than inventing one.
+15. When using web search, only report facts from actual search results. If search returns no clear results about a specific real-time event, say the search did not surface a clear catalyst rather than inventing one. Never fabricate prices, dates, people, or events.
 
 ${lengthRules}`
 
