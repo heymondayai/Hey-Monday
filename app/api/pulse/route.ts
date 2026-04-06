@@ -5,7 +5,7 @@ const cache = new Map<string, { data: any; fetchedAt: number }>()
 const CACHE_TTL = 30 * 1000
 
 const refreshLimits = new Map<string, { count: number; resetAt: number }>()
-const MAX_REFRESHES_PER_DAY = 3
+const MAX_REFRESHES_PER_DAY = 2
 
 type WatchlistItem = {
   ticker: string
@@ -336,7 +336,7 @@ export async function POST(req: NextRequest) {
           hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York',
         })
         return NextResponse.json(
-          { pulse: null, rateLimited: true, message: `You've used all 3 refreshes for today. Resets at ${resetTime} ET.` },
+          { pulse: null, rateLimited: true, message: `You've already used your manual refresh for today. Resets at ${resetTime} ET.` },
           { status: 429 }
         )
       }

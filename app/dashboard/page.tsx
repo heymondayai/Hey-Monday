@@ -777,6 +777,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [generalNews, setGeneralNews] = useState<any[]>([])
   const [pulse, setPulse] = useState<{ headline: string; summary: string; riskNote: string } | null>(null)
   const [pulseLoading, setPulseLoading] = useState(false)
+  const [pulseRefreshUsed, setPulseRefreshUsed] = useState(false)
   const [marketState, setMarketState] = useState<any | null>(null)
   const [marketStateLoading, setMarketStateLoading] = useState(false)
   const [intraday, setIntraday] = useState<any[]>([])
@@ -1006,6 +1007,22 @@ wakePreferredOnRef.current = initialWakeOn
     }
     setCurrentEtDate(getEtDateLabel()); setMarketSession(getSession())
 
+    // ── AUTO-REFRESH PULSE AT KEY MARKET SESSIONS ──
+    const PULSE_TRIGGERS = ['09:30', '12:00', '16:00']
+    let lastPulseTrigger = ''
+    const pulseScheduler = setInterval(() => {
+      const etNow = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).format(new Date())
+      if (PULSE_TRIGGERS.includes(etNow) && etNow !== lastPulseTrigger) {
+        lastPulseTrigger = etNow
+        doFetchPrices(watchlistRef.current, traderType, true)
+      }
+    }, 30000)
+
     const timer = setInterval(() => {
       const el = document.getElementById('mktTime')
       if (el) {
@@ -1036,7 +1053,7 @@ wakePreferredOnRef.current = initialWakeOn
     const newsInterval = setInterval(() => fetchBothNews(), 90 * 1000)
     const intradayInterval = setInterval(fetchIntraday, 2 * 60 * 1000)
     const marketStateInterval = setInterval(fetchMarketState, 60 * 1000)
-    return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(intradayInterval); clearInterval(marketStateInterval) }
+    return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(intradayInterval); clearInterval(marketStateInterval); clearInterval(pulseScheduler) }
   }, [])
 
   async function fetchMarketState() {
@@ -1651,7 +1668,22 @@ const visibleDaySummaries = useMemo(() => {
                     <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: T.gold }} />
                     {PULSE_LABEL[traderType] || '📊 Portfolio Pulse'}
                   </div>
-                  <div onClick={() => fetchPulse(traderType, watchlist)} style={{ fontSize: '10px', color: T.goldText2, cursor: 'pointer', fontFamily: "'DM Mono', monospace", padding: '2px 8px', border: `1px solid ${T.goldFaint5}` }}>{pulseLoading ? '...' : '↻'}</div>
+                  <div onClick={async () => {
+                    if (pulseRefreshUsed) return
+                    try {
+                      setPulseLoading(true)
+                      const res = await fetch('/api/pulse', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ watchlist, traderType, prices: tickerData, isManualRefresh: true }),
+                      })
+                      const data = await res.json()
+                      if (data.rateLimited) { alert(data.message); return }
+                      if (data.pulse) { setPulse(data.pulse); setPulseRefreshUsed(true) }
+                    } catch {} finally { setPulseLoading(false) }
+                  }} style={{ fontSize: '10px', color: pulseRefreshUsed ? T.text7 : T.goldText2, cursor: pulseRefreshUsed ? 'default' : 'pointer', fontFamily: "'DM Mono', monospace", padding: '2px 8px', border: `1px solid ${pulseRefreshUsed ? T.borderItem : T.goldFaint5}` }}>
+                    {pulseLoading ? '...' : pulseRefreshUsed ? '✓' : '↻'}
+                  </div>
                 </div>
                 <div style={{ padding: '14px 16px', flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
                   {pulseLoading && !pulse ? (
@@ -2400,7 +2432,22 @@ const visibleDaySummaries = useMemo(() => {
                       <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600 }}>
                         <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: T.gold }} />{pulseLabel}
                       </div>
-                      <div onClick={() => fetchPulse(traderType, watchlist)} style={{ fontSize: '10px', color: T.goldText2, cursor: 'pointer', fontFamily: "'DM Mono', monospace", padding: '2px 7px', border: `1px solid ${T.goldFaint5}` }}>{pulseLoading ? '...' : '↻ Refresh'}</div>
+                      <div onClick={async () => {
+                        if (pulseRefreshUsed) return
+                        try {
+                          setPulseLoading(true)
+                          const res = await fetch('/api/pulse', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ watchlist, traderType, prices: tickerData, isManualRefresh: true }),
+                          })
+                          const data = await res.json()
+                          if (data.rateLimited) { alert(data.message); return }
+                          if (data.pulse) { setPulse(data.pulse); setPulseRefreshUsed(true) }
+                        } catch {} finally { setPulseLoading(false) }
+                      }} style={{ fontSize: '10px', color: pulseRefreshUsed ? T.text7 : T.goldText2, cursor: pulseRefreshUsed ? 'default' : 'pointer', fontFamily: "'DM Mono', monospace", padding: '2px 7px', border: `1px solid ${pulseRefreshUsed ? T.borderItem : T.goldFaint5}` }}>
+                        {pulseLoading ? '...' : pulseRefreshUsed ? '↻ Used' : '↻ Refresh'}
+                      </div>
                     </div>
                     <div style={{ padding: '14px 18px', flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto' }}>
                       {pulseLoading && !pulse ? (
