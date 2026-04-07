@@ -129,18 +129,18 @@ function buildHeadline(params: {
     return `Markets on hold — ${eventShort} looms as the session's defining moment`
   }
 
-  // ── MACRO-DRIVEN ──────────────────────────────────────────────────────────
-  if (macro?.label) {
+  // ── MACRO-DRIVEN (only fire on strong sentiment + known catalyst) ─────────
+  if (macro?.label && (sentiment === 'strongly_bullish' || sentiment === 'strongly_bearish' || sentiment === 'bearish')) {
     const isFed = macro.label.includes('Fed')
     const isCpi = macro.label.includes('CPI') || macro.label.includes('Inflation')
     const isUnemployment = macro.label.includes('Unemployment')
-    if (isFed && (sentiment === 'bearish' || sentiment === 'strongly_bearish'))
+    if (isFed && sentiment === 'strongly_bearish')
       return `Fed policy overhang keeps the lid on — sellers finding no resistance`
-    if (isFed && (sentiment === 'bullish' || sentiment === 'strongly_bullish'))
+    if (isFed && sentiment === 'strongly_bullish')
       return `Bulls betting the Fed blinks — risk appetite creeping back`
-    if (isCpi && sentiment === 'bearish')
+    if (isCpi && (sentiment === 'bearish' || sentiment === 'strongly_bearish'))
       return `Inflation narrative back in focus — growth names taking the hit`
-    if (isUnemployment && sentiment === 'bullish')
+    if (isUnemployment && sentiment === 'strongly_bullish')
       return `Labor market strength underpins the bid — buyers stepping up`
   }
 
