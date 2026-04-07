@@ -5,7 +5,7 @@ const cache = new Map<string, { data: any; fetchedAt: number }>()
 const CACHE_TTL = 30 * 1000
 
 const refreshLimits = new Map<string, { count: number; resetAt: number }>()
-const MAX_REFRESHES_PER_DAY = 2
+const MAX_REFRESHES_PER_DAY = 20
 
 type WatchlistItem = {
   ticker: string
