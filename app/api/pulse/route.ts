@@ -242,8 +242,11 @@ function buildSummary(params: {
       sentences.push(`Macro backdrop: ${macro.label} at ${macro.value}.`)
     }
   } else if (latestMarketState?.summary) {
-    const summaryWithoutYield = latestMarketState.summary.replace(/10Y yield is [^.]+\./g, '').trim()
-    if (summaryWithoutYield) sentences.push(summaryWithoutYield)
+    const cleaned = latestMarketState.summary
+      .replace(/10Y yield is [^.]+\./g, '')
+      .replace(/^(AFTER-HOURS SESSION|MARKET IS OPEN|PRE-MARKET SESSION|MARKET IS CLOSED)[^.]*\.\s*/i, '')
+      .trim()
+    if (cleaned) sentences.push(cleaned)
   }
 
   // ── TRADER LENS: situational, not boilerplate ─────────────────────────────

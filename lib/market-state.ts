@@ -251,11 +251,6 @@ function buildRuleBasedSummary(params: {
     lines.push(`Top scheduled macro event: ${highImpactEvent.name}${highImpactEvent.time ? ` (${highImpactEvent.time})` : ''}.`)
   }
 
-  const tenYear = macroContext.find((m) => m.label === '10Y Treasury Yield')
-  if (tenYear) {
-    lines.push(`10Y yield is ${tenYear.value}.`)
-  }
-
   return lines.join(' ')
 }
 
