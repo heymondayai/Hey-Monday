@@ -144,57 +144,78 @@ function buildHeadline(params: {
       return `Labor market strength underpins the bid — buyers stepping up`
   }
 
-  // ── DIVERGENCE (one name running, rest not following) ────────────────────
+  // ── DIVERGENCE ────────────────────────────────────────────────────────────
   if (biggestGainer && biggestLoser) {
     const gPct = biggestGainer.changePct ?? 0
     const lPct = biggestLoser.changePct ?? 0
     const spread = Math.abs(gPct - lPct)
 
     if (spread > 6 && gPct > 3)
-      return `${biggestGainer.ticker} breaks away from the pack — no confirmation from the broader tape`
+      return `${biggestGainer.ticker} is running while everything else stands still`
     if (spread > 6 && lPct < -3)
-      return `${biggestLoser.ticker} sells off in isolation — rest of watchlist holding its ground`
+      return `${biggestLoser.ticker} is getting hit — the rest of the book is holding its breath`
+    if (spread > 4 && gPct > 0 && lPct < 0)
+      return `${biggestGainer.ticker} wants to go higher. ${biggestLoser.ticker} disagrees.`
     if (spread > 4)
-      return `${biggestGainer.ticker} and ${biggestLoser.ticker} tell two different stories today`
+      return `A split tape — ${biggestGainer.ticker} pulling one way, ${biggestLoser.ticker} the other`
   }
 
   // ── BROAD SENTIMENT ───────────────────────────────────────────────────────
   if (sentiment === 'strongly_bullish') {
     const phrases = [
-      `Broad buying sweep — ${bullCount} of ${total} watchlist names in the green`,
-      `Risk appetite returns — your book lifting across the board`,
-      `Bulls in control — momentum building across the watchlist`,
+      `Everything on your watchlist is moving — this is what a real bid looks like`,
+      `${bullCount} of ${total} names green and pushing — the tape has a pulse today`,
+      `Broad strength across the book — not a one-name story, the whole list is working`,
+      `Risk is on and the watchlist knows it — ${bullCount} of ${total} moving higher`,
     ]
     return phrases[new Date().getHours() % phrases.length]
   }
 
   if (sentiment === 'strongly_bearish') {
     const phrases = [
-      `Broad-based selling — ${bearCount} of ${total} names under pressure`,
-      `Risk-off sweep hits the watchlist — sellers in command`,
-      `Distribution day — no safe harbor in the current book`,
+      `Nowhere to hide — ${bearCount} of ${total} names under pressure simultaneously`,
+      `The whole book is getting hit. This isn't noise, it's a move.`,
+      `Sellers showing up everywhere on your watchlist — broad and deliberate`,
+      `Risk-off is the only trade right now — ${bearCount} names falling in unison`,
     ]
     return phrases[new Date().getHours() % phrases.length]
   }
 
   if (sentiment === 'bullish') {
-    if (biggestGainer) return `${biggestGainer.ticker} pacing a cautiously green session`
-    return `Watchlist grinding higher — no urgency, but buyers present`
+    const phrases = biggestGainer ? [
+      `${biggestGainer.ticker} is doing the heavy lifting — the rest of the book is quietly green`,
+      `A controlled grind higher — ${biggestGainer.ticker} leading, others following`,
+      `Buyers are present but not aggressive — ${biggestGainer.ticker} the cleanest name`,
+    ] : [
+      `Green across the board, but nobody is in a hurry`,
+      `The watchlist is drifting higher — orderly, not exciting`,
+    ]
+    return phrases[new Date().getMinutes() % phrases.length]
   }
 
   if (sentiment === 'bearish') {
-    if (biggestLoser) return `${biggestLoser.ticker} weighing on a quietly red tape`
-    return `Sellers probing support — watchlist drifting lower without conviction`
+    const phrases = biggestLoser ? [
+      `${biggestLoser.ticker} is the problem child today — dragging the book lower`,
+      `Quiet selling pressure building — ${biggestLoser.ticker} the weakest link`,
+      `The tape is leaking lower and ${biggestLoser.ticker} is leading the way down`,
+    ] : [
+      `The book is drifting red — no urgency, but no buyers either`,
+      `Sellers in control, quietly — nothing dramatic, just persistent`,
+    ]
+    return phrases[new Date().getMinutes() % phrases.length]
   }
 
-  // ── MIXED / FLAT ─────────────────────────────────────────────────────────
+  // ── MIXED / FLAT ──────────────────────────────────────────────────────────
+  const hour = new Date().getHours()
   const mixedPhrases = [
-    'Conviction absent — market waiting for something to trade against',
-    'Tape going nowhere fast — coiling for a directional move',
-    'No trend, no edge — patience is the position right now',
-    'Range-bound session — neither side willing to commit',
+    'The market is telling you nothing right now — that is also information',
+    'No edge in either direction — the tape is coiling, not moving',
+    'Green and red in equal measure — the watchlist is waiting for a catalyst',
+    'Flat is a position too — the tape has no conviction right now',
+    'Neither side wants to commit — chop until something breaks',
+    'The market is digesting. Patience beats forcing a read here.',
   ]
-  return mixedPhrases[new Date().getDate() % mixedPhrases.length]
+  return mixedPhrases[hour % mixedPhrases.length]
 }
 
 function buildSummary(params: {
