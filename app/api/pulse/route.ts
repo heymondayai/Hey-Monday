@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase-admin'
 
 const cache = new Map<string, { data: any; fetchedAt: number }>()
-const CACHE_TTL = 30 * 1000
+const CACHE_TTL = 0
 
 const refreshLimits = new Map<string, { count: number; resetAt: number }>()
-const MAX_REFRESHES_PER_DAY = 20
+const MAX_REFRESHES_PER_DAY = 2
 
 type WatchlistItem = {
   ticker: string
