@@ -1082,6 +1082,8 @@ wakePreferredOnRef.current = initialWakeOn
   }
 
   async function fetchPulse(type: string, wl: typeof watchlist) {
+    const wlWithPrices = wl.filter(w => w.change != null && w.change !== '')
+    if (!wlWithPrices.length) return
     setPulseLoading(true)
     try { const res = await fetch('/api/pulse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ watchlist: wl, traderType: type, prices: tickerData }) }); const data = await res.json(); if (data.pulse) setPulse(data.pulse) }
     catch {} finally { setPulseLoading(false) }
