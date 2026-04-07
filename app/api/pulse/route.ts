@@ -423,4 +423,4 @@ export async function POST(req: NextRequest) {
     console.error('[pulse] Error:', err.message)
     return NextResponse.json({ pulse: null })
   }
-}
+}// force redeploy Tue Apr  7 00:53:41 MST 2026
