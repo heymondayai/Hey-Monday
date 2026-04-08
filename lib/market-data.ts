@@ -843,6 +843,47 @@ export function formatEarningsCalendar(events: EarningsEvent[]): string {
   return lines.join('\n')
 }
 
+// ── TWELVE DATA — LIVE QUOTE ──────────────────────────────────────────────────
+
+export interface LiveQuote {
+  sym: string
+  price: string
+  change: string
+  changePct: string
+  up: boolean
+}
+
+export async function fetchLivePrices(symbols: string[]): Promise<LiveQuote[]> {
+  const key = process.env.TWELVE_DATA_API_KEY
+  if (!key || !symbols.length) return []
+  try {
+    const syms = symbols.slice(0, 8).join(',')
+    const res = await fetch(
+      `https://api.twelvedata.com/quote?symbol=${syms}&apikey=${key}`,
+      { cache: 'no-store' }
+    )
+    if (!res.ok) return []
+    const raw = await res.json()
+    return symbols.map(sym => {
+      const entry = symbols.length === 1 ? raw : raw[sym]
+      if (!entry || entry.status === 'error') return null
+      const price = parseFloat(entry.close ?? entry.price ?? '0')
+      const prevClose = parseFloat(entry.previous_close ?? '0')
+      const change = price - prevClose
+      const changePct = prevClose !== 0 ? (change / prevClose) * 100 : 0
+      return {
+        sym,
+        price: price.toFixed(2),
+        change: `${change >= 0 ? '+' : ''}${change.toFixed(2)}`,
+        changePct: `${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%`,
+        up: change >= 0,
+      }
+    }).filter(Boolean) as LiveQuote[]
+  } catch {
+    return []
+  }
+}
+
 export function formatSectorPerformance(sectors: SectorPerformance[]): string {
   if (!sectors.length) return ''
   const lines = ['SECTOR PERFORMANCE TODAY:']

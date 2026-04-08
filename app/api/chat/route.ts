@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import {
+  fetchLivePrices,
   fetchIntraday,
   fetchEconomicCalendar,
   fetchInsiderTransactions,
@@ -557,6 +558,24 @@ const intent = classifyIntent(message, watchlistTickers, priceSymbols)
   : ['SPY', 'QQQ', 'NVDA', 'AAPL', 'TSLA', 'META', 'AMD']
 
 const intradayDateRequest = parseHistoricalIntradayRequest(message)
+
+// ── FRESH PRICE FETCH AT QUESTION TIME ───────────────────────────────────────
+// Only fetch fresh prices for realtime/breaking questions, not historical or casual
+const needsFreshPrices =
+  !intent.isCasualConversation &&
+  !intradayDateRequest.isHistorical &&
+  (intent.mentionsBreaking || intent.needsNews || intent.focusSymbol != null)
+
+const freshPrices = needsFreshPrices
+  ? await fetchLivePrices(
+      intent.focusSymbol
+        ? [intent.focusSymbol, ...watchlistTickers.filter(t => t !== intent.focusSymbol).slice(0, 4)]
+        : watchlistTickers.slice(0, 6)
+    )
+  : []
+
+const effectivePrices = freshPrices.length ? freshPrices : prices
+
 console.log('[chat intraday date request]', {
   message,
   intradayDateRequest,
@@ -612,7 +631,7 @@ console.log('[chat intraday fetch result]', {
   message,
   intent,
   watchlistTickers,
-  prices,
+  prices: effectivePrices,
   news,
   level2,
   intradayData: intradayResult?.data,
