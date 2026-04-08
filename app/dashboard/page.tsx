@@ -1046,14 +1046,10 @@ wakePreferredOnRef.current = initialWakeOn
       const symbols = tickersOverride ?? watchlistRef.current.map((w) => w.ticker)
       fetchNews('watchlist', symbols); fetchNews('general')
     }
-    async function fetchIntraday() {
-      try { const res = await fetch('/api/intraday'); const data = await res.json(); if (data.intraday?.length) setIntraday(data.intraday) } catch {}
-    }
-    fetchIntraday(); fetchMarketState()
-    const newsInterval = setInterval(() => fetchBothNews(), 90 * 1000)
-    const intradayInterval = setInterval(fetchIntraday, 2 * 60 * 1000)
-    const marketStateInterval = setInterval(fetchMarketState, 60 * 1000)
-    return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(intradayInterval); clearInterval(marketStateInterval); clearInterval(pulseScheduler) }
+    fetchMarketState()
+const newsInterval = setInterval(() => fetchBothNews(), 90 * 1000)
+const marketStateInterval = setInterval(fetchMarketState, 60 * 1000)
+return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(marketStateInterval); clearInterval(pulseScheduler) }
   }, [])
 
   async function fetchMarketState() {

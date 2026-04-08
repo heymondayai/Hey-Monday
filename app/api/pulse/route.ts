@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase-admin'
 
 const cache = new Map<string, { data: any; fetchedAt: number }>()
-const CACHE_TTL = 0
+const CACHE_TTL = 30 * 1000
 
 const refreshLimits = new Map<string, { count: number; resetAt: number }>()
 const MAX_REFRESHES_PER_DAY = 2
@@ -423,4 +423,4 @@ export async function POST(req: NextRequest) {
     console.error('[pulse] Error:', err.message)
     return NextResponse.json({ pulse: null })
   }
-}// force redeploy Tue Apr  7 00:53:41 MST 2026
+}
