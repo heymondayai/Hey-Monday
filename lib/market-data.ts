@@ -910,8 +910,27 @@ export function computeSignals(
 ): SymbolSignals | null {
   if (!candles.length) return null
 
+  // Filter to regular session only (9:30 AM ET) for industry-standard VWAP anchor
+  const regularSessionCandles = candles.filter(c => {
+    const timePart = c.datetime.split(' ')[1]
+    if (!timePart) return true
+    const [hh, mm] = timePart.split(':').map(Number)
+    const mins = hh * 60 + mm
+    return mins >= 570 // 9:30 AM = 570 minutes
+  })
+
+  // Use regular session candles for VWAP, all candles for HOD/LOD/trend
+  const vwapCandles = regularSessionCandles.length ? regularSessionCandles : candles
+
   const nums = candles.map(c => ({
     open:   parseFloat(c.open),
+    high:   parseFloat(c.high),
+    low:    parseFloat(c.low),
+    close:  parseFloat(c.close),
+    volume: parseInt(c.volume || '0', 10) || 0,
+  }))
+
+  const vwapNums = vwapCandles.map(c => ({
     high:   parseFloat(c.high),
     low:    parseFloat(c.low),
     close:  parseFloat(c.close),
@@ -935,7 +954,7 @@ export function computeSignals(
   // ── VWAP ──────────────────────────────────────────────────────────────────
   let totalTPV = 0
   let totalVol = 0
-  for (const c of nums) {
+  for (const c of vwapNums) {
     const typicalPrice = (c.high + c.low + c.close) / 3
     totalTPV += typicalPrice * c.volume
     totalVol += c.volume
