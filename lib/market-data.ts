@@ -893,6 +893,8 @@ export interface SymbolSignals {
   vwap: number
   vwapDiffPct: number
   vwapRelation: 'above' | 'below' | 'at'
+  vwapDaily: number
+  vwapDailyDiffPct: number
   volumeRatio: number
   hod: number
   lod: number
@@ -951,7 +953,8 @@ export function computeSignals(
   const nearHod = range > 0 && (hod - price) / range < 0.15
   const nearLod = range > 0 && (price - lod) / range < 0.15
 
-  // ── VWAP ──────────────────────────────────────────────────────────────────
+  // ── VWAP (two anchors) ────────────────────────────────────────────────────
+  // 1. Session VWAP: anchored to 9:30 AM ET (matches TradingView/ThinkOrSwim)
   let totalTPV = 0
   let totalVol = 0
   for (const c of vwapNums) {
@@ -963,6 +966,26 @@ export function computeSignals(
   const vwapDiffPct = vwap !== 0 ? ((price - vwap) / vwap) * 100 : 0
   const vwapRelation: 'above' | 'below' | 'at' =
     Math.abs(vwapDiffPct) < 0.05 ? 'at' : vwapDiffPct > 0 ? 'above' : 'below'
+
+  // 2. Daily VWAP: anchored to 6:00 PM ET prior day (matches futures/prop desk)
+  const dailyAnchorCandles = candles.filter(c => {
+    const timePart = c.datetime.split(' ')[1]
+    if (!timePart) return true
+    const [hh, mm] = timePart.split(':').map(Number)
+    const mins = hh * 60 + mm
+    return mins >= 1080 // 6:00 PM ET = 1080 minutes (prior evening) OR all of next day
+  })
+  const vwapDailyCandles = dailyAnchorCandles.length ? dailyAnchorCandles : candles
+  let dailyTPV = 0
+  let dailyVol = 0
+  for (const c of vwapDailyCandles) {
+    const tp = (parseFloat(c.high) + parseFloat(c.low) + parseFloat(c.close)) / 3
+    const v = parseInt(c.volume || '0', 10) || 0
+    dailyTPV += tp * v
+    dailyVol += v
+  }
+  const vwapDaily = dailyVol > 0 ? dailyTPV / dailyVol : price
+  const vwapDailyDiffPct = vwapDaily !== 0 ? ((price - vwapDaily) / vwapDaily) * 100 : 0
 
   // ── VOLUME RATIO ──────────────────────────────────────────────────────────
   const avgVolume = totalVol / nums.length
@@ -1015,6 +1038,8 @@ export function computeSignals(
     vwap,
     vwapDiffPct,
     vwapRelation,
+    vwapDaily,
+    vwapDailyDiffPct,
     volumeRatio,
     hod,
     lod,
@@ -1048,7 +1073,9 @@ export function formatSignals(signals: SymbolSignals[]): string {
 
     lines.push(`\n${s.ticker}:`)
     lines.push(`  Price: $${s.price.toFixed(2)} (${changeSign}${s.sessionChangePct.toFixed(2)}% session)`)
-    lines.push(`  VWAP: $${s.vwap.toFixed(2)} — ${s.vwapRelation} by ${vwapSign}${s.vwapDiffPct.toFixed(2)}%`)
+    const dailyVwapSign = s.vwapDailyDiffPct >= 0 ? '+' : ''
+    lines.push(`  VWAP (9:30 open): $${s.vwap.toFixed(2)} — ${s.vwapRelation} by ${vwapSign}${s.vwapDiffPct.toFixed(2)}%`)
+    lines.push(`  VWAP (6pm anchor): $${s.vwapDaily.toFixed(2)} — ${s.vwapDailyDiffPct >= 0 ? 'above' : 'below'} by ${dailyVwapSign}${s.vwapDailyDiffPct.toFixed(2)}%`)
     if (s.relativeStrengthVsSpy != null) {
       lines.push(`  vs SPY: ${rsSign}${s.relativeStrengthVsSpy.toFixed(2)}% relative strength`)
     }
