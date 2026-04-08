@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import {
+  computeSignals,
+  formatSignals,
   fetchLivePrices,
   fetchIntraday,
   fetchEconomicCalendar,
@@ -626,6 +628,18 @@ console.log('[chat intraday fetch result]', {
     const tier2: Record<string, any> = {}
     tier2Keys.forEach((k, i) => { tier2[k] = tier2Results[i] })
 
+    // ── SIGNAL PRE-COMPUTATION ───────────────────────────────────────────────
+    const spyCandles = intradayResult.data['SPY'] ?? []
+    const symbolsToSignal = intent.focusSymbol
+      ? [intent.focusSymbol]
+      : intent.requestType === 'briefing' ? intradaySymbols : [intradaySymbols[0]].filter(Boolean)
+
+    const signals = symbolsToSignal
+      .map(sym => computeSignals(sym, intradayResult.data[sym] ?? [], spyCandles))
+      .filter((s): s is NonNullable<typeof s> => s !== null)
+
+    const signalsContext = formatSignals(signals)
+
     // ── ANSWERABILITY DECISION ───────────────────────────────────────────────
     const currentDataEnough = canAnswerFromCurrentData({
   message,
@@ -720,6 +734,7 @@ const fullContextBlocks = [
   marketDataContext,
   newsContext,
   intradayContext,
+  signalsContext,
   exactIntradayQuestionContext,
   calendarContext,
   earningsContext,

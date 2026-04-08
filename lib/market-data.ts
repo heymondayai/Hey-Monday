@@ -884,6 +884,163 @@ export async function fetchLivePrices(symbols: string[]): Promise<LiveQuote[]> {
   }
 }
 
+// ── SIGNAL PRE-COMPUTATION LAYER ─────────────────────────────────────────────
+
+export interface SymbolSignals {
+  ticker: string
+  price: number
+  sessionChangePct: number
+  vwap: number
+  vwapDiffPct: number
+  vwapRelation: 'above' | 'below' | 'at'
+  volumeRatio: number
+  hod: number
+  lod: number
+  nearHod: boolean
+  nearLod: boolean
+  trend: 'higher_highs' | 'lower_lows' | 'ranging'
+  momentum: 'accelerating' | 'decelerating' | 'steady'
+  relativeStrengthVsSpy: number | null
+}
+
+export function computeSignals(
+  ticker: string,
+  candles: Candle[],
+  spyCandles?: Candle[]
+): SymbolSignals | null {
+  if (!candles.length) return null
+
+  const nums = candles.map(c => ({
+    open:   parseFloat(c.open),
+    high:   parseFloat(c.high),
+    low:    parseFloat(c.low),
+    close:  parseFloat(c.close),
+    volume: parseInt(c.volume || '0', 10) || 0,
+  }))
+
+  // ── PRICE & SESSION CHANGE ────────────────────────────────────────────────
+  const price = nums[nums.length - 1].close
+  const sessionOpen = nums[0].open
+  const sessionChangePct = sessionOpen !== 0
+    ? ((price - sessionOpen) / sessionOpen) * 100
+    : 0
+
+  // ── HOD / LOD ─────────────────────────────────────────────────────────────
+  const hod = Math.max(...nums.map(c => c.high))
+  const lod = Math.min(...nums.map(c => c.low))
+  const range = hod - lod
+  const nearHod = range > 0 && (hod - price) / range < 0.15
+  const nearLod = range > 0 && (price - lod) / range < 0.15
+
+  // ── VWAP ──────────────────────────────────────────────────────────────────
+  let totalTPV = 0
+  let totalVol = 0
+  for (const c of nums) {
+    const typicalPrice = (c.high + c.low + c.close) / 3
+    totalTPV += typicalPrice * c.volume
+    totalVol += c.volume
+  }
+  const vwap = totalVol > 0 ? totalTPV / totalVol : price
+  const vwapDiffPct = vwap !== 0 ? ((price - vwap) / vwap) * 100 : 0
+  const vwapRelation: 'above' | 'below' | 'at' =
+    Math.abs(vwapDiffPct) < 0.05 ? 'at' : vwapDiffPct > 0 ? 'above' : 'below'
+
+  // ── VOLUME RATIO ──────────────────────────────────────────────────────────
+  const avgVolume = totalVol / nums.length
+  const recentVolume = nums[nums.length - 1].volume
+  const volumeRatio = avgVolume > 0 ? recentVolume / avgVolume : 1
+
+  // ── TREND (last 6 candles) ────────────────────────────────────────────────
+  const recent = nums.slice(-6)
+  let higherHighs = 0
+  let lowerLows = 0
+  for (let i = 1; i < recent.length; i++) {
+    if (recent[i].high > recent[i - 1].high) higherHighs++
+    if (recent[i].low < recent[i - 1].low) lowerLows++
+  }
+  const trend: 'higher_highs' | 'lower_lows' | 'ranging' =
+    higherHighs >= 4 ? 'higher_highs' :
+    lowerLows >= 4 ? 'lower_lows' : 'ranging'
+
+  // ── MOMENTUM (comparing first half vs second half of session) ─────────────
+  const mid = Math.floor(nums.length / 2)
+  const firstHalf = nums.slice(0, mid)
+  const secondHalf = nums.slice(mid)
+  const firstAvgMove = firstHalf.length > 1
+    ? Math.abs((firstHalf[firstHalf.length - 1].close - firstHalf[0].open) / firstHalf.length)
+    : 0
+  const secondAvgMove = secondHalf.length > 1
+    ? Math.abs((secondHalf[secondHalf.length - 1].close - secondHalf[0].open) / secondHalf.length)
+    : 0
+  const momentum: 'accelerating' | 'decelerating' | 'steady' =
+    secondAvgMove > firstAvgMove * 1.2 ? 'accelerating' :
+    secondAvgMove < firstAvgMove * 0.8 ? 'decelerating' : 'steady'
+
+  // ── RELATIVE STRENGTH VS SPY ──────────────────────────────────────────────
+  let relativeStrengthVsSpy: number | null = null
+  if (spyCandles?.length) {
+    const spyNums = spyCandles.map(c => ({
+      open: parseFloat(c.open),
+      close: parseFloat(c.close),
+    }))
+    const spyOpen = spyNums[0].open
+    const spyClose = spyNums[spyNums.length - 1].close
+    const spyChangePct = spyOpen !== 0 ? ((spyClose - spyOpen) / spyOpen) * 100 : 0
+    relativeStrengthVsSpy = sessionChangePct - spyChangePct
+  }
+
+  return {
+    ticker,
+    price,
+    sessionChangePct,
+    vwap,
+    vwapDiffPct,
+    vwapRelation,
+    volumeRatio,
+    hod,
+    lod,
+    nearHod,
+    nearLod,
+    trend,
+    momentum,
+    relativeStrengthVsSpy,
+  }
+}
+
+export function formatSignals(signals: SymbolSignals[]): string {
+  if (!signals.length) return ''
+
+  const lines = ['INTRADAY SIGNALS (pre-computed — use these instead of raw candles for signal questions):']
+
+  for (const s of signals) {
+    const changeSign = s.sessionChangePct >= 0 ? '+' : ''
+    const vwapSign = s.vwapDiffPct >= 0 ? '+' : ''
+    const rsSign = s.relativeStrengthVsSpy != null && s.relativeStrengthVsSpy >= 0 ? '+' : ''
+
+    const hodLodNote = s.nearHod ? 'near HOD' : s.nearLod ? 'near LOD' : 'mid-range'
+    const trendNote =
+      s.trend === 'higher_highs' ? 'higher highs and higher lows' :
+      s.trend === 'lower_lows' ? 'lower highs and lower lows' : 'ranging'
+    const volNote =
+      s.volumeRatio >= 2 ? `${s.volumeRatio.toFixed(1)}x avg (very elevated)` :
+      s.volumeRatio >= 1.3 ? `${s.volumeRatio.toFixed(1)}x avg (elevated)` :
+      s.volumeRatio <= 0.7 ? `${s.volumeRatio.toFixed(1)}x avg (light)` :
+      `${s.volumeRatio.toFixed(1)}x avg (normal)`
+
+    lines.push(`\n${s.ticker}:`)
+    lines.push(`  Price: $${s.price.toFixed(2)} (${changeSign}${s.sessionChangePct.toFixed(2)}% session)`)
+    lines.push(`  VWAP: $${s.vwap.toFixed(2)} — ${s.vwapRelation} by ${vwapSign}${s.vwapDiffPct.toFixed(2)}%`)
+    if (s.relativeStrengthVsSpy != null) {
+      lines.push(`  vs SPY: ${rsSign}${s.relativeStrengthVsSpy.toFixed(2)}% relative strength`)
+    }
+    lines.push(`  Volume: ${volNote}`)
+    lines.push(`  Range: $${s.lod.toFixed(2)} – $${s.hod.toFixed(2)} (${hodLodNote})`)
+    lines.push(`  Trend: ${trendNote}, momentum ${s.momentum}`)
+  }
+
+  return lines.join('\n')
+}
+
 export function formatSectorPerformance(sectors: SectorPerformance[]): string {
   if (!sectors.length) return ''
   const lines = ['SECTOR PERFORMANCE TODAY:']
