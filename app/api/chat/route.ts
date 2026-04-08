@@ -82,7 +82,7 @@ interface QuestionIntent {
   isOpenEndedWhyQuestion: boolean
 }
 
-interface AnswerabilityInput {
+interface DataQualityInput {
   message: string
   intent: QuestionIntent
   watchlistTickers: string[]
@@ -96,7 +96,10 @@ interface AnswerabilityInput {
   insiderFetched: boolean
   analystFetched: boolean
   optionsFetched: boolean
+  signals?: any[]
 }
+
+type RoutingDecision = 'confident' | 'limited' | 'research'
 
 function extractUppercaseTickerCandidates(message: string): string[] {
   const matches = message.match(/\b[A-Z]{2,6}\b/g) ?? []
@@ -415,72 +418,81 @@ function classifyIntent(
 
 // ── ROUTING DECISION: CAN CURRENT DATA ANSWER THIS? ──────────────────────────
 
-function canAnswerFromCurrentData(input: AnswerabilityInput): boolean {
+function scoreDataQuality(input: DataQualityInput): { score: number; decision: RoutingDecision; reasons: string[] } {
   const {
-    message,
-    intent,
-    watchlistTickers,
-    prices,
-    news,
-    level2,
-    intradayData,
-    marketState,
-    macroFetched,
-    sectorFetched,
-    insiderFetched,
-    analystFetched,
-    optionsFetched,
+    message, intent, watchlistTickers, prices, news,
+    level2, intradayData, marketState,
+    macroFetched, sectorFetched, insiderFetched, analystFetched, optionsFetched, signals,
   } = input
 
-  if (marketState) {
-    const hasCalendar =
-      Array.isArray(marketState.calendarEvents) &&
-      marketState.calendarEvents.length > 0
-
-    const hasMacro =
-      Array.isArray(marketState.macroContext) &&
-      marketState.macroContext.length > 0
-
-    const hasNews =
-      Array.isArray(marketState.keyNews) &&
-      marketState.keyNews.length > 0
-
-    if (intent.needsMacro && (hasCalendar || hasMacro)) return true
-    if (intent.needsNews && hasNews) return true
-  }
-
+  let score = 0
+  const reasons: string[] = []
   const lower = message.toLowerCase()
 
-  if (intent.offWatchlistSymbol) return false
-  if (/\b(powell|yellen|jerome|gensler|trump|biden|elon|musk|cook|jensen|huang|zuckerberg|pichai|bezos|dimon)\b/.test(lower)) return false
-  if (/\b(merger|acquisition|buyout|bankruptcy|lawsuit|fda|press release|conference call|earnings call)\b/.test(lower)) return false
-  if (intent.mentionsBreaking) return false
-  if (intent.needsNews && (!news || news.length === 0)) return false
-  if (intent.needsLevel2 && !level2) return false
-
-  const asksPriceOrMove = /price|trading|up|down|drop|dropped|rally|rallied|move|moving|chart|candle|candlestick|levels|support|resistance|trend|watchlist/.test(lower)
-if (asksPriceOrMove && (!prices || prices.length === 0) && !intradayData) return false
-
-if (intent.mentionsExactTimestamp && !intradayData) return false
-
-  if (intent.needsMacro && !macroFetched) return false
-  if (intent.needsSector && !sectorFetched) return false
-  if (intent.needsInsider && !insiderFetched) return false
-  if (intent.needsAnalyst && !analystFetched) return false
-  if (intent.needsOptions && !optionsFetched) return false
-  if (intent.mentionsExactTimestamp && intent.needsNews) return false
-
-  const mentionsKnownWatchlist = watchlistTickers.some((t) => lower.includes(t.toLowerCase()))
-  if (
-    !mentionsKnownWatchlist &&
-    !intent.focusSymbol &&
-    lower.split(' ').length > 6 &&
-    /(market|stock|sector|economy|crypto|futures)/.test(lower)
-  ) {
-    return false
+  // ── HARD DISQUALIFIERS ────────────────────────────────────────────────────
+  if (intent.offWatchlistSymbol) {
+    return { score: -10, decision: 'research', reasons: ['off-watchlist symbol with no data'] }
+  }
+  if (/\b(powell|yellen|jerome|gensler|trump|biden|elon|musk|cook|jensen|huang|zuckerberg|pichai|bezos|dimon)\b/.test(lower)) {
+    return { score: -10, decision: 'research', reasons: ['mentions named public figure'] }
+  }
+  if (/\b(merger|acquisition|buyout|bankruptcy|lawsuit|fda|press release|conference call|earnings call)\b/.test(lower)) {
+    return { score: -10, decision: 'research', reasons: ['mentions corporate event'] }
+  }
+  if (intent.isCasualConversation) {
+    return { score: 10, decision: 'confident', reasons: ['casual conversation'] }
   }
 
-  return true
+  // ── POSITIVE SIGNALS ──────────────────────────────────────────────────────
+  const focusPrices = prices?.filter((p: any) =>
+    intent.focusSymbol ? p.sym === intent.focusSymbol : watchlistTickers.includes(p.sym)
+  ) ?? []
+  if (focusPrices.length > 0) { score += 2; reasons.push('+2 live prices present') }
+
+  if (intradayData && Object.keys(intradayData).length > 0) {
+    const hasRelevantCandles = intent.focusSymbol
+      ? !!intradayData[intent.focusSymbol]?.length
+      : Object.values(intradayData).some((c: any) => c?.length > 0)
+    if (hasRelevantCandles) { score += 2; reasons.push('+2 intraday candles available') }
+  }
+
+  if (signals && signals.length > 0) { score += 1; reasons.push('+1 pre-computed signals available') }
+
+  if (news && news.length > 0) {
+    const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000
+    const recentNews = news.filter((n: any) => !n.publishedAt || new Date(n.publishedAt).getTime() > twoHoursAgo)
+    if (recentNews.length > 0) { score += 2; reasons.push('+2 recent news present') }
+    else { score += 1; reasons.push('+1 older news present') }
+  }
+
+  if (marketState) {
+    const hasCalendar = Array.isArray(marketState.calendarEvents) && marketState.calendarEvents.length > 0
+    const hasMacro = Array.isArray(marketState.macroContext) && marketState.macroContext.length > 0
+    if ((intent.needsMacro || intent.requestType === 'briefing') && (hasCalendar || hasMacro)) {
+      score += 1; reasons.push('+1 macro/calendar data present')
+    }
+  }
+
+  if (intent.needsSector && sectorFetched) { score += 1; reasons.push('+1 sector data') }
+  if (intent.needsInsider && insiderFetched) { score += 1; reasons.push('+1 insider data') }
+  if (intent.needsAnalyst && analystFetched) { score += 1; reasons.push('+1 analyst data') }
+  if (intent.needsOptions && optionsFetched) { score += 1; reasons.push('+1 options data') }
+  if (intent.needsLevel2 && level2) { score += 2; reasons.push('+2 level 2 data') }
+
+  // ── NEGATIVE SIGNALS ──────────────────────────────────────────────────────
+  if (intent.mentionsBreaking) { score -= 3; reasons.push('-3 mentions breaking/realtime event') }
+  if (intent.mentionsExactTimestamp && !intradayData) { score -= 3; reasons.push('-3 exact timestamp but no intraday data') }
+  if (intent.needsNews && (!news || news.length === 0)) { score -= 2; reasons.push('-2 needs news but feed empty') }
+  if (intent.needsLevel2 && !level2) { score -= 2; reasons.push('-2 needs L2 but unavailable') }
+
+  const mentionsKnownWatchlist = watchlistTickers.some((t) => lower.includes(t.toLowerCase()))
+  if (!mentionsKnownWatchlist && !intent.focusSymbol && lower.split(' ').length > 6 && /(market|stock|sector|economy|crypto|futures)/.test(lower)) {
+    score -= 1; reasons.push('-1 broad market question with no known ticker')
+  }
+
+  // ── ROUTING DECISION ──────────────────────────────────────────────────────
+  const decision: RoutingDecision = score >= 5 ? 'confident' : score >= 2 ? 'limited' : 'research'
+  return { score, decision, reasons }
 }
 
 // ── MAIN HANDLER ─────────────────────────────────────────────────────────────
@@ -641,24 +653,29 @@ console.log('[chat intraday fetch result]', {
     const signalsContext = formatSignals(signals)
 
     // ── ANSWERABILITY DECISION ───────────────────────────────────────────────
-    const currentDataEnough = canAnswerFromCurrentData({
-  message,
-  intent,
-  watchlistTickers,
-  prices: effectivePrices,
-  news,
-  level2,
-  intradayData: intradayResult?.data,
-  marketState: canonicalMarketState,
-  macroFetched: !!macroData,
-  sectorFetched: !!sectorData,
-  insiderFetched: !!tier2.insider,
-  analystFetched: !!tier2.analyst,
-  optionsFetched: !!tier2.options,
-})
+    const { score: dataScore, decision: dataDecision, reasons: scoreReasons } = scoreDataQuality({
+      message,
+      intent,
+      watchlistTickers,
+      prices: effectivePrices,
+      news,
+      level2,
+      intradayData: intradayResult?.data,
+      marketState: canonicalMarketState,
+      macroFetched: !!macroData,
+      sectorFetched: !!sectorData,
+      insiderFetched: !!tier2.insider,
+      analystFetched: !!tier2.analyst,
+      optionsFetched: !!tier2.options,
+      signals,
+    })
 
-    const needsResearchButBlocked = !currentDataEnough && !sonnetAllowed
-    const useLiveSearch = !currentDataEnough && sonnetAllowed
+    console.log(`[chat] data quality score=${dataScore} decision=${dataDecision}`, scoreReasons)
+
+    const currentDataEnough = dataDecision === 'confident' || dataDecision === 'limited'
+    const isLimitedData = dataDecision === 'limited'
+    const needsResearchButBlocked = dataDecision === 'research' && !sonnetAllowed
+    const useLiveSearch = dataDecision === 'research' && sonnetAllowed
 
     // ── CONTEXT BLOCKS ───────────────────────────────────────────────────────
     const watchlistContext = watchlist.length
@@ -855,6 +872,7 @@ CORE RULES:
 13. Never describe the move as bullish or a rally if the broader requested move window was down.
 14. If the current feed does not show a clear catalyst, say there is no clear catalyst in the current feed rather than inventing one.
 15. When using web search, only report facts from actual search results. If search returns no clear results about a specific real-time event, say the search did not surface a clear catalyst rather than inventing one. Never fabricate prices, dates, people, or events.
+${isLimitedData ? `\n16. DATA QUALITY FLAG: The available data for this question is incomplete or may be stale. Answer from what is available but add a brief note that data may be limited. Do not fabricate missing data points.` : ''}
 
 ${lengthRules}`
 
