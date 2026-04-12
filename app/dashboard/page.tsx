@@ -1082,7 +1082,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
     const wlWithPrices = wl.filter(w => w.change != null && w.change !== '')
     if (!wlWithPrices.length) return
     setPulseLoading(true)
-    try { const res = await fetch('/api/pulse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ watchlist: wl, traderType: type, prices: tickerData }) }); const data = await res.json(); if (data.pulse) { setPulse(data.pulse); setPulseTimestamp(formatPulseTimestamp()) } }
+    try { const res = await fetch('/api/pulse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ watchlist: wl, traderType: type, prices: tickerData }) }); const data = await res.json(); if (data.pulse) { setPulse((prev) => { const changed = !prev || prev.headline !== data.pulse.headline || prev.summary !== data.pulse.summary || prev.riskNote !== data.pulse.riskNote; if (changed) setPulseTimestamp(formatPulseTimestamp()); return data.pulse }); } }
     catch {} finally { setPulseLoading(false) }
   }
 
@@ -2468,9 +2468,12 @@ const visibleDaySummaries = useMemo(() => {
                             const data = await res.json()
                             if (data.rateLimited) { alert(data.message); return }
                             if (data.pulse) {
-                              setPulse(data.pulse)
+                              setPulse((prev) => {
+                                const changed = !prev || prev.headline !== data.pulse.headline || prev.summary !== data.pulse.summary || prev.riskNote !== data.pulse.riskNote
+                                if (changed) setPulseTimestamp(formatPulseTimestamp())
+                                return data.pulse
+                              })
                               setPulseRefreshUsed(true)
-                              setPulseTimestamp(formatPulseTimestamp())
                             }
                           } catch {} finally { setPulseLoading(false) }
                         }} style={{ fontSize: '10px', color: pulseRefreshUsed ? T.text7 : T.goldText2, cursor: pulseRefreshUsed ? 'default' : 'pointer', fontFamily: "'DM Mono', monospace", padding: '2px 7px', border: `1px solid ${pulseRefreshUsed ? T.borderItem : T.goldFaint5}` }}>
