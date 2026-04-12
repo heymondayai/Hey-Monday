@@ -102,249 +102,105 @@ function getMarketSentiment(normalized: ReturnType<typeof normalizeWatchlist>): 
   return { bullCount, bearCount, avgChange, sentiment }
 }
 
-function buildHeadline(params: {
+async function generatePulseWithClaude(params: {
   traderType: string
-  biggestGainer: { ticker: string; changePct: number | null } | null
-  biggestLoser: { ticker: string; changePct: number | null } | null
-  macroLead: string | null
   normalizedWatchlist: ReturnType<typeof normalizeWatchlist>
   latestMarketState: MarketStateRow
-}): string {
-  const { traderType, biggestGainer, biggestLoser, macroLead, normalizedWatchlist, latestMarketState } = params
-  const { sentiment, bullCount, bearCount } = getMarketSentiment(normalizedWatchlist)
+}): Promise<{ headline: string; summary: string; riskNote: string }> {
+  const { traderType, normalizedWatchlist, latestMarketState } = params
+  const { sentiment, bullCount, bearCount, avgChange } = getMarketSentiment(normalizedWatchlist)
+
+  const sortedByStrength = [...normalizedWatchlist]
+    .filter(w => w.changePct != null)
+    .sort((a, b) => (b.changePct ?? -Infinity) - (a.changePct ?? -Infinity))
+
+  const biggestGainer = sortedByStrength[0] ?? null
+  const biggestLoser = sortedByStrength[sortedByStrength.length - 1] ?? null
   const total = normalizedWatchlist.filter(w => w.changePct != null).length
 
-  const firstEvent = latestMarketState?.calendar_events?.[0]
-  const macro = latestMarketState?.macro_context?.find(
-    (m: any) => m.label && m.value && !m.label.includes('10Y') && !m.label.includes('Treasury')
-  ) ?? null
+  const watchlistStr = normalizedWatchlist
+    .filter(w => w.changePct != null)
+    .map(w => `${w.ticker}: ${w.changePct! >= 0 ? '+' : ''}${w.changePct!.toFixed(2)}%`)
+    .join(', ')
 
-  // ── EVENT-DRIVEN (highest priority) ──────────────────────────────────────
-  if (firstEvent?.name && firstEvent?.impact === 'HIGH') {
-    const eventShort = firstEvent.name.replace('Federal Reserve', 'Fed').replace('Nonfarm Payrolls', 'Payrolls')
-    if (sentiment === 'strongly_bullish' || sentiment === 'bullish')
-      return `Bulls position ahead of ${eventShort} — risk appetite holding`
-    if (sentiment === 'strongly_bearish' || sentiment === 'bearish')
-      return `Tape retreats as traders hedge into ${eventShort}`
-    return `Markets on hold — ${eventShort} looms as the session's defining moment`
+  const macroItems = (latestMarketState?.macro_context ?? [])
+    .filter((m: any) => m.label && m.value && !m.label.includes('10Y') && !m.label.includes('Treasury') && !m.label.includes('2Y'))
+    .slice(0, 3)
+    .map((m: any) => `${m.label}: ${m.value}${m.implication ? ` (${m.implication})` : ''}`)
+    .join(', ')
+
+  const calendarItems = (latestMarketState?.calendar_events ?? [])
+    .slice(0, 3)
+    .map((e: any) => `${e.name}${e.time ? ` at ${e.time} ET` : ''}${e.impact ? ` [${e.impact}]` : ''}`)
+    .join('; ')
+
+  const traderLabel =
+    traderType === 'day' ? 'day trader (intraday focus, same-session exits)' :
+    traderType === 'longterm' ? 'long-term investor (weeks to years, fundamentals-focused)' :
+    'swing trader (multi-day to multi-week holds)'
+
+  const now = new Date()
+  const etTime = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'long', month: 'long', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  }).format(now)
+
+  const prompt = `You are Monday, an AI market intelligence assistant. Generate a fresh market pulse for a trader right now.
+
+CURRENT TIME (ET): ${etTime}
+MARKET STATUS: ${latestMarketState?.market_status ?? 'Unknown'}
+TRADER TYPE: ${traderLabel}
+
+WATCHLIST PERFORMANCE TODAY:
+${watchlistStr || 'No price data available yet'}
+
+OVERALL SENTIMENT: ${sentiment.replace('_', ' ')} (${bullCount} up, ${bearCount} down out of ${total}, avg ${avgChange >= 0 ? '+' : ''}${avgChange.toFixed(2)}%)
+${biggestGainer ? `BIGGEST MOVER UP: ${biggestGainer.ticker} ${biggestGainer.changePct! >= 0 ? '+' : ''}${biggestGainer.changePct!.toFixed(2)}%` : ''}
+${biggestLoser && biggestLoser.ticker !== biggestGainer?.ticker ? `BIGGEST MOVER DOWN: ${biggestLoser.ticker} ${biggestLoser.changePct!.toFixed(2)}%` : ''}
+
+MACRO DATA:
+${macroItems || 'No macro data available'}
+
+UPCOMING ECONOMIC EVENTS:
+${calendarItems || 'No scheduled events'}
+
+Generate exactly three things. Be specific to TODAY's actual numbers and tickers — never generic. Write for a sophisticated retail trader. No unexplained jargon. Complete sentences only.
+
+Respond in this exact JSON format with no other text:
+{
+  "headline": "One punchy sentence (max 15 words) capturing the single most important thing happening right now. Reference actual tickers or data. No clichés.",
+  "summary": "Two to three complete sentences. First: what is actually happening across the watchlist, referencing specific tickers and their percentage moves. Second: what the macro backdrop means for these specific names today. Third: one specific observation for this trader type given what is happening — plain English, no unexplained jargon.",
+  "riskNote": "One complete sentence identifying the single biggest risk to positions right now. If there is an upcoming economic event, name it and explain in plain terms why it matters to this watchlist."
+}`
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY!,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 400,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  })
+
+  if (!response.ok) throw new Error(`Claude API error: ${response.status}`)
+
+  const data = await response.json()
+  const text = data.content?.[0]?.text?.trim() ?? ''
+  const jsonMatch = text.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) throw new Error('No JSON in Claude response')
+  const parsed = JSON.parse(jsonMatch[0])
+
+  return {
+    headline: parsed.headline ?? 'Unable to generate pulse right now.',
+    summary: parsed.summary ?? '',
+    riskNote: parsed.riskNote ?? '',
   }
-
-  // ── MACRO-DRIVEN (only fire on strong sentiment + known catalyst) ─────────
-  if (macro?.label && (sentiment === 'strongly_bullish' || sentiment === 'strongly_bearish' || sentiment === 'bearish')) {
-    const isFed = macro.label.includes('Fed')
-    const isCpi = macro.label.includes('CPI') || macro.label.includes('Inflation')
-    const isUnemployment = macro.label.includes('Unemployment')
-    if (isFed && sentiment === 'strongly_bearish')
-      return `Fed policy overhang keeps the lid on — sellers finding no resistance`
-    if (isFed && sentiment === 'strongly_bullish')
-      return `Bulls betting the Fed blinks — risk appetite creeping back`
-    if (isCpi && (sentiment === 'bearish' || sentiment === 'strongly_bearish'))
-      return `Inflation narrative back in focus — growth names taking the hit`
-    if (isUnemployment && sentiment === 'strongly_bullish')
-      return `Labor market strength underpins the bid — buyers stepping up`
-  }
-
-  // ── DIVERGENCE ────────────────────────────────────────────────────────────
-  if (biggestGainer && biggestLoser) {
-    const gPct = biggestGainer.changePct ?? 0
-    const lPct = biggestLoser.changePct ?? 0
-    const spread = Math.abs(gPct - lPct)
-
-    if (spread > 6 && gPct > 3)
-      return `${biggestGainer.ticker} is running while everything else stands still`
-    if (spread > 6 && lPct < -3)
-      return `${biggestLoser.ticker} is getting hit — the rest of the book is holding its breath`
-    if (spread > 4 && gPct > 0 && lPct < 0)
-      return `${biggestGainer.ticker} wants to go higher. ${biggestLoser.ticker} disagrees.`
-    if (spread > 4)
-      return `A split tape — ${biggestGainer.ticker} pulling one way, ${biggestLoser.ticker} the other`
-  }
-
-  // ── BROAD SENTIMENT ───────────────────────────────────────────────────────
-  if (sentiment === 'strongly_bullish') {
-    const phrases = [
-      `Everything on your watchlist is moving — this is what a real bid looks like`,
-      `${bullCount} of ${total} names green and pushing — the tape has a pulse today`,
-      `Broad strength across the book — not a one-name story, the whole list is working`,
-      `Risk is on and the watchlist knows it — ${bullCount} of ${total} moving higher`,
-    ]
-    return phrases[new Date().getHours() % phrases.length]
-  }
-
-  if (sentiment === 'strongly_bearish') {
-    const phrases = [
-      `Nowhere to hide — ${bearCount} of ${total} names under pressure simultaneously`,
-      `The whole book is getting hit. This isn't noise, it's a move.`,
-      `Sellers showing up everywhere on your watchlist — broad and deliberate`,
-      `Risk-off is the only trade right now — ${bearCount} names falling in unison`,
-    ]
-    return phrases[new Date().getHours() % phrases.length]
-  }
-
-  if (sentiment === 'bullish') {
-    const phrases = biggestGainer ? [
-      `${biggestGainer.ticker} is doing the heavy lifting — the rest of the book is quietly green`,
-      `A controlled grind higher — ${biggestGainer.ticker} leading, others following`,
-      `Buyers are present but not aggressive — ${biggestGainer.ticker} the cleanest name`,
-    ] : [
-      `Green across the board, but nobody is in a hurry`,
-      `The watchlist is drifting higher — orderly, not exciting`,
-    ]
-    return phrases[new Date().getMinutes() % phrases.length]
-  }
-
-  if (sentiment === 'bearish') {
-    const phrases = biggestLoser ? [
-      `${biggestLoser.ticker} is the problem child today — dragging the book lower`,
-      `Quiet selling pressure building — ${biggestLoser.ticker} the weakest link`,
-      `The tape is leaking lower and ${biggestLoser.ticker} is leading the way down`,
-    ] : [
-      `The book is drifting red — no urgency, but no buyers either`,
-      `Sellers in control, quietly — nothing dramatic, just persistent`,
-    ]
-    return phrases[new Date().getMinutes() % phrases.length]
-  }
-
-  // ── MIXED / FLAT ──────────────────────────────────────────────────────────
-  const hour = new Date().getHours()
-  const mixedPhrases = [
-    'The market is telling you nothing right now — that is also information',
-    'No edge in either direction — the tape is coiling, not moving',
-    'Green and red in equal measure — the watchlist is waiting for a catalyst',
-    'Flat is a position too — the tape has no conviction right now',
-    'Neither side wants to commit — chop until something breaks',
-    'The market is digesting. Patience beats forcing a read here.',
-  ]
-  return mixedPhrases[hour % mixedPhrases.length]
-}
-
-function buildSummary(params: {
-  traderType: string
-  normalizedWatchlist: ReturnType<typeof normalizeWatchlist>
-  biggestGainer: { ticker: string; price: number | null; changePct: number | null } | null
-  biggestLoser: { ticker: string; price: number | null; changePct: number | null } | null
-  latestMarketState: MarketStateRow
-}): string {
-  const { traderType, normalizedWatchlist, biggestGainer, biggestLoser, latestMarketState } = params
-  const { sentiment, avgChange } = getMarketSentiment(normalizedWatchlist)
-  const sentences: string[] = []
-
-  // ── LEAD: narrative price action, no raw numbers ──────────────────────────
-  if (biggestGainer && biggestLoser) {
-    const spread = Math.abs((biggestGainer.changePct ?? 0) - (biggestLoser.changePct ?? 0))
-    if (spread > 5) {
-      sentences.push(`${biggestGainer.ticker} and ${biggestLoser.ticker} are the session's defining divergence — one running, one breaking, with the rest of the book stuck in between.`)
-    } else if (sentiment === 'bullish' || sentiment === 'strongly_bullish') {
-      sentences.push(`${biggestGainer.ticker} is leading the move with ${biggestLoser.ticker} as the notable laggard — overall the book is tilting in the right direction.`)
-    } else if (sentiment === 'bearish' || sentiment === 'strongly_bearish') {
-      sentences.push(`${biggestLoser.ticker} is the weakest name in the book today, with ${biggestGainer.ticker} the lone bright spot holding against the broader selling.`)
-    } else {
-      sentences.push(`${biggestGainer.ticker} is the session's relative leader while ${biggestLoser.ticker} is the drag — the watchlist is split with no clear directional conviction.`)
-    }
-  } else if (biggestGainer) {
-    sentences.push(`${biggestGainer.ticker} is carrying the watchlist today — no other name matching its strength, which makes the move harder to trust as a broad signal.`)
-  } else if (biggestLoser) {
-    sentences.push(`${biggestLoser.ticker} is the main weight on the watchlist today — without a offsetting leader, the book is leaning defensive.`)
-  } else {
-    sentences.push('Not enough price data to identify relative strength across the watchlist right now.')
-  }
-
-  // ── MACRO LAYER ───────────────────────────────────────────────────────────
-  const macro = latestMarketState?.macro_context?.find(
-    (m: any) => m.label && m.value &&
-    !m.label.includes('10Y') &&
-    !m.label.includes('Treasury') &&
-    !m.label.includes('2Y')
-  ) ?? null
-  if (macro?.label && macro?.value) {
-    if (macro.implication) {
-      sentences.push(`${macro.label} at ${macro.value} — ${macro.implication.toLowerCase().replace(/\.$/, '')}.`)
-    } else {
-      sentences.push(`Macro backdrop: ${macro.label} at ${macro.value}.`)
-    }
-  } else if (latestMarketState?.summary) {
-    const cleaned = latestMarketState.summary
-      .replace(/10Y yield is [^.]+\./g, '')
-      .replace(/^(AFTER-HOURS SESSION|MARKET IS OPEN|PRE-MARKET SESSION|MARKET IS CLOSED)[^.]*\.\s*/i, '')
-      .trim()
-    if (cleaned) sentences.push(cleaned)
-  }
-
-  // ── TRADER LENS: situational, not boilerplate ─────────────────────────────
-  if (traderType === 'day') {
-    if (sentiment === 'strongly_bullish' || sentiment === 'bullish')
-      sentences.push('Intraday edge favors the long side — but confirm momentum is holding on retests before adding size, green opens that fade by 10:30 tend to trap.')
-    else if (sentiment === 'strongly_bearish' || sentiment === 'bearish')
-      sentences.push('Bearish intraday setups are in play — be cautious fading aggressively though, short-covering rips in a weak tape can be violent and quick.')
-    else
-      sentences.push('Choppy tape is the day trader\'s worst environment — the edge is in waiting, not in forcing a trade from a range that hasn\'t resolved yet.')
-  } else if (traderType === 'longterm') {
-    if (Math.abs(avgChange) < 0.5)
-      sentences.push('A quiet session changes nothing for longer time horizons — the macro trend and earnings trajectory matter far more than daily noise.')
-    else if (sentiment === 'bearish' || sentiment === 'strongly_bearish')
-      sentences.push('Drawdowns in fundamentally sound names are the long-term investor\'s entry opportunity — the question is whether the thesis is intact, not whether the price is down.')
-    else
-      sentences.push('Strength in the session is encouraging but rarely enough on its own — the macro trend, not a single green day, is what builds a durable thesis.')
-  } else {
-    if (sentiment === 'mixed')
-      sentences.push('Mixed tapes often precede a directional break — the swing setup is building, not ready. Marking the range extremes now gives you the levels to trade against when it resolves.')
-    else if (sentiment === 'strongly_bullish' || sentiment === 'bullish')
-      sentences.push('Swing setups are improving — the question now is whether today\'s strength holds into the close and prints a higher high, which would shift the short-term structure.')
-    else
-      sentences.push('Swing positioning demands patience here — selling into weakness without a base risks getting shaken out before the real move develops.')
-  }
-
-  return sentences.join(' ')
-}
-
-function buildRiskNote(params: {
-  latestMarketState: MarketStateRow
-  biggestGainer: { ticker: string; changePct: number | null } | null
-  biggestLoser: { ticker: string; changePct: number | null } | null
-  normalizedWatchlist: ReturnType<typeof normalizeWatchlist>
-}): string {
-  const { latestMarketState, biggestGainer, biggestLoser, normalizedWatchlist } = params
-  const { sentiment } = getMarketSentiment(normalizedWatchlist)
-
-  // Upcoming catalyst (highest priority)
-  const firstEvent = latestMarketState?.calendar_events?.[0]
-  if (firstEvent?.name) {
-    const time = firstEvent.time ? ` at ${firstEvent.time}` : ''
-    const impact = firstEvent.impact === 'HIGH' ? 'high-impact ' : ''
-    return `${firstEvent.name}${time} is the next ${impact}catalyst on the tape — positions taken ahead of binary events carry event risk that stops and sizing can't fully protect against.`
-  }
-
-  // Macro risk
-  const macro = latestMarketState?.macro_context?.find(
-    (m: any) => m.label && m.value &&
-    !m.label.includes('10Y') &&
-    !m.label.includes('Treasury') &&
-    !m.label.includes('2Y')
-  ) ?? null
-  if (macro?.label && macro?.value) {
-    if (sentiment === 'strongly_bullish' || sentiment === 'bullish') {
-      return `Don't let a strong session create false confidence while ${macro.label} stays at ${macro.value} — macro headwinds don't disappear on green days, they compress the runway for follow-through.`
-    }
-    if (sentiment === 'strongly_bearish' || sentiment === 'bearish') {
-      return `With ${macro.label} at ${macro.value} and broad selling pressure, the risk is adding into a move that has further to go — let the tape show a base before stepping in.`
-    }
-    return `${macro.label} at ${macro.value} remains the macro anchor — watch for a shift here before assuming the current tape bias has changed.`
-  }
-
-  // Relative divergence risk
-  if (biggestGainer && biggestLoser) {
-    const spread = Math.abs((biggestGainer.changePct ?? 0) - (biggestLoser.changePct ?? 0))
-    if (spread > 5) {
-      return `The ${spread.toFixed(1)}pt spread between ${biggestGainer.ticker} and ${biggestLoser.ticker} is unusually wide — divergence this sharp often mean-reverts, so be cautious extrapolating either move.`
-    }
-  }
-
-  // Generic but still specific
-  if (biggestGainer && (biggestGainer.changePct ?? 0) > 2) {
-    return `${biggestGainer.ticker}'s outperformance is notable, but leadership from a single name without broader confirmation is fragile — wait for the rest of the watchlist to confirm before sizing up.`
-  }
-
-  return 'No single catalyst dominates the tape right now — the main risk is overtrading a ranging market and giving back edge on commissions and spread.'
 }
 
 export async function POST(req: NextRequest) {
@@ -395,26 +251,11 @@ export async function POST(req: NextRequest) {
       .filter((w) => w.changePct != null)
       .sort((a, b) => (b.changePct ?? -Infinity) - (a.changePct ?? -Infinity))
 
-    const biggestGainer = sortedByStrength[0] ?? null
-    const biggestLoser = [...sortedByStrength].sort((a, b) => (a.changePct ?? Infinity) - (b.changePct ?? Infinity))[0] ?? null
-
-    const macroLead =
-      latestMarketState?.macro_context?.[0]?.label && latestMarketState?.macro_context?.[0]?.value
-        ? `${latestMarketState.macro_context[0].label} at ${latestMarketState.macro_context[0].value}`
-        : null
-
-    const pulse = {
-      headline: buildHeadline({
-        traderType, biggestGainer, biggestLoser, macroLead,
-        normalizedWatchlist, latestMarketState,
-      }),
-      summary: buildSummary({
-        traderType, normalizedWatchlist, biggestGainer, biggestLoser, latestMarketState,
-      }),
-      riskNote: buildRiskNote({
-        latestMarketState, biggestGainer, biggestLoser, normalizedWatchlist,
-      }),
-    }
+    const pulse = await generatePulseWithClaude({
+      traderType,
+      normalizedWatchlist,
+      latestMarketState,
+    })
 
     const result = { pulse }
     cache.set(cacheKey, { data: result, fetchedAt: Date.now() })
