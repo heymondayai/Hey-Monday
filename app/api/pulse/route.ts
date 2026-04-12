@@ -165,13 +165,13 @@ ${macroItems || 'No macro data available'}
 UPCOMING ECONOMIC EVENTS:
 ${calendarItems || 'No scheduled events'}
 
-Generate exactly three things. Be specific to TODAY's actual numbers and tickers — never generic. Write for a sophisticated retail trader. No unexplained jargon. Complete sentences only.
+Generate exactly three things. Use ONLY the exact numbers and tickers provided above — do not invent, estimate, or approximate any figures. Write for a sophisticated retail trader. No unexplained jargon. Complete sentences only. If the market is closed, say so and frame everything in past tense.
 
 Respond in this exact JSON format with no other text:
 {
-  "headline": "One punchy sentence (max 15 words) capturing the single most important thing happening right now. Reference actual tickers or data. No clichés.",
-  "summary": "Two to three complete sentences. First: what is actually happening across the watchlist, referencing specific tickers and their percentage moves. Second: what the macro backdrop means for these specific names today. Third: one specific observation for this trader type given what is happening — plain English, no unexplained jargon.",
-  "riskNote": "One complete sentence identifying the single biggest risk to positions right now. If there is an upcoming economic event, name it and explain in plain terms why it matters to this watchlist."
+  "headline": "A news-style headline sentence capturing the most important thing happening right now. Reference actual tickers and percentages. Be specific and descriptive — this should read like a Bloomberg or WSJ headline.",
+  "summary": "Exactly two crisp sentences. First: name the biggest winner and biggest loser on the watchlist by ticker and percentage, and describe what the split means for the overall book. Second: one sharp, specific observation for this trader type about what to do or watch given today's moves — plain English only.",
+  "riskNote": "One tight sentence — max 20 words — naming the single biggest risk right now. If an upcoming event, name it and state exactly why it moves this watchlist."
 }`
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
