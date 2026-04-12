@@ -778,6 +778,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [pulse, setPulse] = useState<{ headline: string; summary: string; riskNote: string } | null>(null)
   const [pulseLoading, setPulseLoading] = useState(false)
   const [pulseRefreshUsed, setPulseRefreshUsed] = useState(false)
+  const [pulseTimestamp, setPulseTimestamp] = useState<string | null>(null)
   const [marketState, setMarketState] = useState<any | null>(null)
   const [marketStateLoading, setMarketStateLoading] = useState(false)
   const [intraday, setIntraday] = useState<any[]>([])
@@ -1081,7 +1082,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
     const wlWithPrices = wl.filter(w => w.change != null && w.change !== '')
     if (!wlWithPrices.length) return
     setPulseLoading(true)
-    try { const res = await fetch('/api/pulse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ watchlist: wl, traderType: type, prices: tickerData }) }); const data = await res.json(); if (data.pulse) setPulse(data.pulse) }
+    try { const res = await fetch('/api/pulse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ watchlist: wl, traderType: type, prices: tickerData }) }); const data = await res.json(); if (data.pulse) { setPulse(data.pulse); setPulseTimestamp(formatPulseTimestamp()) } }
     catch {} finally { setPulseLoading(false) }
   }
 
@@ -1570,7 +1571,26 @@ const visibleDaySummaries = useMemo(() => {
   const previousPastSummary = selectedPastSummaryIndex >= 0 && selectedPastSummaryIndex < orderedPastBriefings.length - 1 ? orderedPastBriefings[selectedPastSummaryIndex + 1] : null
   const summaryDayLabels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
 
-  
+  function formatPulseTimestamp(): string {
+    const now = new Date()
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(now).replace(',', ' ·')
+  }
+
+  if (!user) {
+    return (
+      <div style={{ background: T.pageBg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.gold, fontFamily: 'Georgia, serif', fontSize: '12px', letterSpacing: '0.2em' }}>
+        LOADING
+      </div>
+    )
+  }
 
   if (!user) {
     return (
@@ -2430,21 +2450,32 @@ const visibleDaySummaries = useMemo(() => {
                       <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600 }}>
                         <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: T.gold }} />{pulseLabel}
                       </div>
-                      <div onClick={async () => {
-                        if (pulseRefreshUsed) return
-                        try {
-                          setPulseLoading(true)
-                          const res = await fetch('/api/pulse', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ watchlist, traderType, prices: tickerData, isManualRefresh: true }),
-                          })
-                          const data = await res.json()
-                          if (data.rateLimited) { alert(data.message); return }
-                          if (data.pulse) { setPulse(data.pulse); setPulseRefreshUsed(true) }
-                        } catch {} finally { setPulseLoading(false) }
-                      }} style={{ fontSize: '10px', color: pulseRefreshUsed ? T.text7 : T.goldText2, cursor: pulseRefreshUsed ? 'default' : 'pointer', fontFamily: "'DM Mono', monospace", padding: '2px 7px', border: `1px solid ${pulseRefreshUsed ? T.borderItem : T.goldFaint5}` }}>
-                        {pulseLoading ? '...' : pulseRefreshUsed ? '↻ Used' : '↻ Refresh'}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {pulseTimestamp && (
+                          <div style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace", letterSpacing: '0.04em' }}>
+                            {pulseTimestamp}
+                          </div>
+                        )}
+                        <div onClick={async () => {
+                          if (pulseRefreshUsed) return
+                          try {
+                            setPulseLoading(true)
+                            const res = await fetch('/api/pulse', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ watchlist, traderType, prices: tickerData, isManualRefresh: true }),
+                            })
+                            const data = await res.json()
+                            if (data.rateLimited) { alert(data.message); return }
+                            if (data.pulse) {
+                              setPulse(data.pulse)
+                              setPulseRefreshUsed(true)
+                              setPulseTimestamp(formatPulseTimestamp())
+                            }
+                          } catch {} finally { setPulseLoading(false) }
+                        }} style={{ fontSize: '10px', color: pulseRefreshUsed ? T.text7 : T.goldText2, cursor: pulseRefreshUsed ? 'default' : 'pointer', fontFamily: "'DM Mono', monospace", padding: '2px 7px', border: `1px solid ${pulseRefreshUsed ? T.borderItem : T.goldFaint5}` }}>
+                          {pulseLoading ? '...' : pulseRefreshUsed ? '↻ Used' : '↻ Refresh'}
+                        </div>
                       </div>
                     </div>
                     <div style={{ padding: '14px 18px', flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto' }}>
