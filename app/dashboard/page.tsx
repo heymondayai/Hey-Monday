@@ -777,8 +777,18 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [generalNews, setGeneralNews] = useState<any[]>([])
   const [pulse, setPulse] = useState<{ headline: string; summary: string; riskNote: string } | null>(null)
   const [pulseLoading, setPulseLoading] = useState(false)
-  const [pulseRefreshUsed, setPulseRefreshUsed] = useState(false)
-  const [pulseTimestamp, setPulseTimestamp] = useState<string | null>(null)
+  const [pulseRefreshUsed, setPulseRefreshUsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+    const stored = localStorage.getItem('heymonday_pulse_refresh_used')
+    if (!stored) return false
+    try { const parsed = JSON.parse(stored); return parsed.date === today ? parsed.used : false }
+    catch { return false }
+  })
+  const [pulseTimestamp, setPulseTimestamp] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null
+    return localStorage.getItem('heymonday_pulse_timestamp') ?? null
+  })
   const [marketState, setMarketState] = useState<any | null>(null)
   const [marketStateLoading, setMarketStateLoading] = useState(false)
   const [intraday, setIntraday] = useState<any[]>([])
@@ -1082,7 +1092,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
     const wlWithPrices = wl.filter(w => w.change != null && w.change !== '')
     if (!wlWithPrices.length) return
     setPulseLoading(true)
-    try { const res = await fetch('/api/pulse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ watchlist: wl, traderType: type, prices: tickerData }) }); const data = await res.json(); if (data.pulse) { setPulse((prev) => { const isFirstLoad = !prev; const changed = prev && (prev.headline !== data.pulse.headline || prev.summary !== data.pulse.summary || prev.riskNote !== data.pulse.riskNote); if (changed && !isFirstLoad) setPulseTimestamp(formatPulseTimestamp()); return data.pulse }); } }
+    try { const res = await fetch('/api/pulse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ watchlist: wl, traderType: type, prices: tickerData }) }); const data = await res.json(); if (data.pulse) { setPulse((prev) => { const isFirstLoad = !prev; const changed = prev && (prev.headline !== data.pulse.headline || prev.summary !== data.pulse.summary || prev.riskNote !== data.pulse.riskNote); if (changed && !isFirstLoad) { const ts = formatPulseTimestamp(); setPulseTimestamp(ts); localStorage.setItem('heymonday_pulse_timestamp', ts) } return data.pulse }); } }
     catch {} finally { setPulseLoading(false) }
   }
 
@@ -1700,10 +1710,12 @@ const visibleDaySummaries = useMemo(() => {
                       if (data.pulse) {
                         setPulse((prev) => {
                           const changed = !prev || prev.headline !== data.pulse.headline || prev.summary !== data.pulse.summary || prev.riskNote !== data.pulse.riskNote
-                          if (changed) setPulseTimestamp(formatPulseTimestamp())
+                          if (changed) { const ts = formatPulseTimestamp(); setPulseTimestamp(ts); localStorage.setItem('heymonday_pulse_timestamp', ts) }
                           return data.pulse
                         })
                         setPulseRefreshUsed(true)
+const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+localStorage.setItem('heymonday_pulse_refresh_used', JSON.stringify({ date: today, used: true }))
                       }
                     } catch {} finally { setPulseLoading(false) }
                   }} style={{ fontSize: '10px', color: pulseRefreshUsed ? T.text7 : T.goldText2, cursor: pulseRefreshUsed ? 'default' : 'pointer', fontFamily: "'DM Mono', monospace", padding: '2px 8px', border: `1px solid ${pulseRefreshUsed ? T.borderItem : T.goldFaint5}` }}>
@@ -2477,10 +2489,12 @@ const visibleDaySummaries = useMemo(() => {
                             if (data.pulse) {
                               setPulse((prev) => {
                                 const changed = !prev || prev.headline !== data.pulse.headline || prev.summary !== data.pulse.summary || prev.riskNote !== data.pulse.riskNote
-                                if (changed) setPulseTimestamp(formatPulseTimestamp())
+                                if (changed) { const ts = formatPulseTimestamp(); setPulseTimestamp(ts); localStorage.setItem('heymonday_pulse_timestamp', ts) }
                                 return data.pulse
                               })
                               setPulseRefreshUsed(true)
+const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+localStorage.setItem('heymonday_pulse_refresh_used', JSON.stringify({ date: today, used: true }))
                             }
                           } catch {} finally { setPulseLoading(false) }
                         }} style={{ fontSize: '10px', color: pulseRefreshUsed ? T.text7 : T.goldText2, cursor: pulseRefreshUsed ? 'default' : 'pointer', fontFamily: "'DM Mono', monospace", padding: '2px 7px', border: `1px solid ${pulseRefreshUsed ? T.borderItem : T.goldFaint5}` }}>
