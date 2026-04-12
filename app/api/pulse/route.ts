@@ -146,10 +146,21 @@ async function generatePulseWithClaude(params: {
     hour: 'numeric', minute: '2-digit', hour12: true,
   }).format(now)
 
+  // Compute real-time market status — never rely on stale snapshot
+  const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }))
+  const etDay = etNow.getDay()
+  const etMinutes = etNow.getHours() * 60 + etNow.getMinutes()
+  const liveMarketStatus =
+    etDay === 0 || etDay === 6 ? 'MARKET CLOSED (weekend)' :
+    etMinutes >= 570 && etMinutes < 960 ? 'MARKET OPEN' :
+    etMinutes >= 240 && etMinutes < 570 ? 'PRE-MARKET' :
+    etMinutes >= 960 && etMinutes < 1200 ? 'AFTER HOURS' :
+    'MARKET CLOSED'
+
   const prompt = `You are Monday, an AI market intelligence assistant. Generate a fresh market pulse for a trader right now.
 
 CURRENT TIME (ET): ${etTime}
-MARKET STATUS: ${latestMarketState?.market_status ?? 'Unknown'}
+MARKET STATUS: ${liveMarketStatus}
 TRADER TYPE: ${traderLabel}
 
 WATCHLIST PERFORMANCE TODAY:
@@ -165,7 +176,7 @@ ${macroItems || 'No macro data available'}
 UPCOMING ECONOMIC EVENTS:
 ${calendarItems || 'No scheduled events'}
 
-Generate exactly three things. Use ONLY the exact numbers and tickers provided above — do not invent, estimate, or approximate any figures. Write for a sophisticated retail trader. No unexplained jargon. Complete sentences only. If the market is closed, say so and frame everything in past tense.
+Generate exactly three things. Use ONLY the exact numbers and tickers provided above — do not invent, estimate, or approximate any figures. Write for a sophisticated retail trader. No unexplained jargon. Complete sentences only. The market status is: ${liveMarketStatus}. If the market is closed or it is a weekend, frame all price action in past tense (e.g. "closed at", "finished", "ended the week"). Never say "Sunday close" or imply trading happened on a weekend.
 
 Respond in this exact JSON format with no other text:
 {
