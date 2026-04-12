@@ -1082,7 +1082,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
     const wlWithPrices = wl.filter(w => w.change != null && w.change !== '')
     if (!wlWithPrices.length) return
     setPulseLoading(true)
-    try { const res = await fetch('/api/pulse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ watchlist: wl, traderType: type, prices: tickerData }) }); const data = await res.json(); if (data.pulse) { setPulse((prev) => { const changed = !prev || prev.headline !== data.pulse.headline || prev.summary !== data.pulse.summary || prev.riskNote !== data.pulse.riskNote; if (changed) setPulseTimestamp(formatPulseTimestamp()); return data.pulse }); } }
+    try { const res = await fetch('/api/pulse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ watchlist: wl, traderType: type, prices: tickerData }) }); const data = await res.json(); if (data.pulse) { setPulse((prev) => { const isFirstLoad = !prev; const changed = prev && (prev.headline !== data.pulse.headline || prev.summary !== data.pulse.summary || prev.riskNote !== data.pulse.riskNote); if (changed && !isFirstLoad) setPulseTimestamp(formatPulseTimestamp()); return data.pulse }); } }
     catch {} finally { setPulseLoading(false) }
   }
 
