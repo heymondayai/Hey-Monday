@@ -231,14 +231,12 @@ export async function POST(req: NextRequest) {
           { status: 429 }
         )
       }
+      // Clear cache so manual refresh always generates fresh Claude content
       const cacheKey = JSON.stringify({
         watchlist: watchlist.map((w: WatchlistItem) => [w.ticker, w.price, w.change, w.up]),
         traderType,
       })
-      const cached = cache.get(cacheKey)
-      if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
-        return NextResponse.json({ ...cached.data, refreshesRemaining: remaining })
-      }
+      cache.delete(cacheKey)
     }
 
     const cacheKey = JSON.stringify({
