@@ -1708,15 +1708,14 @@ const visibleDaySummaries = useMemo(() => {
                       const data = await res.json()
                       if (data.rateLimited) { alert(data.message); return }
                       if (data.pulse) {
-                        setPulse((prev) => {
-                          const changed = !prev || prev.headline !== data.pulse.headline || prev.summary !== data.pulse.summary || prev.riskNote !== data.pulse.riskNote
-                          if (changed) { const ts = formatPulseTimestamp(); setPulseTimestamp(ts); localStorage.setItem('heymonday_pulse_timestamp', ts) }
-                          return data.pulse
-                        })
-                        setPulseRefreshUsed(true)
-const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-localStorage.setItem('heymonday_pulse_refresh_used', JSON.stringify({ date: today, used: true }))
-                      }
+                              const ts = formatPulseTimestamp()
+                              setPulseTimestamp(ts)
+                              localStorage.setItem('heymonday_pulse_timestamp', ts)
+                              setPulse(data.pulse)
+                              setPulseRefreshUsed(true)
+                              const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+                              localStorage.setItem('heymonday_pulse_refresh_used', JSON.stringify({ date: today, used: true }))
+                            }
                     } catch {} finally { setPulseLoading(false) }
                   }} style={{ fontSize: '10px', color: pulseRefreshUsed ? T.text7 : T.goldText2, cursor: pulseRefreshUsed ? 'default' : 'pointer', fontFamily: "'DM Mono', monospace", padding: '2px 8px', border: `1px solid ${pulseRefreshUsed ? T.borderItem : T.goldFaint5}` }}>
                     {pulseLoading ? '...' : pulseRefreshUsed ? '✓' : '↻'}
@@ -2487,14 +2486,13 @@ localStorage.setItem('heymonday_pulse_refresh_used', JSON.stringify({ date: toda
                             const data = await res.json()
                             if (data.rateLimited) { alert(data.message); return }
                             if (data.pulse) {
-                              setPulse((prev) => {
-                                const changed = !prev || prev.headline !== data.pulse.headline || prev.summary !== data.pulse.summary || prev.riskNote !== data.pulse.riskNote
-                                if (changed) { const ts = formatPulseTimestamp(); setPulseTimestamp(ts); localStorage.setItem('heymonday_pulse_timestamp', ts) }
-                                return data.pulse
-                              })
+                              const ts = formatPulseTimestamp()
+                              setPulseTimestamp(ts)
+                              localStorage.setItem('heymonday_pulse_timestamp', ts)
+                              setPulse(data.pulse)
                               setPulseRefreshUsed(true)
-const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-localStorage.setItem('heymonday_pulse_refresh_used', JSON.stringify({ date: today, used: true }))
+                              const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+                              localStorage.setItem('heymonday_pulse_refresh_used', JSON.stringify({ date: today, used: true }))
                             }
                           } catch {} finally { setPulseLoading(false) }
                         }} style={{ fontSize: '10px', color: pulseRefreshUsed ? T.text7 : T.goldText2, cursor: pulseRefreshUsed ? 'default' : 'pointer', fontFamily: "'DM Mono', monospace", padding: '2px 7px', border: `1px solid ${pulseRefreshUsed ? T.borderItem : T.goldFaint5}` }}>
