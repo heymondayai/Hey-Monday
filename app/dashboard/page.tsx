@@ -1591,7 +1591,7 @@ const visibleDaySummaries = useMemo(() => {
       hour: 'numeric',
       minute: '2-digit',
       hour12: true,
-    }).format(now).replace(',', ' ·')
+    }).format(now).replace(',', ' ·') + ' ET'
   }
 
   if (!user) {
