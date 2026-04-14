@@ -24,21 +24,21 @@ const DARK = {
 }
 
 const LIGHT = {
-  pageBg: '#f5f0e8', bg2: '#ede6d6', bg3: '#e5dcc8', bg4: '#ddd3ba',
-  border: '#c8b898', border2: '#b8a47e',
-  gold: '#a06818', goldDim: '#7a5010',
-  red: '#b83232', green: '#2e7d52', amber: '#8a5c10',
-  text: '#2a1f0e', text2: '#6b4c20', text3: '#8a7050',
-  heading: '#1a1008',
-  badgeBg: 'rgba(160,104,24,.08)', badgeBorder: 'rgba(160,104,24,.25)',
-  btnText: '#f5f0e8',
-  cardBg: '#faf7f0',
-  errBg: 'rgba(184,50,50,.06)', errBorder: 'rgba(184,50,50,.3)',
-  successBg: 'rgba(46,125,82,.06)', successBorder: 'rgba(46,125,82,.25)',
-  dangerBg: 'rgba(184,50,50,.05)', dangerBorder: 'rgba(184,50,50,.2)',
-  toggleBg: '#e5dcc8', toggleBorder: '#b8a47e',
-  navBg: '#ede6d6',
-  modalOverlay: 'rgba(0,0,0,0.5)',
+  pageBg: '#fafaf8', bg2: '#f2f1ee', bg3: '#e8e6e2', bg4: '#dedad5',
+  border: '#d8d5d0', border2: '#c4c1bc',
+  gold: '#b8750c', goldDim: '#9a6008',
+  red: '#dc2626', green: '#16a34a', amber: '#b45309',
+  text: '#1a1a1a', text2: '#4a4a4a', text3: '#737373',
+  heading: '#0f0f0f',
+  badgeBg: 'rgba(184,117,12,.07)', badgeBorder: 'rgba(184,117,12,.22)',
+  btnText: '#ffffff',
+  cardBg: '#ffffff',
+  errBg: 'rgba(220,38,38,.06)', errBorder: 'rgba(220,38,38,.28)',
+  successBg: 'rgba(22,163,74,.06)', successBorder: 'rgba(22,163,74,.25)',
+  dangerBg: 'rgba(220,38,38,.05)', dangerBorder: 'rgba(220,38,38,.20)',
+  toggleBg: '#e8e6e2', toggleBorder: '#c4c1bc',
+  navBg: '#f2f1ee',
+  modalOverlay: 'rgba(0,0,0,0.50)',
 }
 
 const MOCK = {

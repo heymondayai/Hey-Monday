@@ -25,21 +25,21 @@ const DARK = {
 }
 
 const LIGHT = {
-  pageBg: '#f5f0e8', bg2: '#ede6d6',
-  border: '#c8b898', border2: '#b8a47e',
-  gold: '#a06818', goldDim: '#7a5010',
-  red: '#b83232',
-  text: '#2a1f0e', text2: '#6b4c20', text3: '#8a7050',
-  heading: '#1a1008',
-  inputBg: '#faf7f0', inputBorder: '#c8b898', inputFocus: 'rgba(160,104,24,.4)',
-  btnBg: 'rgba(160,104,24,.1)', btnBorder: 'rgba(160,104,24,.35)',
-  ghostColor: 'rgba(42,31,14,.45)', ghostBorder: 'rgba(42,31,14,.1)',
-  successBg: 'rgba(74,222,128,.06)', successBorder: 'rgba(74,222,128,.3)', successText: '#15803d',
-  errBg: 'rgba(184,50,50,.06)', errBorder: 'rgba(184,50,50,.3)',
-  gridLine: 'rgba(160,104,24,.04)',
-  divider: 'rgba(160,104,24,.3)',
-  googleBg: '#faf7f0', googleBorder: '#c8b898', googleText: '#2a1f0e',
-  orDivider: '#c8b898',
+  pageBg: '#fafaf8', bg2: '#f2f1ee',
+  border: '#d8d5d0', border2: '#c4c1bc',
+  gold: '#b8750c', goldDim: '#9a6008',
+  red: '#dc2626',
+  text: '#1a1a1a', text2: '#4a4a4a', text3: '#737373',
+  heading: '#0f0f0f',
+  inputBg: '#ffffff', inputBorder: '#d8d5d0', inputFocus: 'rgba(184,117,12,.40)',
+  btnBg: 'rgba(184,117,12,.10)', btnBorder: 'rgba(184,117,12,.35)',
+  ghostColor: 'rgba(0,0,0,.45)', ghostBorder: 'rgba(0,0,0,.10)',
+  successBg: 'rgba(22,163,74,.06)', successBorder: 'rgba(22,163,74,.28)', successText: '#16a34a',
+  errBg: 'rgba(220,38,38,.06)', errBorder: 'rgba(220,38,38,.28)',
+  gridLine: 'rgba(0,0,0,.03)',
+  divider: 'rgba(0,0,0,.14)',
+  googleBg: '#ffffff', googleBorder: '#d8d5d0', googleText: '#1a1a1a',
+  orDivider: '#d8d5d0',
 }
 
 function SunIcon({ color }: { color: string }) {

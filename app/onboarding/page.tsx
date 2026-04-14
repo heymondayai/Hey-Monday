@@ -22,18 +22,18 @@ const DARK = {
 }
 
 const LIGHT = {
-  pageBg: '#f5f0e8', bg2: '#ede6d6', bg4: '#ddd3ba',
-  border: '#c8b898', border2: '#b8a47e',
-  gold: '#a06818', goldDim: '#7a5010',
-  text: '#2a1f0e', text2: '#6b4c20', text3: '#8a7050',
-  heading: '#1a1008',
-  navBg: '#f5f0e8',
-  cardBg: 'rgba(42,31,14,0.02)', cardBorder: 'rgba(42,31,14,0.08)',
-  featureText: 'rgba(42,31,14,0.35)', featureTextOn: 'rgba(42,31,14,0.8)',
-  subText: 'rgba(42,31,14,0.4)',
-  btnDisabledBg: 'rgba(42,31,14,0.03)', btnDisabledBorder: 'rgba(42,31,14,0.08)', btnDisabledColor: 'rgba(42,31,14,0.2)',
-  gridLine: 'rgba(160,104,24,.04)',
-  errColor: '#b83232',
+  pageBg: '#fafaf8', bg2: '#f2f1ee', bg4: '#dedad5',
+  border: '#d8d5d0', border2: '#c4c1bc',
+  gold: '#b8750c', goldDim: '#9a6008',
+  text: '#1a1a1a', text2: '#4a4a4a', text3: '#737373',
+  heading: '#0f0f0f',
+  navBg: '#fafaf8',
+  cardBg: 'rgba(0,0,0,0.02)', cardBorder: 'rgba(0,0,0,0.08)',
+  featureText: 'rgba(0,0,0,0.35)', featureTextOn: 'rgba(0,0,0,0.80)',
+  subText: 'rgba(0,0,0,0.45)',
+  btnDisabledBg: 'rgba(0,0,0,0.03)', btnDisabledBorder: 'rgba(0,0,0,0.08)', btnDisabledColor: 'rgba(0,0,0,0.22)',
+  gridLine: 'rgba(0,0,0,.03)',
+  errColor: '#dc2626',
 }
 
 const TRADER_TYPES = [

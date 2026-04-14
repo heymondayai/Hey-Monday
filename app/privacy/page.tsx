@@ -11,11 +11,11 @@ const DARK = {
   heading: '#e8d5a0', red: '#c94242', redFaint: 'rgba(201,66,66,0.08)', redBorder: 'rgba(201,66,66,0.2)',
 }
 const LIGHT = {
-  pageBg: '#f5f0e8', navBg: '#f5f0e8', sectionBg: '#ede6d6', cardBg: '#faf7f0',
-  border: '#c8b898', border2: '#b8a47e',
-  gold: '#a06818', goldDim: '#7a5010', goldFaint: 'rgba(160,104,24,0.05)', goldBorder: 'rgba(160,104,24,0.2)',
-  text: '#2a1f0e', text2: '#6b4c20', text3: '#8a7050',
-  heading: '#1a1008', red: '#b83232', redFaint: 'rgba(184,50,50,0.06)', redBorder: 'rgba(184,50,50,0.25)',
+  pageBg: '#fafaf8', navBg: '#fafaf8', sectionBg: '#f2f1ee', cardBg: '#ffffff',
+  border: '#d8d5d0', border2: '#c4c1bc',
+  gold: '#b8750c', goldDim: '#9a6008', goldFaint: 'rgba(184,117,12,0.05)', goldBorder: 'rgba(184,117,12,0.20)',
+  text: '#1a1a1a', text2: '#4a4a4a', text3: '#737373',
+  heading: '#0f0f0f', red: '#dc2626', redFaint: 'rgba(220,38,38,0.06)', redBorder: 'rgba(220,38,38,0.25)',
 }
 
 function SunIcon({ color }: { color: string }) {
