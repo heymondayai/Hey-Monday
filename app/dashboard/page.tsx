@@ -1745,6 +1745,11 @@ const visibleDaySummaries = useMemo(() => {
               setWakeManualOverride(false)
               setTimeout(() => setWakeManualOverride(true), 50)
             }
+            // Barge-in: stop Monday mid-sentence and start listening
+            if (isSpeaking) {
+              stopCurrentAudio()
+              stopThinkingChimesRef.current?.()
+            }
             startVoiceRecording()
           }
         }}
