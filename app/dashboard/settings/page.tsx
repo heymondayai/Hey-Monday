@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
@@ -124,7 +124,8 @@ function SettingsPageInner() {
 
   const [loading, setLoading] = useState(true)
   const [savingAccount, setSavingAccount] = useState(false)
-  const [savingPrefs, setSavingPrefs] = useState(false)
+  const [prefsSaved, setPrefsSaved] = useState(false)
+  const prefsInitializedRef = useRef(false)
   const [billingLoading, setBillingLoading] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
 
@@ -231,6 +232,7 @@ function SettingsPageInner() {
       setVoiceRepliesEnabled(row?.voice_replies_enabled !== false)
 
       setLoading(false)
+      prefsInitializedRef.current = true
     }
 
     load()
@@ -271,31 +273,24 @@ function SettingsPageInner() {
     setSavingAccount(false)
   }
 
-  async function savePreferences() {
-    if (!userId) return
-    setSavingPrefs(true)
-    setError('')
-    setSuccess('')
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        trader_type: traderType,
-        wake_word_enabled: wakeWordEnabled,
-        voice_replies_enabled: voiceRepliesEnabled,
-      })
-      .eq('id', userId)
-
-    if (error) {
-      setError(error.message)
-      setSavingPrefs(false)
-      return
+  useEffect(() => {
+    if (!prefsInitializedRef.current || !userId) return
+    let cancelled = false
+    async function save() {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ trader_type: traderType, wake_word_enabled: wakeWordEnabled, voice_replies_enabled: voiceRepliesEnabled })
+        .eq('id', userId)
+      if (cancelled) return
+      if (!error) {
+        setProfile(prev => prev ? { ...prev, trader_type: traderType, wake_word_enabled: wakeWordEnabled, voice_replies_enabled: voiceRepliesEnabled } : prev)
+        setPrefsSaved(true)
+        setTimeout(() => setPrefsSaved(false), 2000)
+      }
     }
-
-    setProfile(prev => prev ? { ...prev, trader_type: traderType, wake_word_enabled: wakeWordEnabled, voice_replies_enabled: voiceRepliesEnabled } : prev)
-    setSuccess('Preferences saved.')
-    setSavingPrefs(false)
-  }
+    void save()
+    return () => { cancelled = true }
+  }, [traderType, wakeWordEnabled, voiceRepliesEnabled])
 
   async function openCustomerPortal() {
     setBillingLoading(true)
@@ -774,11 +769,11 @@ function SettingsPageInner() {
   </div>
 </div>
 
-<div>
-  <button onClick={savePreferences} disabled={savingPrefs} style={actionBtn(true)}>
-    {savingPrefs ? 'Saving...' : 'Save Preferences'}
-  </button>
-</div>
+{prefsSaved && (
+  <div style={{ fontSize: 12, color: T.green, fontFamily: "'DM Mono', monospace", letterSpacing: '0.05em' }}>
+    ✓ Saved
+  </div>
+)}
               </div>
             </div>
 
