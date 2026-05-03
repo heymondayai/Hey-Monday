@@ -73,10 +73,20 @@ function getTodayET(): string {
   }).format(new Date())
 }
 
-function getTodayLabelET(): string {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York', month: 'short', day: 'numeric',
-  }).format(new Date())
+function shiftDateET(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T12:00:00`)
+  d.setDate(d.getDate() + days)
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+}
+
+function getDayLabel(dateStr: string, todayET: string): string {
+  const d = new Date(`${dateStr}T12:00:00`)
+  const label = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' }).format(d)
+  if (dateStr === todayET) return `Today — ${label}`
+  if (dateStr === shiftDateET(todayET, 1)) return `Tomorrow — ${label}`
+  if (dateStr === shiftDateET(todayET, -1)) return `Yesterday — ${label}`
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' }).format(d)
+  return `${weekday}, ${label}`
 }
 
 function getWeekBounds(offsetWeeks = 0): { from: string; to: string; label: string } {
@@ -301,6 +311,7 @@ export function EventsPanel({ watchlistTickers, onOpenCalendar, T, isDark }: Eve
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [impactFilter, setImpactFilter] = useState<'BOTH' | 'HIGH' | 'MEDIUM'>('BOTH')
+  const [dayOffset, setDayOffset] = useState(0)
 
   useEffect(() => {
     const t = setInterval(() => setEvents((prev) => [...prev]), 60000)
@@ -312,17 +323,21 @@ export function EventsPanel({ watchlistTickers, onOpenCalendar, T, isDark }: Eve
       setLoading(true)
       try {
         const today = getTodayET()
+        const selectedDate = dayOffset === 0 ? today : shiftDateET(today, dayOffset)
         const tickers = encodeURIComponent(watchlistTickers.join(','))
-        const res = await fetch(`/api/calendar?from=${today}&to=${today}&tickers=${tickers}&view=dashboard`)
+        const res = await fetch(`/api/calendar?from=${selectedDate}&to=${selectedDate}&tickers=${tickers}&view=dashboard`)
         const data = await res.json()
         const tagged = tagWatchlistEvents((data.events as CalendarEvent[]) ?? [], watchlistTickers.map((t) => t.toUpperCase()))
-        setEvents(filterDashboardEvents(tagged, today))
+        setEvents(filterDashboardEvents(tagged, selectedDate))
       } catch { setEvents([]) } finally { setLoading(false) }
     }
     load()
-  }, [watchlistTickers.join(',')])
+  }, [watchlistTickers.join(','), dayOffset])
 
-  const todayLabel = getTodayLabelET()
+  const today = getTodayET()
+  const selectedDate = dayOffset === 0 ? today : shiftDateET(today, dayOffset)
+  const dayLabel = getDayLabel(selectedDate, today)
+
   const visibleEvents = events.filter((e) =>
     impactFilter === 'BOTH' ? e.impact === 'HIGH' || e.impact === 'MEDIUM' : e.impact === impactFilter
   )
@@ -330,10 +345,19 @@ export function EventsPanel({ watchlistTickers, onOpenCalendar, T, isDark }: Eve
   return (
     <div style={{ background: T.panelBg, display: 'flex', flexDirection: 'column', overflow: 'hidden', transition: 'background 0.35s' }}>
       {/* Header */}
-      <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-        <div style={{ fontSize: '9px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600 }}>
-          <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: T.red, boxShadow: `0 0 6px ${T.redBorder5}` }} />
-          {`Today's Events — ${todayLabel}`}
+      <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, gap: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ fontSize: '9px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600 }}>
+            <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: T.red, boxShadow: `0 0 6px ${T.redBorder5}` }} />
+            {dayLabel}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <div onClick={() => setDayOffset((d) => d - 1)} style={{ padding: '2px 7px', border: `1px solid ${T.goldFaint6}`, color: T.gold, cursor: 'pointer', fontSize: '9px', fontFamily: "'DM Mono', monospace" }}>← Prev</div>
+            <div onClick={() => setDayOffset((d) => d + 1)} style={{ padding: '2px 7px', border: `1px solid ${T.goldFaint6}`, color: T.gold, cursor: 'pointer', fontSize: '9px', fontFamily: "'DM Mono', monospace" }}>Next →</div>
+            {dayOffset !== 0 && (
+              <div onClick={() => setDayOffset(0)} style={{ padding: '2px 7px', border: `1px solid ${T.goldFaint7}`, background: T.goldFaint2, color: T.gold, cursor: 'pointer', fontSize: '9px', fontFamily: "'DM Mono', monospace" }}>Today</div>
+            )}
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {([{ id: 'BOTH', label: 'All' }, { id: 'HIGH', label: 'High' }, { id: 'MEDIUM', label: 'Medium' }] as const).map((item) => (
