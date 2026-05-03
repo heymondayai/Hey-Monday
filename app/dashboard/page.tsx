@@ -135,7 +135,7 @@ const LIGHT = {
   panelBg:      '#fafaf8',
   cardBg:       '#ffffff',
   headerBg:     '#ffffff',
-  tickerBg:     '#f0e6cc',
+  tickerBg:     '#ede5d8',
   inputBg:      'rgba(0,0,0,0.04)',
   overlayBg:    '#f5f4f1',
   // borders — neutral gray for clear separation
