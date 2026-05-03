@@ -158,6 +158,7 @@ const PREFERRED_BUILTIN_TICKERS = new Set([
   'ETH',
   'ES',
   'NQ',
+  'UPST',
 ])
 
 function stripCommas(num: string): string {
@@ -268,7 +269,7 @@ function expandMoney(
   return hasDollar ? `${full} dollars` : full
 }
 
-function expandTime(match: string, h: string, m: string, period?: string): string {
+function expandTime(_match: string, h: string, m: string, period?: string): string {
   let hour = parseInt(h, 10)
   const minute = m ? parseInt(m, 10) : 0
   let ampm: string
@@ -281,7 +282,11 @@ function expandTime(match: string, h: string, m: string, period?: string): strin
     if (hour === 0) hour = 12
   }
 
-  const minuteStr = minute === 0 ? '' : ` ${minute < 10 ? 'oh ' + minute : minute}`
+  const minuteStr = minute === 0
+    ? ''
+    : minute < 10
+      ? ` oh ${spokenInteger(minute)}`
+      : ` ${spokenInteger(minute)}`
   return `${hour}${minuteStr} ${ampm}`
 }
 
@@ -336,6 +341,9 @@ export function normalizeTTS(text: string, options: NormalizeTTSOptions = {}): s
   s = s.replace(/\bMoM\b/g, 'month over month')
   s = s.replace(/\bYoY\b/g, 'year over year')
   s = s.replace(/\bQoQ\b/g, 'quarter over quarter')
+
+  // 1c. Bond / treasury tenor notation: 10Y → ten year, 2Y → two year, 30Y → thirty year
+  s = s.replace(/\b(\d+)Y\b/g, (_, n) => `${spokenInteger(parseInt(n, 10))} year`)
 
   // 2. Tickers / names
   for (const [ticker, spoken] of Object.entries(TICKER_MAP)) {
@@ -402,6 +410,8 @@ export function normalizeTTS(text: string, options: NormalizeTTSOptions = {}): s
   s = s.replace(/▼/g, 'down')
   s = s.replace(/→/g, '')
   s = s.replace(/←/g, '')
+  // Any "+" still in text after percent/money handlers is a directional indicator
+  s = s.replace(/\+/g, ' up ')
 
   // 16. Cleanup
   s = s.replace(/  +/g, ' ').trim()
