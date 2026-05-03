@@ -335,7 +335,7 @@ export async function GET(req: NextRequest) {
     })
 
     if (view === 'dashboard') {
-      allEvents = applyDashboardFilters(allEvents, today)
+      allEvents = applyDashboardFilters(allEvents, from)
     }
 
     return NextResponse.json({

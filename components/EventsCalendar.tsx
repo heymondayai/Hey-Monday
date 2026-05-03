@@ -381,7 +381,7 @@ export function EventsPanel({ watchlistTickers, onOpenCalendar, T, isDark }: Eve
           <div style={{ padding: '20px 18px', fontSize: '12px', color: T.text7, fontStyle: 'italic' }}>Loading events…</div>
         ) : visibleEvents.length === 0 ? (
           <div style={{ padding: '20px 18px', fontSize: '12px', color: T.text7, fontStyle: 'italic' }}>
-            {impactFilter === 'HIGH' ? 'No U.S. high-impact events scheduled today.' : impactFilter === 'MEDIUM' ? 'No U.S. medium-impact events scheduled today.' : 'No U.S. medium or high-impact market events scheduled today.'}
+            {impactFilter === 'HIGH' ? `No U.S. high-impact events scheduled ${dayOffset === 0 ? 'today' : 'that day'}.` : impactFilter === 'MEDIUM' ? `No U.S. medium-impact events scheduled ${dayOffset === 0 ? 'today' : 'that day'}.` : `No U.S. medium or high-impact market events scheduled ${dayOffset === 0 ? 'today' : 'that day'}.`}
           </div>
         ) : visibleEvents.map((e) => {
           const outcome = getOutcomeColor(e, T)
