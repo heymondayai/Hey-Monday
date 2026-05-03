@@ -139,6 +139,29 @@ function SettingsPageInner() {
   const [traderType, setTraderType] = useState<TraderType>('day')
   const [wakeWordEnabled, setWakeWordEnabled] = useState(true)
   const [voiceRepliesEnabled, setVoiceRepliesEnabled] = useState(true)
+  const [eventAlertsEnabled, setEventAlertsEnabled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      const raw = window.localStorage.getItem('heymonday_dashboard_prefs_v1')
+      return raw ? !!JSON.parse(raw).eventAlertsEnabled : false
+    } catch { return false }
+  })
+  const [eventAlertMinutes, setEventAlertMinutes] = useState<number>(() => {
+    if (typeof window === 'undefined') return 10
+    try {
+      const raw = window.localStorage.getItem('heymonday_dashboard_prefs_v1')
+      if (!raw) return 10
+      const n = JSON.parse(raw).eventAlertMinutesBefore
+      return typeof n === 'number' ? n : 10
+    } catch { return 10 }
+  })
+  const [eventAlertResults, setEventAlertResults] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      const raw = window.localStorage.getItem('heymonday_dashboard_prefs_v1')
+      return raw ? !!JSON.parse(raw).eventAlertAnnounceResults : false
+    } catch { return false }
+  })
 
   useEffect(() => {
     let mounted = true
@@ -353,6 +376,14 @@ function SettingsPageInner() {
     setSigningOut(true)
     await supabase.auth.signOut()
     window.location.href = '/login'
+  }
+
+  function saveEventAlertPref(key: string, value: boolean | number) {
+    try {
+      const raw = window.localStorage.getItem('heymonday_dashboard_prefs_v1')
+      const parsed = raw ? JSON.parse(raw) : {}
+      window.localStorage.setItem('heymonday_dashboard_prefs_v1', JSON.stringify({ ...parsed, [key]: value }))
+    } catch {}
   }
 
   const pillStyles = subscriptionMeta.tone === 'green'
@@ -748,6 +779,156 @@ function SettingsPageInner() {
     {savingPrefs ? 'Saving...' : 'Save Preferences'}
   </button>
 </div>
+              </div>
+            </div>
+
+            <div style={sectionCard}>
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ color: T.text, fontSize: 20, fontWeight: 700, marginBottom: 6 }}>Event Alerts</div>
+                <div style={{ color: T.text4, fontSize: 13 }}>Get voice announcements before and after high-impact economic events.</div>
+              </div>
+
+              <div style={{ display: 'grid', gap: 14 }}>
+                {/* Voice event alerts toggle */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr auto',
+                  gap: 12,
+                  alignItems: 'center',
+                  padding: '14px 16px',
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 6,
+                  background: T.panelBg2,
+                }}>
+                  <div>
+                    <div style={{ color: T.text2, fontWeight: 700, marginBottom: 4 }}>
+                      Voice event alerts
+                    </div>
+                    <div style={{ color: T.text4, fontSize: 12 }}>
+                      Monday announces upcoming high-impact events aloud.
+                    </div>
+                  </div>
+                  <div
+                    onClick={() => {
+                      const next = !eventAlertsEnabled
+                      setEventAlertsEnabled(next)
+                      saveEventAlertPref('eventAlertsEnabled', next)
+                    }}
+                    style={{
+                      width: 42,
+                      height: 24,
+                      borderRadius: 999,
+                      background: eventAlertsEnabled ? 'rgba(201,146,42,0.15)' : T.inputBg,
+                      border: `1px solid ${eventAlertsEnabled ? T.gold : T.border}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: 2,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 18,
+                        height: 18,
+                        borderRadius: '50%',
+                        background: eventAlertsEnabled ? T.gold : '#666',
+                        transform: `translateX(${eventAlertsEnabled ? '18px' : '0px'})`,
+                        transition: 'all 0.2s ease',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Expanded options when enabled */}
+                {eventAlertsEnabled && (
+                  <>
+                    <div style={{ padding: '14px 16px', border: `1px solid ${T.border}`, borderRadius: 6, background: T.panelBg2 }}>
+                      <div style={{ color: T.text3, fontSize: 12, marginBottom: 10 }}>Alert me this many minutes before:</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {([5, 10, 15, 30, 60] as const).map(min => {
+                          const selected = eventAlertMinutes === min
+                          return (
+                            <div
+                              key={min}
+                              onClick={() => {
+                                setEventAlertMinutes(min)
+                                saveEventAlertPref('eventAlertMinutesBefore', min)
+                              }}
+                              style={{
+                                padding: '6px 12px',
+                                borderRadius: 999,
+                                background: selected ? 'rgba(201,146,42,0.12)' : T.panelBg2,
+                                color: selected ? T.gold : T.text3,
+                                border: `1px solid ${selected ? T.gold : T.border}`,
+                                fontFamily: "'DM Mono', monospace",
+                                fontSize: 12,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {min}m
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Announce results toggle */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr auto',
+                      gap: 12,
+                      alignItems: 'center',
+                      padding: '14px 16px',
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 6,
+                      background: T.panelBg2,
+                    }}>
+                      <div>
+                        <div style={{ color: T.text2, fontWeight: 700, marginBottom: 4 }}>
+                          Announce results
+                        </div>
+                        <div style={{ color: T.text4, fontSize: 12 }}>
+                          Read the actual result when an event is published.
+                        </div>
+                      </div>
+                      <div
+                        onClick={() => {
+                          const next = !eventAlertResults
+                          setEventAlertResults(next)
+                          saveEventAlertPref('eventAlertAnnounceResults', next)
+                        }}
+                        style={{
+                          width: 42,
+                          height: 24,
+                          borderRadius: 999,
+                          background: eventAlertResults ? 'rgba(201,146,42,0.15)' : T.inputBg,
+                          border: `1px solid ${eventAlertResults ? T.gold : T.border}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: 2,
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: '50%',
+                            background: eventAlertResults ? T.gold : '#666',
+                            transform: `translateX(${eventAlertResults ? '18px' : '0px'})`,
+                            transition: 'all 0.2s ease',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <div style={{ color: T.text4, fontSize: 11 }}>
+                  Saved automatically · Only fires if voice replies are on.
+                </div>
               </div>
             </div>
 

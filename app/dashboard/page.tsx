@@ -848,6 +848,9 @@ const wakePreferredOnRef = useRef(true)
   const wlSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const watchlistRef = useRef(watchlist)
   const summaryModalScrollRef = useRef<HTMLDivElement>(null)
+  const firedEventAlertRef = useRef<Set<string>>(new Set())
+  const firedResultAlertRef = useRef<Set<string>>(new Set())
+  const eventAlertPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => { watchlistRef.current = watchlist }, [watchlist])
 
@@ -1073,6 +1076,118 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
     const priceInterval = setInterval(() => doFetchPrices(watchlistRef.current), 60000)
     return () => clearInterval(priceInterval)
   }, [])
+
+  // ── Event alert polling ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user) return
+
+    if (eventAlertPollRef.current) {
+      clearInterval(eventAlertPollRef.current)
+      eventAlertPollRef.current = null
+    }
+
+    function getEventAlertPrefs() {
+      try {
+        const raw = window.localStorage.getItem(DASHBOARD_PREFS_KEY)
+        if (!raw) return { enabled: false, minutesBefore: 10, announceResults: false }
+        const parsed = JSON.parse(raw)
+        return {
+          enabled: !!parsed.eventAlertsEnabled,
+          minutesBefore: typeof parsed.eventAlertMinutesBefore === 'number' ? parsed.eventAlertMinutesBefore : 10,
+          announceResults: !!parsed.eventAlertAnnounceResults,
+        }
+      } catch {
+        return { enabled: false, minutesBefore: 10, announceResults: false }
+      }
+    }
+
+    async function checkEventAlerts() {
+      const prefs = getEventAlertPrefs()
+      if (!prefs.enabled) return
+
+      // Only fire voice alerts when speech is on
+      if (!speechOn) return
+
+      try {
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+        const tickers = watchlistRef.current.map((w) => w.ticker).join(',')
+        const url = `/api/calendar?from=${today}&to=${today}&view=dashboard${tickers ? `&tickers=${encodeURIComponent(tickers)}` : ''}`
+        const res = await fetch(url)
+        const data = await res.json()
+        const events: any[] = data.events ?? []
+
+        const nowMs = Date.now()
+
+        for (const ev of events) {
+          if (ev.impact !== 'HIGH' && ev.impact !== 'MEDIUM') continue
+          if (!ev.time || ev.time === '--') continue
+
+          // Build an ET timestamp for this event
+          const [hh, mm] = ev.time.split(':').map(Number)
+          if (isNaN(hh) || isNaN(mm)) continue
+
+          // Construct a Date in ET by building a UTC equivalent
+          const etDateStr = ev.date // YYYY-MM-DD in ET
+          const etDateObj = new Date(`${etDateStr}T00:00:00`)
+          const etDateParts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+          }).formatToParts(etDateObj)
+          const yy = etDateParts.find((p) => p.type === 'year')?.value ?? '2000'
+          const mo = etDateParts.find((p) => p.type === 'month')?.value ?? '01'
+          const dd = etDateParts.find((p) => p.type === 'day')?.value ?? '01'
+
+          // Probe UTC offset by finding which UTC hour maps to hh:mm ET on that day
+          let eventUtcMs: number | null = null
+          for (let offset = -12; offset <= 14; offset++) {
+            const candidate = new Date(Date.UTC(Number(yy), Number(mo) - 1, Number(dd), hh - offset, mm, 0))
+            const parts = new Intl.DateTimeFormat('en-US', {
+              timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+            }).formatToParts(candidate)
+            const ch = Number(parts.find((p) => p.type === 'hour')?.value)
+            const cm = Number(parts.find((p) => p.type === 'minute')?.value)
+            if (ch === hh && cm === mm) { eventUtcMs = candidate.getTime(); break }
+          }
+          if (eventUtcMs === null) continue
+
+          const msUntil = eventUtcMs - nowMs
+          const minutesUntil = msUntil / 60000
+
+          // Pre-event alert
+          const alertKey = `pre:${ev.id}`
+          if (
+            minutesUntil > 0 &&
+            minutesUntil <= prefs.minutesBefore &&
+            !firedEventAlertRef.current.has(alertKey)
+          ) {
+            firedEventAlertRef.current.add(alertKey)
+            const minStr = Math.ceil(minutesUntil) === 1 ? '1 minute' : `${Math.ceil(minutesUntil)} minutes`
+            const text = `Heads up — ${ev.name} is coming up in ${minStr}.${ev.forecast ? ` Forecast: ${ev.forecast}${ev.unit ? ' ' + ev.unit : ''}.` : ''}`
+            void speakText(text)
+          }
+
+          // Post-event result announcement
+          if (prefs.announceResults && ev.actual != null) {
+            const resultKey = `result:${ev.id}`
+            if (!firedResultAlertRef.current.has(resultKey)) {
+              firedResultAlertRef.current.add(resultKey)
+              const text = `${ev.name} result is in: ${ev.actual}${ev.unit ? ' ' + ev.unit : ''}.${ev.forecast ? ` Forecast was ${ev.forecast}${ev.unit ? ' ' + ev.unit : ''}.` : ''}`
+              void speakText(text)
+            }
+          }
+        }
+      } catch {}
+    }
+
+    eventAlertPollRef.current = setInterval(checkEventAlerts, 60000)
+    checkEventAlerts()
+
+    return () => {
+      if (eventAlertPollRef.current) {
+        clearInterval(eventAlertPollRef.current)
+        eventAlertPollRef.current = null
+      }
+    }
+  }, [user, speechOn])
 
   async function doFetchPrices(wl: typeof watchlist, type?: string, triggerPulse = false) {
     try {
