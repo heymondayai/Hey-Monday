@@ -674,8 +674,9 @@ console.log('[chat intraday fetch result]', {
 
     const currentDataEnough = dataDecision === 'confident' || dataDecision === 'limited'
     const isLimitedData = dataDecision === 'limited'
-    const needsResearchButBlocked = dataDecision === 'research' && !sonnetAllowed
     const useLiveSearch = dataDecision === 'research' && sonnetAllowed
+    const useHaikuSearch = dataDecision === 'research' && !sonnetAllowed
+    const useSearch = useLiveSearch || useHaikuSearch
 
     // ── CONTEXT BLOCKS ───────────────────────────────────────────────────────
     const watchlistContext = watchlist.length
@@ -815,12 +816,13 @@ RESPONSE RULES:
 - If no clear catalyst is present in the supplied data, say there is no clear catalyst in the current feed.
 - Stop after the direct answer.
 `
-            : useLiveSearch
+            : useSearch
               ? `
 RESPONSE RULES:
 - 2–3 sentences maximum.
 - Answer first, then one supporting fact only if it changes the answer.
 - No filler, no restating the question, no extra color.
+- Only report facts returned by actual search results. If no clear result was found, say so in one sentence. Never fabricate.
 `
               : intent.requestType === 'briefing'
                 ? `
@@ -836,7 +838,7 @@ RESPONSE RULES:
 - Include only facts that directly answer what was asked.
 `
 
-    const contextBlocks = useLiveSearch ? researchContextBlocks : fullContextBlocks
+    const contextBlocks = useSearch ? researchContextBlocks : fullContextBlocks
 
     // ── SYSTEM PROMPT ────────────────────────────────────────────────────────
     const systemPrompt = `You are Monday, an elite AI market intelligence assistant inside a professional trading dashboard.
@@ -876,22 +878,13 @@ ${isLimitedData ? `\n16. DATA QUALITY FLAG: The available data for this question
 
 ${lengthRules}`
 
-    // ── SHORT-CIRCUIT WHEN RESEARCH BLOCKED ─────────────────────────────────
-    if (needsResearchButBlocked) {
-      return NextResponse.json({
-        reply: buildResearchCapFallback(intent),
-        grounded: true, usedResearch: false, currentDataEnough: false,
-        sonnetRemaining: getSonnetRemaining(userKey),
-      })
-    }
-
     // ── CALL MODEL ───────────────────────────────────────────────────────────
     const historyMessages = (history as { role: string; content: string }[])
-      .slice(useLiveSearch ? -4 : -8)
+      .slice(useSearch ? -4 : -8)
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => ({
         role: m.role as 'user' | 'assistant',
-        content: useLiveSearch ? m.content.slice(0, 500) : m.content.slice(0, 800),
+        content: useSearch ? m.content.slice(0, 500) : m.content.slice(0, 800),
       }))
 
     const model = useLiveSearch ? 'claude-sonnet-4-5' : 'claude-haiku-4-5-20251001'
@@ -899,7 +892,9 @@ ${lengthRules}`
     // Token limits — kept tight to enforce brevity
     const maxTokens = useLiveSearch
       ? mode === 'summary' ? 200 : 140
-      : mode === 'summary'
+      : useHaikuSearch
+        ? mode === 'summary' ? 180 : 160
+        : mode === 'summary'
         ? 160
         : intent.isCasualConversation ? 50
         : intent.requestType === 'simple' ? 60
@@ -914,12 +909,12 @@ ${lengthRules}`
       messages: [...historyMessages, { role: 'user', content: message.slice(0, 1200) }],
     }
 
-    if (useLiveSearch) {
+    if (useSearch) {
       requestBody.tools = [{ type: 'web_search_20250305', name: 'web_search' }]
     }
 
     console.log(
-      `[chat] routing → ${useLiveSearch ? `SONNET+search (${getSonnetRemaining(userKey)} left)` : 'HAIKU'} | enough_data=${currentDataEnough} | type=${intent.requestType} | max_tokens=${maxTokens}`
+      `[chat] routing → ${useLiveSearch ? `SONNET+search (${getSonnetRemaining(userKey)} left)` : useHaikuSearch ? 'HAIKU+search' : 'HAIKU'} | enough_data=${currentDataEnough} | type=${intent.requestType} | max_tokens=${maxTokens}`
     )
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -952,14 +947,14 @@ ${lengthRules}`
       console.error('[chat] No text block. Types:', data.content?.map((b: any) => b.type))
       return NextResponse.json({
         reply: currentDataEnough ? 'No response generated — please try again.' : buildSafeFallback(intent),
-        grounded: false, usedResearch: useLiveSearch, currentDataEnough,
+        grounded: false, usedResearch: useSearch, currentDataEnough,
         sonnetRemaining: getSonnetRemaining(userKey),
       })
     }
 
     return NextResponse.json({
       reply: normalizeTimeReference(reply),
-      grounded: true, usedResearch: useLiveSearch, currentDataEnough,
+      grounded: true, usedResearch: useSearch, currentDataEnough,
       sonnetRemaining: getSonnetRemaining(userKey),
     })
   } catch (err: any) {
