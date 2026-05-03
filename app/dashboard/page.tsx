@@ -135,7 +135,7 @@ const LIGHT = {
   panelBg:      '#fafaf8',
   cardBg:       '#ffffff',
   headerBg:     '#ffffff',
-  tickerBg:     '#1c1a16',
+  tickerBg:     '#e8d9ba',
   inputBg:      'rgba(0,0,0,0.04)',
   overlayBg:    '#f5f4f1',
   // borders — neutral gray for clear separation
@@ -206,7 +206,7 @@ const LIGHT = {
   cyanBorder:   'rgba(8,145,178,0.28)',
   // ticker
   tickerText:   '#b8750c',
-  tickerPrice:  'rgba(250,250,248,0.80)',
+  tickerPrice:  'rgba(30,20,5,0.62)',
   tickerBorder: 'rgba(184,117,12,0.15)',
   // misc
   wlActive:     'rgba(184,117,12,0.07)',
