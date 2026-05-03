@@ -56,6 +56,10 @@ export function useWakeWord({
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState<string | null>(null)
 
+  // Always-current callback ref — avoids stale closure in the running audio pipeline
+  const onDetectedRef    = useRef(onDetected)
+  useEffect(() => { onDetectedRef.current = onDetected }, [onDetected])
+
   // ONNX sessions
   const melSession       = useRef<any>(null)
   const embSession       = useRef<any>(null)
@@ -188,7 +192,7 @@ export function useWakeWord({
   if (now - lastDetectRef.current > COOLDOWN_MS) {
     lastDetectRef.current = now
     consecutiveHitsRef.current = 0
-    onDetected()
+    onDetectedRef.current()
 
     try {
       const AudioCtx = globalThis.AudioContext || (globalThis as any).webkitAudioContext
@@ -232,7 +236,7 @@ export function useWakeWord({
     } catch (err) {
       console.error('[WakeWord] processChunk error:', err)
     }
-  }, [onDetected, threshold])
+  }, [threshold])
 
   // ── QUEUED CHUNK PROCESSOR ───────────────────────────────────────────────
   const processChunk = useCallback(async (samples: Float32Array) => {
