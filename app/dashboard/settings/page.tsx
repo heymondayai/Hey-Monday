@@ -163,6 +163,15 @@ function SettingsPageInner() {
       return raw ? !!JSON.parse(raw).eventAlertAnnounceResults : false
     } catch { return false }
   })
+  const [eventAlertImpactFilter, setEventAlertImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>(() => {
+    if (typeof window === 'undefined') return 'HIGH'
+    try {
+      const raw = window.localStorage.getItem('heymonday_dashboard_prefs_v1')
+      if (!raw) return 'HIGH'
+      const v = JSON.parse(raw).eventAlertImpactFilter
+      return v === 'ALL' || v === 'HIGH' || v === 'MEDIUM' ? v : 'HIGH'
+    } catch { return 'HIGH' }
+  })
 
   useEffect(() => {
     let mounted = true
@@ -373,7 +382,7 @@ function SettingsPageInner() {
     window.location.href = '/login'
   }
 
-  function saveEventAlertPref(key: string, value: boolean | number) {
+  function saveEventAlertPref(key: string, value: boolean | number | string) {
     try {
       const raw = window.localStorage.getItem('heymonday_dashboard_prefs_v1')
       const parsed = raw ? JSON.parse(raw) : {}
@@ -838,6 +847,33 @@ function SettingsPageInner() {
                 {/* Expanded options when enabled */}
                 {eventAlertsEnabled && (
                   <>
+                    <div style={{ padding: '14px 16px', border: `1px solid ${T.border}`, borderRadius: 6, background: T.panelBg2 }}>
+                      <div style={{ color: T.text3, fontSize: 12, marginBottom: 10 }}>Alert me for:</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {([{ id: 'ALL', label: 'All Events' }, { id: 'HIGH', label: 'High Impact' }, { id: 'MEDIUM', label: 'Medium Impact' }] as const).map(opt => {
+                          const selected = eventAlertImpactFilter === opt.id
+                          return (
+                            <div
+                              key={opt.id}
+                              onClick={() => { setEventAlertImpactFilter(opt.id); saveEventAlertPref('eventAlertImpactFilter', opt.id) }}
+                              style={{
+                                padding: '6px 12px',
+                                borderRadius: 999,
+                                background: selected ? 'rgba(201,146,42,0.12)' : T.panelBg2,
+                                color: selected ? T.gold : T.text3,
+                                border: `1px solid ${selected ? T.gold : T.border}`,
+                                fontFamily: "'DM Mono', monospace",
+                                fontSize: 12,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {opt.label}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+
                     <div style={{ padding: '14px 16px', border: `1px solid ${T.border}`, borderRadius: 6, background: T.panelBg2 }}>
                       <div style={{ color: T.text3, fontSize: 12, marginBottom: 10 }}>Alert me this many minutes before:</div>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

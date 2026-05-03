@@ -1091,13 +1091,15 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
         const raw = window.localStorage.getItem(DASHBOARD_PREFS_KEY)
         if (!raw) return { enabled: false, minutesBefore: 10, announceResults: false }
         const parsed = JSON.parse(raw)
+        const impactFilter = parsed.eventAlertImpactFilter
         return {
           enabled: !!parsed.eventAlertsEnabled,
           minutesBefore: typeof parsed.eventAlertMinutesBefore === 'number' ? parsed.eventAlertMinutesBefore : 10,
           announceResults: !!parsed.eventAlertAnnounceResults,
+          impactFilter: impactFilter === 'ALL' || impactFilter === 'HIGH' || impactFilter === 'MEDIUM' ? impactFilter as 'ALL' | 'HIGH' | 'MEDIUM' : 'HIGH',
         }
       } catch {
-        return { enabled: false, minutesBefore: 10, announceResults: false }
+        return { enabled: false, minutesBefore: 10, announceResults: false, impactFilter: 'HIGH' as const }
       }
     }
 
@@ -1119,7 +1121,9 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
         const nowMs = Date.now()
 
         for (const ev of events) {
-          if (ev.impact !== 'HIGH' && ev.impact !== 'MEDIUM') continue
+          if (prefs.impactFilter === 'HIGH' && ev.impact !== 'HIGH') continue
+          if (prefs.impactFilter === 'MEDIUM' && ev.impact !== 'MEDIUM') continue
+          if (prefs.impactFilter === 'ALL' && ev.impact !== 'HIGH' && ev.impact !== 'MEDIUM') continue
           if (!ev.time || ev.time === '--') continue
 
           // Build an ET timestamp for this event
