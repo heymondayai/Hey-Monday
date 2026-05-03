@@ -439,6 +439,12 @@ function scoreDataQuality(input: DataQualityInput): { score: number; decision: R
   if (/\b(merger|acquisition|buyout|bankruptcy|lawsuit|fda|press release|conference call|earnings call)\b/.test(lower)) {
     return { score: -10, decision: 'research', reasons: ['mentions corporate event'] }
   }
+  if (
+    /\b(tomorrow|next week|going into|ahead of|before market|pre-market prep)\b/.test(lower) &&
+    /\b(look for|watch for|watch out|expect|setup|set up|catalyst|catalysts|key level|play|trade|prepare|should i|what to)\b/.test(lower)
+  ) {
+    return { score: -10, decision: 'research', reasons: ['forward-looking analysis question'] }
+  }
   if (intent.isCasualConversation) {
     return { score: 10, decision: 'confident', reasons: ['casual conversation'] }
   }

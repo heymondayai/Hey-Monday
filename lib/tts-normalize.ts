@@ -342,6 +342,11 @@ export function normalizeTTS(text: string, options: NormalizeTTSOptions = {}): s
   s = s.replace(/\bYoY\b/g, 'year over year')
   s = s.replace(/\bQoQ\b/g, 'quarter over quarter')
 
+  // 1b2. American pronunciation overrides (prevent British TTS mispronunciations)
+  s = s.replace(/\bscheduled\b/gi, 'skedjuled')
+  s = s.replace(/\bschedule\b/gi, 'skedjule')
+  s = s.replace(/\bscheduling\b/gi, 'skedjuling')
+
   // 1c. Bond / treasury tenor notation: 10Y → ten year, 2Y → two year, 30Y → thirty year
   s = s.replace(/\b(\d+)Y\b/g, (_, n) => `${spokenInteger(parseInt(n, 10))} year`)
 
