@@ -1234,9 +1234,11 @@ function startThinkingChimes(): () => void {
           // Reset timer on any sound
           if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null }
         }
-        requestAnimationFrame(checkSilence)
+        // Use setTimeout instead of requestAnimationFrame so silence detection
+        // keeps running when the tab is in the background
+        setTimeout(checkSilence, 100)
       }
-      requestAnimationFrame(checkSilence)
+      setTimeout(checkSilence, 100)
       // ──────────────────────────────────────────────────────────────────────
 
       recorder.ondataavailable = (event) => { if (event.data.size > 0) recordedChunksRef.current.push(event.data) }
