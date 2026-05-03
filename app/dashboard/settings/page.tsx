@@ -846,7 +846,7 @@ function SettingsPageInner() {
                     <div style={{ padding: '14px 16px', border: `1px solid ${T.border}`, borderRadius: 6, background: T.panelBg2 }}>
                       <div style={{ color: T.text3, fontSize: 12, marginBottom: 10 }}>Alert me this many minutes before:</div>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        {([5, 10, 15, 30, 60] as const).map(min => {
+                        {([1, 5, 10, 15, 30, 60] as const).map(min => {
                           const selected = eventAlertMinutes === min
                           return (
                             <div
@@ -866,7 +866,7 @@ function SettingsPageInner() {
                                 cursor: 'pointer',
                               }}
                             >
-                              {min}m
+                              {min === 1 ? '1 min' : `${min}m`}
                             </div>
                           )
                         })}
