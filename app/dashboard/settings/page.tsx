@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
@@ -124,8 +124,8 @@ function SettingsPageInner() {
 
   const [loading, setLoading] = useState(true)
   const [savingAccount, setSavingAccount] = useState(false)
-  const [prefsSaved, setPrefsSaved] = useState(false)
-  const prefsInitializedRef = useRef(false)
+  const [savingPrefs, setSavingPrefs] = useState(false)
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false)
   const [billingLoading, setBillingLoading] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
 
@@ -140,6 +140,9 @@ function SettingsPageInner() {
   const [traderType, setTraderType] = useState<TraderType>('day')
   const [wakeWordEnabled, setWakeWordEnabled] = useState(true)
   const [voiceRepliesEnabled, setVoiceRepliesEnabled] = useState(true)
+  const [savedTraderType, setSavedTraderType] = useState<TraderType>('day')
+  const [savedWakeWord, setSavedWakeWord] = useState(true)
+  const [savedVoiceReplies, setSavedVoiceReplies] = useState(true)
   const [eventAlertsEnabled, setEventAlertsEnabled] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
     try {
@@ -235,13 +238,14 @@ function SettingsPageInner() {
         [user.user_metadata?.given_name, user.user_metadata?.family_name].filter(Boolean).join(' ') ||
         ''
       )
-      setTraderType((row?.trader_type as TraderType) || 'day')
-
-      setWakeWordEnabled(row?.wake_word_enabled !== false)
-      setVoiceRepliesEnabled(row?.voice_replies_enabled !== false)
+      const tt = (row?.trader_type as TraderType) || 'day'
+      const ww = row?.wake_word_enabled !== false
+      const vr = row?.voice_replies_enabled !== false
+      setTraderType(tt); setSavedTraderType(tt)
+      setWakeWordEnabled(ww); setSavedWakeWord(ww)
+      setVoiceRepliesEnabled(vr); setSavedVoiceReplies(vr)
 
       setLoading(false)
-      prefsInitializedRef.current = true
     }
 
     load()
@@ -282,24 +286,41 @@ function SettingsPageInner() {
     setSavingAccount(false)
   }
 
+  const hasUnsavedChanges =
+    traderType !== savedTraderType ||
+    wakeWordEnabled !== savedWakeWord ||
+    voiceRepliesEnabled !== savedVoiceReplies
+
   useEffect(() => {
-    if (!prefsInitializedRef.current || !userId) return
-    let cancelled = false
-    async function save() {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ trader_type: traderType, wake_word_enabled: wakeWordEnabled, voice_replies_enabled: voiceRepliesEnabled })
-        .eq('id', userId)
-      if (cancelled) return
-      if (!error) {
-        setProfile(prev => prev ? { ...prev, trader_type: traderType, wake_word_enabled: wakeWordEnabled, voice_replies_enabled: voiceRepliesEnabled } : prev)
-        setPrefsSaved(true)
-        setTimeout(() => setPrefsSaved(false), 2000)
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault()
+        e.returnValue = ''
       }
     }
-    void save()
-    return () => { cancelled = true }
-  }, [traderType, wakeWordEnabled, voiceRepliesEnabled])
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [hasUnsavedChanges])
+
+  async function savePreferences() {
+    if (!userId) return
+    setSavingPrefs(true)
+    setError('')
+    const { error } = await supabase
+      .from('profiles')
+      .update({ trader_type: traderType, wake_word_enabled: wakeWordEnabled, voice_replies_enabled: voiceRepliesEnabled })
+      .eq('id', userId)
+    setSavingPrefs(false)
+    if (error) {
+      setError(error.message)
+      return
+    }
+    setProfile(prev => prev ? { ...prev, trader_type: traderType, wake_word_enabled: wakeWordEnabled, voice_replies_enabled: voiceRepliesEnabled } : prev)
+    setSavedTraderType(traderType)
+    setSavedWakeWord(wakeWordEnabled)
+    setSavedVoiceReplies(voiceRepliesEnabled)
+    setSuccess('Preferences saved.')
+  }
 
   async function openCustomerPortal() {
     setBillingLoading(true)
@@ -510,18 +531,25 @@ function SettingsPageInner() {
             >
               {isDark ? '☀' : '☾'}
             </div>
-            <Link
-              href="/dashboard"
+            <div
+              onClick={() => {
+                if (hasUnsavedChanges) {
+                  setShowUnsavedModal(true)
+                } else {
+                  router.push('/dashboard')
+                }
+              }}
               style={{
                 textDecoration: 'none',
                 ...actionBtn(false),
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                cursor: 'pointer',
               }}
             >
               ← Back to Dashboard
-            </Link>
+            </div>
           </div>
         </div>
 
@@ -778,11 +806,6 @@ function SettingsPageInner() {
   </div>
 </div>
 
-{prefsSaved && (
-  <div style={{ fontSize: 12, color: T.green, fontFamily: "'DM Mono', monospace", letterSpacing: '0.05em' }}>
-    ✓ Saved
-  </div>
-)}
               </div>
             </div>
 
@@ -958,7 +981,7 @@ function SettingsPageInner() {
                 )}
 
                 <div style={{ color: T.text4, fontSize: 11 }}>
-                  Saved automatically · Only fires if voice replies are on.
+                  Event alert settings save immediately · Trader style and voice toggles require Save Changes.
                 </div>
               </div>
             </div>
@@ -1080,6 +1103,93 @@ function SettingsPageInner() {
           </div>
         </div>
       </div>
+
+      {/* ── Sticky save bar ── */}
+      {hasUnsavedChanges && (
+        <div style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 50,
+          background: isDark ? 'rgba(16,13,7,0.96)' : 'rgba(255,255,255,0.96)',
+          borderTop: `1px solid ${T.border2}`,
+          backdropFilter: 'blur(8px)',
+          padding: '14px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 16,
+        }}>
+          <div style={{ color: T.text3, fontSize: 13 }}>You have unsaved preference changes.</div>
+          <button
+            onClick={savePreferences}
+            disabled={savingPrefs}
+            style={{ ...actionBtn(true), minWidth: 140 }}
+          >
+            {savingPrefs ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      )}
+
+      {/* ── Unsaved changes modal ── */}
+      {showUnsavedModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 100,
+          background: 'rgba(0,0,0,0.6)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+        }}>
+          <div style={{
+            background: T.panelBg,
+            border: `1px solid ${T.border2}`,
+            borderRadius: 10,
+            padding: '28px 28px 24px',
+            maxWidth: 420,
+            width: '100%',
+            fontFamily: "'DM Mono', monospace",
+          }}>
+            <div style={{ color: T.text, fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
+              Unsaved changes
+            </div>
+            <div style={{ color: T.text3, fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
+              You have unsaved preference changes. Save them before leaving, or discard?
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                onClick={async () => {
+                  await savePreferences()
+                  setShowUnsavedModal(false)
+                  router.push('/dashboard')
+                }}
+                disabled={savingPrefs}
+                style={{ ...actionBtn(true), flex: 1 }}
+              >
+                {savingPrefs ? 'Saving...' : 'Save & Go Back'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowUnsavedModal(false)
+                  router.push('/dashboard')
+                }}
+                style={{ ...actionBtn(false), flex: 1 }}
+              >
+                Discard
+              </button>
+              <button
+                onClick={() => setShowUnsavedModal(false)}
+                style={{ ...actionBtn(false), flex: 1 }}
+              >
+                Stay
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
