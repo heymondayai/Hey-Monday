@@ -88,6 +88,10 @@ type ProfileRow = {
   billing_zip: string | null
   wake_word_enabled: boolean | null
   voice_replies_enabled: boolean | null
+  event_alerts_enabled: boolean | null
+  event_alert_minutes_before: number | null
+  event_alert_announce_results: boolean | null
+  event_alert_impact_filter: string | null
 }
 
 function fmtDate(value: string | null) {
@@ -143,38 +147,14 @@ function SettingsPageInner() {
   const [savedTraderType, setSavedTraderType] = useState<TraderType>('day')
   const [savedWakeWord, setSavedWakeWord] = useState(true)
   const [savedVoiceReplies, setSavedVoiceReplies] = useState(true)
-  const [eventAlertsEnabled, setEventAlertsEnabled] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false
-    try {
-      const raw = window.localStorage.getItem('heymonday_dashboard_prefs_v1')
-      return raw ? !!JSON.parse(raw).eventAlertsEnabled : false
-    } catch { return false }
-  })
-  const [eventAlertMinutes, setEventAlertMinutes] = useState<number>(() => {
-    if (typeof window === 'undefined') return 10
-    try {
-      const raw = window.localStorage.getItem('heymonday_dashboard_prefs_v1')
-      if (!raw) return 10
-      const n = JSON.parse(raw).eventAlertMinutesBefore
-      return typeof n === 'number' ? n : 10
-    } catch { return 10 }
-  })
-  const [eventAlertResults, setEventAlertResults] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false
-    try {
-      const raw = window.localStorage.getItem('heymonday_dashboard_prefs_v1')
-      return raw ? !!JSON.parse(raw).eventAlertAnnounceResults : false
-    } catch { return false }
-  })
-  const [eventAlertImpactFilter, setEventAlertImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>(() => {
-    if (typeof window === 'undefined') return 'HIGH'
-    try {
-      const raw = window.localStorage.getItem('heymonday_dashboard_prefs_v1')
-      if (!raw) return 'HIGH'
-      const v = JSON.parse(raw).eventAlertImpactFilter
-      return v === 'ALL' || v === 'HIGH' || v === 'MEDIUM' ? v : 'HIGH'
-    } catch { return 'HIGH' }
-  })
+  const [eventAlertsEnabled, setEventAlertsEnabled] = useState(false)
+  const [eventAlertMinutes, setEventAlertMinutes] = useState(10)
+  const [eventAlertResults, setEventAlertResults] = useState(false)
+  const [eventAlertImpactFilter, setEventAlertImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('HIGH')
+  const [savedEventAlertsEnabled, setSavedEventAlertsEnabled] = useState(false)
+  const [savedEventAlertMinutes, setSavedEventAlertMinutes] = useState(10)
+  const [savedEventAlertResults, setSavedEventAlertResults] = useState(false)
+  const [savedEventAlertImpactFilter, setSavedEventAlertImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('HIGH')
 
   useEffect(() => {
     let mounted = true
@@ -215,7 +195,11 @@ function SettingsPageInner() {
           cancel_at_period_end,
           billing_zip,
           wake_word_enabled,
-          voice_replies_enabled
+          voice_replies_enabled,
+          event_alerts_enabled,
+          event_alert_minutes_before,
+          event_alert_announce_results,
+          event_alert_impact_filter
         `)
         .eq('id', user.id)
         .maybeSingle()
@@ -241,9 +225,20 @@ function SettingsPageInner() {
       const tt = (row?.trader_type as TraderType) || 'day'
       const ww = row?.wake_word_enabled !== false
       const vr = row?.voice_replies_enabled !== false
+      const ea = !!row?.event_alerts_enabled
+      const eam = typeof row?.event_alert_minutes_before === 'number' ? row.event_alert_minutes_before : 10
+      const ear = !!row?.event_alert_announce_results
+      const eaif = (row?.event_alert_impact_filter === 'ALL' || row?.event_alert_impact_filter === 'MEDIUM')
+        ? row.event_alert_impact_filter as 'ALL' | 'MEDIUM'
+        : 'HIGH' as const
+
       setTraderType(tt); setSavedTraderType(tt)
       setWakeWordEnabled(ww); setSavedWakeWord(ww)
       setVoiceRepliesEnabled(vr); setSavedVoiceReplies(vr)
+      setEventAlertsEnabled(ea); setSavedEventAlertsEnabled(ea)
+      setEventAlertMinutes(eam); setSavedEventAlertMinutes(eam)
+      setEventAlertResults(ear); setSavedEventAlertResults(ear)
+      setEventAlertImpactFilter(eaif); setSavedEventAlertImpactFilter(eaif)
 
       setLoading(false)
     }
@@ -289,7 +284,11 @@ function SettingsPageInner() {
   const hasUnsavedChanges =
     traderType !== savedTraderType ||
     wakeWordEnabled !== savedWakeWord ||
-    voiceRepliesEnabled !== savedVoiceReplies
+    voiceRepliesEnabled !== savedVoiceReplies ||
+    eventAlertsEnabled !== savedEventAlertsEnabled ||
+    eventAlertMinutes !== savedEventAlertMinutes ||
+    eventAlertResults !== savedEventAlertResults ||
+    eventAlertImpactFilter !== savedEventAlertImpactFilter
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -308,17 +307,50 @@ function SettingsPageInner() {
     setError('')
     const { error } = await supabase
       .from('profiles')
-      .update({ trader_type: traderType, wake_word_enabled: wakeWordEnabled, voice_replies_enabled: voiceRepliesEnabled })
+      .update({
+        trader_type: traderType,
+        wake_word_enabled: wakeWordEnabled,
+        voice_replies_enabled: voiceRepliesEnabled,
+        event_alerts_enabled: eventAlertsEnabled,
+        event_alert_minutes_before: eventAlertMinutes,
+        event_alert_announce_results: eventAlertResults,
+        event_alert_impact_filter: eventAlertImpactFilter,
+      })
       .eq('id', userId)
     setSavingPrefs(false)
     if (error) {
       setError(error.message)
       return
     }
-    setProfile(prev => prev ? { ...prev, trader_type: traderType, wake_word_enabled: wakeWordEnabled, voice_replies_enabled: voiceRepliesEnabled } : prev)
+    // Sync to localStorage so dashboard polling picks up new values immediately
+    try {
+      const raw = window.localStorage.getItem('heymonday_dashboard_prefs_v1')
+      const parsed = raw ? JSON.parse(raw) : {}
+      window.localStorage.setItem('heymonday_dashboard_prefs_v1', JSON.stringify({
+        ...parsed,
+        eventAlertsEnabled,
+        eventAlertMinutesBefore: eventAlertMinutes,
+        eventAlertAnnounceResults: eventAlertResults,
+        eventAlertImpactFilter,
+      }))
+    } catch {}
+    setProfile(prev => prev ? {
+      ...prev,
+      trader_type: traderType,
+      wake_word_enabled: wakeWordEnabled,
+      voice_replies_enabled: voiceRepliesEnabled,
+      event_alerts_enabled: eventAlertsEnabled,
+      event_alert_minutes_before: eventAlertMinutes,
+      event_alert_announce_results: eventAlertResults,
+      event_alert_impact_filter: eventAlertImpactFilter,
+    } : prev)
     setSavedTraderType(traderType)
     setSavedWakeWord(wakeWordEnabled)
     setSavedVoiceReplies(voiceRepliesEnabled)
+    setSavedEventAlertsEnabled(eventAlertsEnabled)
+    setSavedEventAlertMinutes(eventAlertMinutes)
+    setSavedEventAlertResults(eventAlertResults)
+    setSavedEventAlertImpactFilter(eventAlertImpactFilter)
     setSuccess('Preferences saved.')
   }
 
@@ -401,14 +433,6 @@ function SettingsPageInner() {
     setSigningOut(true)
     await supabase.auth.signOut()
     window.location.href = '/login'
-  }
-
-  function saveEventAlertPref(key: string, value: boolean | number | string) {
-    try {
-      const raw = window.localStorage.getItem('heymonday_dashboard_prefs_v1')
-      const parsed = raw ? JSON.parse(raw) : {}
-      window.localStorage.setItem('heymonday_dashboard_prefs_v1', JSON.stringify({ ...parsed, [key]: value }))
-    } catch {}
   }
 
   const pillStyles = subscriptionMeta.tone === 'green'
@@ -836,11 +860,7 @@ function SettingsPageInner() {
                     </div>
                   </div>
                   <div
-                    onClick={() => {
-                      const next = !eventAlertsEnabled
-                      setEventAlertsEnabled(next)
-                      saveEventAlertPref('eventAlertsEnabled', next)
-                    }}
+                    onClick={() => setEventAlertsEnabled(prev => !prev)}
                     style={{
                       width: 42,
                       height: 24,
@@ -878,7 +898,7 @@ function SettingsPageInner() {
                           return (
                             <div
                               key={opt.id}
-                              onClick={() => { setEventAlertImpactFilter(opt.id); saveEventAlertPref('eventAlertImpactFilter', opt.id) }}
+                              onClick={() => setEventAlertImpactFilter(opt.id)}
                               style={{
                                 padding: '6px 12px',
                                 borderRadius: 999,
@@ -905,10 +925,7 @@ function SettingsPageInner() {
                           return (
                             <div
                               key={min}
-                              onClick={() => {
-                                setEventAlertMinutes(min)
-                                saveEventAlertPref('eventAlertMinutesBefore', min)
-                              }}
+                              onClick={() => setEventAlertMinutes(min)}
                               style={{
                                 padding: '6px 12px',
                                 borderRadius: 999,
@@ -947,11 +964,7 @@ function SettingsPageInner() {
                         </div>
                       </div>
                       <div
-                        onClick={() => {
-                          const next = !eventAlertResults
-                          setEventAlertResults(next)
-                          saveEventAlertPref('eventAlertAnnounceResults', next)
-                        }}
+                        onClick={() => setEventAlertResults(prev => !prev)}
                         style={{
                           width: 42,
                           height: 24,
@@ -981,7 +994,7 @@ function SettingsPageInner() {
                 )}
 
                 <div style={{ color: T.text4, fontSize: 11 }}>
-                  Event alert settings save immediately · Trader style and voice toggles require Save Changes.
+                  All changes require Save Changes · Only fires if voice replies are on.
                 </div>
               </div>
             </div>
