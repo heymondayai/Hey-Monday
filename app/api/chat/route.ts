@@ -572,6 +572,20 @@ const intent = classifyIntent(message, watchlistTickers, priceSymbols)
     const etDate = `${etParts.find((p) => p.type === 'weekday')?.value}, ${etParts.find((p) => p.type === 'month')?.value} ${etParts.find((p) => p.type === 'day')?.value}, ${etParts.find((p) => p.type === 'year')?.value}`
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
+    // Compute which weekday the most recent market close belongs to
+    const etHour = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }).format(now), 10)
+    const etWeekday = etParts.find((p) => p.type === 'weekday')?.value ?? ''
+    const PREV_TRADING: Record<string, string> = {
+      Sunday: 'Friday', Monday: 'Friday',
+      Tuesday: 'Monday', Wednesday: 'Tuesday',
+      Thursday: 'Wednesday', Friday: 'Thursday', Saturday: 'Friday',
+    }
+    // Before 4 PM ET the current session hasn't closed yet → last close was the prior trading day
+    const marketHasClosed = etHour >= 16
+    const lastCloseDayName = (etWeekday === 'Saturday' || etWeekday === 'Sunday' || !marketHasClosed)
+      ? PREV_TRADING[etWeekday] ?? etWeekday
+      : etWeekday
+
     // ── UNIVERSAL FETCHES ────────────────────────────────────────────────────
     const intradaySymbols = watchlistTickers.length
   ? watchlistTickers
@@ -852,6 +866,7 @@ RESPONSE RULES:
 Current time: ${etTime}
 Current date: ${etDate}
 Market status: ${marketStatus}${minutesToClose !== null ? `\nMinutes until market close: ${minutesToClose}` : ''}
+Last trading session close: ${lastCloseDayName}
 
 ${contextBlocks}
 
@@ -880,7 +895,8 @@ CORE RULES:
 13. Never describe the move as bullish or a rally if the broader requested move window was down.
 14. If the current feed does not show a clear catalyst, say there is no clear catalyst in the current feed rather than inventing one.
 15. When using web search, only report facts from actual search results. If search returns no clear results about a specific real-time event, say the search did not surface a clear catalyst rather than inventing one. Never fabricate prices, dates, people, or events.
-${isLimitedData ? `\n16. DATA QUALITY FLAG: The available data for this question is incomplete or may be stale. Answer from what is available but add a brief note that data may be limited. Do not fabricate missing data points.` : ''}
+16. Whenever you mention a closing price, always include the day it closed using only the day name — never "yesterday" or "today". Example: "UPST closed at $32.16 on Friday." Use the "Last trading session close" value above as the day name for the most recent close.
+${isLimitedData ? `\n17. DATA QUALITY FLAG: The available data for this question is incomplete or may be stale. Answer from what is available but add a brief note that data may be limited. Do not fabricate missing data points.` : ''}
 
 ${lengthRules}`
 
