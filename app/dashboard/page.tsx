@@ -1106,8 +1106,6 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
     async function checkEventAlerts() {
       const prefs = getEventAlertPrefs()
       if (!prefs.enabled) return
-
-      // Only fire voice alerts when speech is on
       if (!speechOn) return
 
       try {
@@ -1120,19 +1118,20 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
 
         const nowMs = Date.now()
 
+        // Enrich each qualifying event with its UTC timestamp and minutes-until
+        type Rich = { ev: any; eventUtcMs: number; minutesUntil: number }
+        const enriched: Rich[] = []
+
         for (const ev of events) {
           if (prefs.impactFilter === 'HIGH' && ev.impact !== 'HIGH') continue
           if (prefs.impactFilter === 'MEDIUM' && ev.impact !== 'MEDIUM') continue
           if (prefs.impactFilter === 'ALL' && ev.impact !== 'HIGH' && ev.impact !== 'MEDIUM') continue
           if (!ev.time || ev.time === '--') continue
 
-          // Build an ET timestamp for this event
           const [hh, mm] = ev.time.split(':').map(Number)
           if (isNaN(hh) || isNaN(mm)) continue
 
-          // Construct a Date in ET by building a UTC equivalent
-          const etDateStr = ev.date // YYYY-MM-DD in ET
-          const etDateObj = new Date(`${etDateStr}T00:00:00`)
+          const etDateObj = new Date(`${ev.date}T00:00:00`)
           const etDateParts = new Intl.DateTimeFormat('en-US', {
             timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
           }).formatToParts(etDateObj)
@@ -1140,7 +1139,6 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
           const mo = etDateParts.find((p) => p.type === 'month')?.value ?? '01'
           const dd = etDateParts.find((p) => p.type === 'day')?.value ?? '01'
 
-          // Probe UTC offset by finding which UTC hour maps to hh:mm ET on that day
           let eventUtcMs: number | null = null
           for (let offset = -12; offset <= 14; offset++) {
             const candidate = new Date(Date.UTC(Number(yy), Number(mo) - 1, Number(dd), hh - offset, mm, 0))
@@ -1153,30 +1151,58 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
           }
           if (eventUtcMs === null) continue
 
-          const msUntil = eventUtcMs - nowMs
-          const minutesUntil = msUntil / 60000
+          enriched.push({ ev, eventUtcMs, minutesUntil: (eventUtcMs - nowMs) / 60000 })
+        }
 
-          // Pre-event alert
-          const alertKey = `pre:${ev.id}`
-          if (
-            minutesUntil > 0 &&
-            minutesUntil <= prefs.minutesBefore &&
-            !firedEventAlertRef.current.has(alertKey)
-          ) {
-            firedEventAlertRef.current.add(alertKey)
-            const minStr = Math.ceil(minutesUntil) === 1 ? '1 minute' : `${Math.ceil(minutesUntil)} minutes`
-            const text = `Heads up — ${ev.name} is coming up in ${minStr}.${ev.forecast ? ` Forecast: ${ev.forecast}${ev.unit ? ' ' + ev.unit : ''}.` : ''}`
-            void speakText(text)
+        // ── Pre-event alerts: group by time slot, one announcement per slot ──
+        const preGroups = new Map<number, Rich[]>()
+        for (const item of enriched) {
+          if (item.minutesUntil > 0 && item.minutesUntil <= prefs.minutesBefore &&
+              !firedEventAlertRef.current.has(`pre:${item.ev.id}`)) {
+            const bucket = preGroups.get(item.eventUtcMs) ?? []
+            bucket.push(item)
+            preGroups.set(item.eventUtcMs, bucket)
           }
+        }
+        for (const [, group] of preGroups) {
+          for (const { ev } of group) firedEventAlertRef.current.add(`pre:${ev.id}`)
+          const minStr = Math.ceil(group[0].minutesUntil) === 1 ? '1 minute' : `${Math.ceil(group[0].minutesUntil)} minutes`
+          let text: string
+          if (group.length === 1) {
+            const { ev } = group[0]
+            text = `Heads up — ${ev.name} is coming up in ${minStr}.${ev.forecast ? ` Forecast: ${ev.forecast}${ev.unit ? ' ' + ev.unit : ''}.` : ''}`
+          } else {
+            const names = group.map(({ ev }) => ev.name)
+            const last = names.pop()!
+            text = `Heads up — ${names.join(', ')} and ${last} are all coming up in ${minStr}.`
+          }
+          void speakText(text)
+        }
 
-          // Post-event result announcement
-          if (prefs.announceResults && ev.actual != null) {
-            const resultKey = `result:${ev.id}`
-            if (!firedResultAlertRef.current.has(resultKey)) {
-              firedResultAlertRef.current.add(resultKey)
-              const text = `${ev.name} result is in: ${ev.actual}${ev.unit ? ' ' + ev.unit : ''}.${ev.forecast ? ` Forecast was ${ev.forecast}${ev.unit ? ' ' + ev.unit : ''}.` : ''}`
-              void speakText(text)
+        // ── Result alerts: group by time slot, one announcement per slot ─────
+        if (prefs.announceResults) {
+          const resultGroups = new Map<number, Rich[]>()
+          for (const item of enriched) {
+            if (item.ev.actual != null && !firedResultAlertRef.current.has(`result:${item.ev.id}`)) {
+              const bucket = resultGroups.get(item.eventUtcMs) ?? []
+              bucket.push(item)
+              resultGroups.set(item.eventUtcMs, bucket)
             }
+          }
+          for (const [, group] of resultGroups) {
+            for (const { ev } of group) firedResultAlertRef.current.add(`result:${ev.id}`)
+            let text: string
+            if (group.length === 1) {
+              const { ev } = group[0]
+              text = `${ev.name} result is in: ${ev.actual}${ev.unit ? ' ' + ev.unit : ''}.${ev.forecast ? ` Forecast was ${ev.forecast}${ev.unit ? ' ' + ev.unit : ''}.` : ''}`
+            } else {
+              const parts = group.map(({ ev }) =>
+                `${ev.name}: ${ev.actual}${ev.unit ? ' ' + ev.unit : ''}${ev.forecast ? ` versus forecast of ${ev.forecast}${ev.unit ? ' ' + ev.unit : ''}` : ''}`
+              )
+              const last = parts.pop()!
+              text = `Results are in — ${parts.join(', ')}, and ${last}.`
+            }
+            void speakText(text)
           }
         }
       } catch {}
