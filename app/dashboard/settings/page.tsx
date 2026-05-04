@@ -110,8 +110,21 @@ function statusPill(status: string | null) {
   return { label: status || 'Unknown', tone: 'blue' as const }
 }
 
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`)
+    setIsMobile(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [breakpoint])
+  return isMobile
+}
+
 function SettingsPageInner() {
   const router = useRouter()
+  const isMobile = useIsMobile()
   const supabase = createClient()
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true
@@ -456,7 +469,7 @@ function SettingsPageInner() {
   const sectionCard: React.CSSProperties = {
     background: T.panelBg,
     border: `1px solid ${T.border}`,
-    padding: '24px',
+    padding: isMobile ? '16px' : '24px',
     borderRadius: 8,
   }
 
@@ -511,21 +524,22 @@ function SettingsPageInner() {
         pointerEvents: 'none',
       }} />
 
-      <div style={{ position: 'relative', zIndex: 1, maxWidth: 1180, margin: '0 auto', padding: '32px 24px 60px' }}>
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 1180, margin: '0 auto', padding: isMobile ? '16px 16px 120px' : '32px 24px 80px' }}>
         <div style={{
           display: 'flex',
-          alignItems: 'center',
+          flexDirection: isMobile ? 'column' : 'row',
+          alignItems: isMobile ? 'flex-start' : 'center',
           justifyContent: 'space-between',
-          gap: 16,
-          marginBottom: 28,
+          gap: isMobile ? 12 : 16,
+          marginBottom: isMobile ? 20 : 28,
         }}>
           <div>
             <div style={{
               fontFamily: "'Playfair Display', serif",
-              fontSize: 38,
+              fontSize: isMobile ? 28 : 38,
               fontStyle: 'italic',
               color: T.text,
-              marginBottom: 6,
+              marginBottom: 4,
             }}>
               Settings
             </div>
@@ -534,7 +548,7 @@ function SettingsPageInner() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
             <div
               onClick={() => {
                 const next = !isDark
@@ -572,7 +586,7 @@ function SettingsPageInner() {
                 cursor: 'pointer',
               }}
             >
-              ← Back to Dashboard
+              {isMobile ? '← Back' : '← Back to Dashboard'}
             </div>
           </div>
         </div>
@@ -609,8 +623,8 @@ function SettingsPageInner() {
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '1.1fr 0.9fr',
-          gap: 20,
+          gridTemplateColumns: isMobile ? '1fr' : '1.1fr 0.9fr',
+          gap: isMobile ? 16 : 20,
         }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div style={sectionCard}>
@@ -1058,9 +1072,9 @@ function SettingsPageInner() {
     key={label}
     style={{
       display: 'grid',
-      gridTemplateColumns: '170px 1fr',
-      gap: 12,
-      padding: '12px 14px',
+      gridTemplateColumns: isMobile ? '110px 1fr' : '170px 1fr',
+      gap: isMobile ? 8 : 12,
+      padding: isMobile ? '10px 12px' : '12px 14px',
       borderBottom: i === arr.length - 1 ? 'none' : `1px solid ${T.border}`,
     }}
   >
