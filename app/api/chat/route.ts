@@ -879,6 +879,9 @@ IDENTITY:
 - No markdown, no bullets, no headers.
 - Stop the moment the answer is complete.
 
+CLOSING PRICE DAY RULE (NO EXCEPTIONS):
+Every time you state a closing price, you MUST name the day. Use only the weekday name from "Last trading session close" above. Never say "yesterday" or "today". Correct: "GLD closed at $423.18 on Friday." Wrong: "GLD closed at $423.18."
+
 CORE RULES:
 1. Use only facts in the supplied data. Never invent prices, events, or timestamps.
 2. Do not restate the question.
@@ -895,8 +898,7 @@ CORE RULES:
 13. Never describe the move as bullish or a rally if the broader requested move window was down.
 14. If the current feed does not show a clear catalyst, say there is no clear catalyst in the current feed rather than inventing one.
 15. When using web search, only report facts from actual search results. If search returns no clear results about a specific real-time event, say the search did not surface a clear catalyst rather than inventing one. Never fabricate prices, dates, people, or events.
-16. Whenever you mention a closing price, always include the day it closed using only the day name — never "yesterday" or "today". Example: "UPST closed at $32.16 on Friday." Use the "Last trading session close" value above as the day name for the most recent close.
-${isLimitedData ? `\n17. DATA QUALITY FLAG: The available data for this question is incomplete or may be stale. Answer from what is available but add a brief note that data may be limited. Do not fabricate missing data points.` : ''}
+${isLimitedData ? `\n16. DATA QUALITY FLAG: The available data for this question is incomplete or may be stale. Answer from what is available but add a brief note that data may be limited. Do not fabricate missing data points.` : ''}
 
 ${lengthRules}`
 
