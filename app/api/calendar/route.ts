@@ -81,9 +81,11 @@ function categorize(name: string): CalendarEvent['category'] {
 
 function getUnit(name: string): string {
   const n = name.toLowerCase()
-  if (/rate|cpi|ppi|pce|gdp|unemployment|inflation|sales|confidence|sentiment|pmi|ism|capacity utilization|production/.test(n)) return '%'
+  // Specific overrides first — must come before broad "sales" / "%" catch-all
+  if (/home sales|new home|existing home/.test(n)) return 'K'
+  if (/jolts|job openings/.test(n)) return 'M'
   if (/nonfarm|payroll|claims/.test(n)) return 'K'
-  if (/jolts|openings|home sales/.test(n)) return 'M'
+  if (/rate|cpi|ppi|pce|gdp|unemployment|inflation|sales|confidence|sentiment|pmi|ism|capacity utilization|production/.test(n)) return '%'
   return ''
 }
 
