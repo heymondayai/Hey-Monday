@@ -132,17 +132,20 @@ function normalizeValueForUnit(raw: string | null, unit: string): string | null 
 }
 
 function dedupeEvents(events: CalendarEvent[]): CalendarEvent[] {
-  const seen = new Set<string>()
-  const out: CalendarEvent[] = []
+  const seen = new Map<string, CalendarEvent>()
 
   for (const e of events) {
     const key = [e.date, e.time, e.name.toLowerCase(), e.category, e.ticker ?? ''].join('|')
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push(e)
+    const existing = seen.get(key)
+    if (!existing) {
+      seen.set(key, e)
+    } else if (e.forecast != null && existing.forecast == null) {
+      // Prefer the scheduled release (has a forecast) over a retroactive/delayed one
+      seen.set(key, e)
+    }
   }
 
-  return out
+  return Array.from(seen.values())
 }
 
 function normalizeBenzingaDate(raw?: string): string {
