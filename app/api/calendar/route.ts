@@ -114,6 +114,23 @@ function normalizeValue(value: string | number | null | undefined): string | nul
   return String(value)
 }
 
+// Benzinga inconsistently sends some values in raw units (e.g. 652000) while
+// the display unit is K. Detect and divide down when the magnitude is wrong.
+function normalizeValueForUnit(raw: string | null, unit: string): string | null {
+  if (raw == null) return null
+  const num = parseFloat(raw)
+  if (isNaN(num)) return raw
+  if (unit === 'K' && Math.abs(num) >= 10_000) {
+    const n = num / 1_000
+    return n % 1 === 0 ? String(n) : n.toFixed(1)
+  }
+  if (unit === 'M' && Math.abs(num) >= 1_000_000) {
+    const n = num / 1_000_000
+    return n % 1 === 0 ? String(n) : n.toFixed(2)
+  }
+  return raw
+}
+
 function dedupeEvents(events: CalendarEvent[]): CalendarEvent[] {
   const seen = new Set<string>()
   const out: CalendarEvent[] = []
@@ -238,9 +255,9 @@ async function fetchBenzingaEconomicCalendarForDay(day: string, fresh = false): 
           country: normalizeCountry(e.country),
           impact: mapImportanceToImpact(e.importance),
           category: categorize(name),
-          actual: normalizeValue(e.actual),
-          forecast: normalizeValue(e.consensus ?? e.forecast),
-          previous: normalizeValue(e.previous),
+          actual: normalizeValueForUnit(normalizeValue(e.actual), unit),
+          forecast: normalizeValueForUnit(normalizeValue(e.consensus ?? e.forecast), unit),
+          previous: normalizeValueForUnit(normalizeValue(e.previous), unit),
           unit,
           source: 'benzinga',
         }
