@@ -139,9 +139,14 @@ function dedupeEvents(events: CalendarEvent[]): CalendarEvent[] {
     const existing = seen.get(key)
     if (!existing) {
       seen.set(key, e)
-    } else if (e.forecast != null && existing.forecast == null) {
-      // Prefer the scheduled release (has a forecast) over a retroactive/delayed one
-      seen.set(key, e)
+    } else {
+      // Prefer the scheduled release (has forecast) over a retroactive delayed one
+      const incomingForecastWins = e.forecast != null && existing.forecast == null
+      // If both have forecasts, prefer the later actual (higher index = released later by Benzinga)
+      const bothHaveForecasts = e.forecast != null && existing.forecast != null
+      if (incomingForecastWins || bothHaveForecasts) {
+        seen.set(key, e)
+      }
     }
   }
 
@@ -258,9 +263,9 @@ async function fetchBenzingaEconomicCalendarForDay(day: string, fresh = false): 
           country: normalizeCountry(e.country),
           impact: mapImportanceToImpact(e.importance),
           category: categorize(name),
-          actual: normalizeValueForUnit(normalizeValue(e.actual), unit),
+          actual: normalizeValue(e.actual),
           forecast: normalizeValueForUnit(normalizeValue(e.consensus ?? e.forecast), unit),
-          previous: normalizeValueForUnit(normalizeValue(e.previous), unit),
+          previous: normalizeValue(e.previous),
           unit,
           source: 'benzinga',
         }
