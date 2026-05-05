@@ -365,6 +365,7 @@ function SettingsPageInner() {
     setSavedEventAlertResults(eventAlertResults)
     setSavedEventAlertImpactFilter(eventAlertImpactFilter)
     setSuccess('Preferences saved.')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   async function openCustomerPortal() {
