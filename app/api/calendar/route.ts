@@ -195,7 +195,7 @@ function enumerateDates(from: string, to: string): string[] {
   return out
 }
 
-async function fetchBenzingaEconomicCalendarForDay(day: string): Promise<CalendarEvent[]> {
+async function fetchBenzingaEconomicCalendarForDay(day: string, fresh = false): Promise<CalendarEvent[]> {
   const token = process.env.BENZINGA_API_KEY
   if (!token) return []
 
@@ -209,10 +209,8 @@ async function fetchBenzingaEconomicCalendarForDay(day: string): Promise<Calenda
 
     const url = `https://api.benzinga.com/api/v2.1/calendar/economics?${params.toString()}`
     const res = await fetch(url, {
-      headers: {
-        accept: 'application/json',
-      },
-      next: { revalidate: 300 },
+      headers: { accept: 'application/json' },
+      ...(fresh ? { cache: 'no-store' as const } : { next: { revalidate: 300 } }),
     })
 
     if (!res.ok) return []
@@ -251,9 +249,9 @@ async function fetchBenzingaEconomicCalendarForDay(day: string): Promise<Calenda
   }
 }
 
-async function getMacroCalendarEvents(from: string, to: string): Promise<CalendarEvent[]> {
+async function getMacroCalendarEvents(from: string, to: string, fresh = false): Promise<CalendarEvent[]> {
   const days = enumerateDates(from, to)
-  const results = await Promise.all(days.map((day) => fetchBenzingaEconomicCalendarForDay(day)))
+  const results = await Promise.all(days.map((day) => fetchBenzingaEconomicCalendarForDay(day, fresh)))
   return results.flat()
 }
 
@@ -272,6 +270,7 @@ export async function GET(req: NextRequest) {
     const from = searchParams.get('from') || today
     const to = searchParams.get('to') || today
     const view = searchParams.get('view') || 'full'
+    const fresh = searchParams.get('fresh') === '1'
     const tickersParam = searchParams.get('tickers') || ''
 
     const watchlistTickers = tickersParam
@@ -284,7 +283,7 @@ export async function GET(req: NextRequest) {
     const diffDays = Math.max(0, Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24)))
 
     const [macroEvents, earningsEvents] = await Promise.all([
-      getMacroCalendarEvents(from, to),
+      getMacroCalendarEvents(from, to, fresh),
       watchlistTickers.length ? fetchEarningsCalendar(watchlistTickers, diffDays + 7) : Promise.resolve([]),
     ])
 

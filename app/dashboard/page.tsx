@@ -850,7 +850,8 @@ const wakePreferredOnRef = useRef(true)
   const summaryModalScrollRef = useRef<HTMLDivElement>(null)
   const firedEventAlertRef = useRef<Set<string>>(new Set())
   const firedResultAlertRef = useRef<Set<string>>(new Set())
-  const eventAlertPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const eventAlertPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const resultWindowUntilRef = useRef<number>(0)
 
   useEffect(() => { watchlistRef.current = watchlist }, [watchlist])
 
@@ -1082,7 +1083,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
     if (!user) return
 
     if (eventAlertPollRef.current) {
-      clearInterval(eventAlertPollRef.current)
+      clearTimeout(eventAlertPollRef.current)
       eventAlertPollRef.current = null
     }
 
@@ -1105,18 +1106,23 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
 
     async function checkEventAlerts() {
       const prefs = getEventAlertPrefs()
+
+      // Schedule the next poll before doing any work so a throw can't break the loop
+      const inResultWindow = Date.now() < resultWindowUntilRef.current
+      eventAlertPollRef.current = setTimeout(() => { void checkEventAlerts() }, inResultWindow ? 15_000 : 60_000)
+
       if (!prefs.enabled) return
       if (!speechOn) return
 
       try {
+        const nowMs = Date.now()
+        const isFresh = nowMs < resultWindowUntilRef.current
         const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
         const tickers = watchlistRef.current.map((w) => w.ticker).join(',')
-        const url = `/api/calendar?from=${today}&to=${today}&view=dashboard${tickers ? `&tickers=${encodeURIComponent(tickers)}` : ''}`
+        const url = `/api/calendar?from=${today}&to=${today}&view=dashboard${tickers ? `&tickers=${encodeURIComponent(tickers)}` : ''}${isFresh ? '&fresh=1' : ''}`
         const res = await fetch(url)
         const data = await res.json()
         const events: any[] = data.events ?? []
-
-        const nowMs = Date.now()
 
         // Enrich each qualifying event with its UTC timestamp and minutes-until
         type Rich = { ev: any; eventUtcMs: number; minutesUntil: number }
@@ -1166,6 +1172,11 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
         }
         for (const [, group] of preGroups) {
           for (const { ev } of group) firedEventAlertRef.current.add(`pre:${ev.id}`)
+          // Switch to fast polling: results expected up to 30 min after event time
+          resultWindowUntilRef.current = Math.max(
+            resultWindowUntilRef.current,
+            group[0].eventUtcMs + 30 * 60_000
+          )
           const minStr = Math.ceil(group[0].minutesUntil) === 1 ? '1 minute' : `${Math.ceil(group[0].minutesUntil)} minutes`
           let text: string
           if (group.length === 1) {
@@ -1208,12 +1219,11 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
       } catch {}
     }
 
-    eventAlertPollRef.current = setInterval(checkEventAlerts, 60000)
-    checkEventAlerts()
+    void checkEventAlerts()
 
     return () => {
       if (eventAlertPollRef.current) {
-        clearInterval(eventAlertPollRef.current)
+        clearTimeout(eventAlertPollRef.current)
         eventAlertPollRef.current = null
       }
     }
