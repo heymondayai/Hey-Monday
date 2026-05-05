@@ -205,36 +205,12 @@ function formatCalendarValue(value: string | null | undefined, unit: string): st
   const numeric = parseFloat(String(value).replace(/,/g, '').replace(/[^0-9.-]/g, ''))
   if (isNaN(numeric)) return `${value}${unit || ''}`
 
-  // ---- MILLIONS ----
-  if (unit === 'M' || numeric >= 1_000_000) {
-    const millions = numeric / 1_000_000
+  // Values from the API are already in display scale — just format and append unit
+  const formatted = numeric % 1 === 0
+    ? String(numeric)
+    : parseFloat(numeric.toFixed(3)).toString()
 
-    let decimals = 3
-    if (millions >= 10) decimals = 2
-    else if (millions >= 1) decimals = 3
-
-    return `${millions.toFixed(decimals).replace(/\.?0+$/, '')}M`
-  }
-
-  // ---- THOUSANDS ----
-  if (unit === 'K' || numeric >= 1_000) {
-    const thousands = numeric / 1_000
-
-    let decimals = 1
-    if (thousands >= 100) decimals = 0
-    else if (thousands >= 10) decimals = 1
-    else decimals = 2
-
-    return `${thousands.toFixed(decimals).replace(/\.?0+$/, '')}K`
-  }
-
-  // ---- PERCENT ----
-  if (unit === '%') {
-    return `${numeric}%`
-  }
-
-  // ---- DEFAULT ----
-  return numeric.toString()
+  return unit ? `${formatted}${unit}` : formatted
 }
 
 function getOutcomeColor(event: CalendarEvent, T: ThemeTokens): { color: string; label: string; isGood: boolean | null } {
@@ -410,7 +386,7 @@ export function EventsPanel({ watchlistTickers, onOpenCalendar, T, isDark }: Eve
                     ) : (
                       <div style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>—</div>
                     )}
-                    {e.forecast && <div style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>est {e.forecast}{e.unit}</div>}
+                    {e.forecast && <div style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>est {formatCalendarValue(e.forecast, e.unit)}</div>}
                   </>
                 ) : timer ? (
                   <div style={{ fontSize: '11px', color: T.gold, fontFamily: "'DM Mono', monospace", background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '3px 7px' }}>⏳ {timer}</div>
