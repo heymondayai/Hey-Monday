@@ -1175,7 +1175,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
           // Switch to fast polling: results expected up to 30 min after event time
           resultWindowUntilRef.current = Math.max(
             resultWindowUntilRef.current,
-            group[0].eventUtcMs + 30 * 60_000
+            group[0].eventUtcMs + 10 * 60_000
           )
           const minStr = Math.ceil(group[0].minutesUntil) === 1 ? '1 minute' : `${Math.ceil(group[0].minutesUntil)} minutes`
           let text: string
