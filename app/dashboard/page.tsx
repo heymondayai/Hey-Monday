@@ -376,7 +376,7 @@ const TRADER_TYPES = [
 ]
 
 const PULSE_LABEL: Record<string, string> = {
-  day: '⚡ Intraday Pulse', swing: '📈 Swing Pulse', longterm: '🏦 Portfolio Pulse',
+  day: 'Intraday Pulse', swing: 'Swing Pulse', longterm: 'Portfolio Pulse',
 }
 
 function MondayText({ text }: { text: string }) {
@@ -2053,7 +2053,6 @@ const visibleDaySummaries = useMemo(() => {
                 </div>
                 <div style={{ padding: '10px 16px', borderBottom: `1px solid ${T.borderFaint}` }}>
                   <div onClick={() => { router.push('/dashboard/settings'); setMobileDrawerOpen(false) }} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 11px', background: activeTrader.bgColor, border: `1px solid ${activeTrader.borderColor}`, cursor: 'pointer' }}>
-                    <span style={{ fontSize: '13px' }}>{activeTrader.icon}</span>
                     <span style={{ fontSize: '11px', color: activeTrader.color, fontWeight: 600 }}>{activeTrader.label}</span>
                     <span style={{ fontSize: '10px', color: T.text6, marginLeft: '2px' }}>✎</span>
                   </div>
@@ -2091,7 +2090,6 @@ const visibleDaySummaries = useMemo(() => {
                 </div>
                 <div style={{ padding: '6px 16px', borderBottom: `1px solid ${T.borderFaint}` }}>
                   <div onClick={() => { setShowWakeSchedule(true); setMobileDrawerOpen(false) }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: 'transparent', border: `1px solid ${T.borderItem}`, cursor: 'pointer' }}>
-                    <span style={{ fontSize: '12px' }}>🕐</span>
                     <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace", letterSpacing: '0.1em', textTransform: 'uppercase' }}>Wake Schedule</span>
                     {windows.length > 0 && <span style={{ marginLeft: 'auto', fontSize: '10px', color: T.gold }}>{windows.length}</span>}
                     {scheduledOff && <span style={{ fontSize: '9px', color: T.red, fontFamily: "'DM Mono', monospace", background: T.redFaint, border: `1px solid ${T.redBorder}`, padding: '1px 5px' }}>OFF</span>}
@@ -2128,7 +2126,7 @@ const visibleDaySummaries = useMemo(() => {
                   )}
                 </div>
                 <div style={{ padding: '12px 16px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div onClick={() => { router.push('/dashboard/settings'); setMobileDrawerOpen(false) }} style={{ fontSize: '11px', color: T.goldText, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>⚙ Settings</div>
+                  <div onClick={() => { router.push('/dashboard/settings'); setMobileDrawerOpen(false) }} style={{ fontSize: '11px', color: T.goldText, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Settings</div>
                   <div onClick={handleLogout} style={{ fontSize: '11px', color: T.text6, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Sign Out</div>
                 </div>
               </div>
@@ -2404,7 +2402,6 @@ const visibleDaySummaries = useMemo(() => {
               </div>
 
               <div onClick={() => router.push('/dashboard/settings')} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginTop: '10px', padding: '5px 11px', background: activeTrader.bgColor, border: `1px solid ${activeTrader.borderColor}`, cursor: 'pointer' }}>
-                <span style={{ fontSize: '14px' }}>{activeTrader.icon}</span>
                 <span style={{ fontSize: '11px', color: activeTrader.color, fontWeight: 600, letterSpacing: '0.08em' }}>{activeTrader.label}</span>
                 <span style={{ fontSize: '10px', color: T.text6, marginLeft: '2px' }}>✎</span>
               </div>
@@ -2480,7 +2477,7 @@ const visibleDaySummaries = useMemo(() => {
             </div>
             )}
             <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div onClick={() => router.push('/dashboard/settings')} style={{ fontSize: '11px', color: T.goldText, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>⚙ Settings</div>
+              <div onClick={() => router.push('/dashboard/settings')} style={{ fontSize: '11px', color: T.goldText, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Settings</div>
               <div onClick={handleLogout} style={{ fontSize: '11px', color: T.text6, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Sign Out</div>
             </div>
           </div>

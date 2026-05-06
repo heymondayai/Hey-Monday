@@ -734,7 +734,6 @@ function SettingsPageInner() {
                             gap: 12,
                           }}
                         >
-                          <div style={{ fontSize: 22 }}>{type.icon}</div>
                           <div style={{ flex: 1 }}>
                             <div style={{ color: selected ? T.gold : T.text2, fontSize: 15, fontWeight: 700 }}>
                               {type.label}
