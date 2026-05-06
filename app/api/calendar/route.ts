@@ -263,9 +263,9 @@ async function fetchBenzingaEconomicCalendarForDay(day: string, fresh = false): 
           country: normalizeCountry(e.country),
           impact: mapImportanceToImpact(e.importance),
           category: categorize(name),
-          actual: normalizeValue(e.actual),
+          actual: normalizeValueForUnit(normalizeValue(e.actual), unit),
           forecast: normalizeValueForUnit(normalizeValue(e.consensus ?? e.forecast), unit),
-          previous: normalizeValue(e.previous),
+          previous: normalizeValueForUnit(normalizeValue(e.previous), unit),
           unit,
           source: 'benzinga',
         }
