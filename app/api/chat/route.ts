@@ -627,7 +627,7 @@ const [intradayResult, economicEvents, earningsEvents, macroData, sectorData] = 
     endDate: intradayDateRequest.endDate,
   }),
   fetchEconomicCalendar(todayStr, calendarTo),
-  fetchEarningsCalendar(intradaySymbols, 14),
+  fetchEarningsCalendar(intradaySymbols, todayStr, calendarTo),
   fetchMacroData(),
   fetchSectorPerformance(),
 ])

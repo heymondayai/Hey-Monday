@@ -388,28 +388,45 @@ export async function fetchMacroData(): Promise<MacroData> {
 
 // ── FMP — EARNINGS CALENDAR ───────────────────────────────────────────────────
 
+// Stocks whose earnings typically move the broader market — shown regardless of watchlist
+export const MARKET_MOVERS = new Set([
+  // Mega-cap tech
+  'AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'GOOG', 'META', 'TSLA',
+  // Semiconductors
+  'AMD', 'AVGO', 'QCOM', 'INTC', 'MU', 'ARM', 'AMAT', 'LRCX', 'KLAC',
+  // Big banks
+  'JPM', 'GS', 'MS', 'BAC', 'WFC', 'C',
+  // Consumer / Retail
+  'WMT', 'COST', 'HD', 'TGT', 'AMZN',
+  // Streaming / Media
+  'NFLX', 'DIS', 'SPOT',
+  // Enterprise / Cloud
+  'CRM', 'SNOW', 'NOW', 'ORCL', 'ADBE', 'PLTR', 'PANW',
+  // Payments
+  'V', 'MA', 'PYPL',
+  // Other bellwethers
+  'UBER', 'ABNB', 'COIN', 'SHOP',
+])
+
 export async function fetchEarningsCalendar(
-  symbols: string[],
-  daysAhead: number = 7
+  watchlistSymbols: string[],
+  from: string,
+  to: string,
 ): Promise<EarningsEvent[]> {
   const key = process.env.FMP_API_KEY
   if (!key) return []
 
   try {
-    const from = new Date()
-    const to   = new Date()
-    to.setDate(to.getDate() + daysAhead)
-    const fmt = (d: Date) => d.toISOString().split('T')[0]
-
-    const url = `https://financialmodelingprep.com/api/v3/earning_calendar?from=${fmt(from)}&to=${fmt(to)}&apikey=${key}`
+    const url = `https://financialmodelingprep.com/api/v3/earning_calendar?from=${from}&to=${to}&apikey=${key}`
     const res = await fetch(url, { next: { revalidate: 3600 } })
 
     if (!res.ok) return []
     const raw: any[] = await res.json()
 
-    const symbolSet = new Set(symbols.map(s => s.toUpperCase()))
+    const watchlistSet = new Set(watchlistSymbols.map(s => s.toUpperCase()))
+
     return raw
-      .filter(e => symbolSet.has(e.symbol?.toUpperCase()))
+      .filter(e => watchlistSet.has(e.symbol?.toUpperCase()) || MARKET_MOVERS.has(e.symbol?.toUpperCase()))
       .map(e => ({
         symbol:          e.symbol ?? '',
         date:            e.date ?? '',

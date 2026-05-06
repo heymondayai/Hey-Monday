@@ -276,7 +276,7 @@ const calendarTo = calendarToDate.toLocaleDateString('en-CA', {
 const [intradayResult, economicEvents, earningsEvents, macroData, sectorData] = await Promise.all([
   fetchIntraday(watchlistTickers),
   fetchEconomicCalendar(todayStr, calendarTo),
-  fetchEarningsCalendar(watchlistTickers, 14),
+  fetchEarningsCalendar(watchlistTickers, todayStr, calendarTo),
   fetchMacroData(),
   fetchSectorPerformance(),
 ])

@@ -305,19 +305,21 @@ export async function GET(req: NextRequest) {
       .map((t) => t.trim().toUpperCase())
       .filter(Boolean)
 
-    const fromDate = new Date(`${from}T12:00:00`)
-    const toDate = new Date(`${to}T12:00:00`)
-    const diffDays = Math.max(0, Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24)))
+    // Extend the earnings window 7 days past `to` so upcoming events are visible
+    const toExtended = new Date(`${to}T12:00:00`)
+    toExtended.setDate(toExtended.getDate() + 7)
+    const toEarnings = toExtended.toISOString().split('T')[0]
 
     const [macroEvents, earningsEvents] = await Promise.all([
       getMacroCalendarEvents(from, to, fresh),
-      watchlistTickers.length ? fetchEarningsCalendar(watchlistTickers, diffDays + 7) : Promise.resolve([]),
+      fetchEarningsCalendar(watchlistTickers, from, toEarnings),
     ])
 
     const earningsCalendarEvents: CalendarEvent[] = earningsEvents
       .filter((e) => e.date >= from && e.date <= to)
       .map((e, idx) => {
-        const isWatchlist = watchlistTickers.includes(e.symbol.toUpperCase())
+        const sym = e.symbol.toUpperCase()
+        const isWatchlist = watchlistTickers.includes(sym)
         const timeET =
           e.time === 'bmo'
             ? 'Before Open'
