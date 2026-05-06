@@ -205,12 +205,25 @@ function formatCalendarValue(value: string | null | undefined, unit: string): st
   const numeric = parseFloat(String(value).replace(/,/g, '').replace(/[^0-9.-]/g, ''))
   if (isNaN(numeric)) return `${value}${unit || ''}`
 
-  // Values from the API are already in display scale — just format and append unit
-  const formatted = numeric % 1 === 0
-    ? String(numeric)
-    : parseFloat(numeric.toFixed(3)).toString()
+  if (unit) {
+    // Values from the API are already in display scale — just format and append unit
+    const formatted = numeric % 1 === 0
+      ? String(numeric)
+      : parseFloat(numeric.toFixed(3)).toString()
+    return `${formatted}${unit}`
+  }
 
-  return unit ? `${formatted}${unit}` : formatted
+  // No predefined unit — auto-format large raw values with K/M suffix
+  const abs = Math.abs(numeric)
+  if (abs >= 1_000_000) {
+    const m = numeric / 1_000_000
+    return `${parseFloat(m.toFixed(3))}M`
+  }
+  if (abs >= 10_000) {
+    const k = numeric / 1_000
+    return `${parseFloat(k.toFixed(1))}K`
+  }
+  return numeric % 1 === 0 ? String(numeric) : parseFloat(numeric.toFixed(3)).toString()
 }
 
 function getOutcomeColor(event: CalendarEvent, T: ThemeTokens): { color: string; label: string; isGood: boolean | null } {
