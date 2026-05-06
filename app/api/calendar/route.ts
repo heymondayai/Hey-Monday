@@ -140,11 +140,11 @@ function dedupeEvents(events: CalendarEvent[]): CalendarEvent[] {
     if (!existing) {
       seen.set(key, e)
     } else {
-      // Prefer the scheduled release (has forecast) over a retroactive delayed one
+      // Prefer the scheduled release (has forecast) over a retroactive delayed one.
+      // When both have forecasts, keep the FIRST one — Benzinga lists the current
+      // month's release first; retroactive prior-month data appears later in the array.
       const incomingForecastWins = e.forecast != null && existing.forecast == null
-      // If both have forecasts, prefer the later actual (higher index = released later by Benzinga)
-      const bothHaveForecasts = e.forecast != null && existing.forecast != null
-      if (incomingForecastWins || bothHaveForecasts) {
+      if (incomingForecastWins) {
         seen.set(key, e)
       }
     }
