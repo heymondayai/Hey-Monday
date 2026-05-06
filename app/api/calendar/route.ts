@@ -378,6 +378,7 @@ export async function GET(req: NextRequest) {
         provider: 'benzinga',
         providerReady: true,
         view,
+        ...(searchParams.get('debug') === '1' ? { rawMacro: macroEvents } : {}),
       },
     })
   } catch {
