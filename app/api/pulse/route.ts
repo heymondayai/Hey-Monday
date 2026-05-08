@@ -181,7 +181,7 @@ Generate exactly three things. Use ONLY the exact numbers and tickers provided a
 Respond in this exact JSON format with no other text:
 {
   "headline": "A news-style headline sentence capturing the most important thing happening right now. Reference actual tickers and percentages. Be specific and descriptive — this should read like a Bloomberg or WSJ headline.",
-  "summary": "Exactly two crisp sentences. First: name the biggest winner and biggest loser on the watchlist by ticker and percentage, and describe what the split means for the overall book. Second: one sharp, specific observation for this trader type about what to do or watch given today's moves — plain English only.",
+  "summary": "Exactly two sentences, each longer and more descriptive than a headline. Do NOT include any percentages, +/- signs, or specific numeric figures — the user can already see those. First: describe what is driving the overall tone of the market and watchlist today — what themes, sectors, or narratives are at work, and whether the move feels conviction-driven or choppy. Second: give a specific, actionable observation tailored to this trader type about what the current environment means and what to pay attention to — plain English only, written like a seasoned trader talking to another trader.",
   "riskNote": "One tight sentence — max 20 words — naming the single biggest risk right now. If an upcoming event, name it and state exactly why it moves this watchlist."
 }`
 
