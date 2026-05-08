@@ -852,6 +852,8 @@ const wakePreferredOnRef = useRef(true)
   const firedResultAlertRef = useRef<Set<string>>(new Set())
   const eventAlertPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const resultWindowUntilRef = useRef<number>(0)
+  const [eventAlertToast, setEventAlertToast] = useState<string | null>(null)
+  const eventAlertToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => { watchlistRef.current = watchlist }, [watchlist])
 
@@ -1112,7 +1114,6 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
       eventAlertPollRef.current = setTimeout(() => { void checkEventAlerts() }, inResultWindow ? 15_000 : 60_000)
 
       if (!prefs.enabled) return
-      if (!speechOn) return
 
       try {
         const nowMs = Date.now()
@@ -1170,6 +1171,12 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
             preGroups.set(item.eventUtcMs, bucket)
           }
         }
+        const showToast = (text: string) => {
+          if (eventAlertToastTimerRef.current) clearTimeout(eventAlertToastTimerRef.current)
+          setEventAlertToast(text)
+          eventAlertToastTimerRef.current = setTimeout(() => setEventAlertToast(null), 10_000)
+        }
+
         for (const [, group] of preGroups) {
           for (const { ev } of group) firedEventAlertRef.current.add(`pre:${ev.id}`)
           // Switch to fast polling: results expected up to 30 min after event time
@@ -1187,7 +1194,8 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
             const last = names.pop()!
             text = `Heads up — ${names.join(', ')} and ${last} are all coming up in ${minStr}.`
           }
-          void speakText(text)
+          showToast(text)
+          if (speechOn) void speakText(text)
         }
 
         // ── Result alerts: group by time slot, one announcement per slot ─────
@@ -1213,7 +1221,8 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
               const last = parts.pop()!
               text = `Results are in — ${parts.join(', ')}, and ${last}.`
             }
-            void speakText(text)
+            showToast(text)
+            if (speechOn) void speakText(text)
           }
         }
       } catch {}
@@ -1775,6 +1784,27 @@ const visibleDaySummaries = useMemo(() => {
 
   return (
     <>
+      {/* ── Event alert toast ── */}
+      {eventAlertToast && (
+        <div
+          onClick={() => setEventAlertToast(null)}
+          style={{
+            position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 9999, maxWidth: 480, width: 'calc(100% - 32px)',
+            background: isDark ? '#1a1508' : '#fffbf0',
+            border: `1px solid ${isDark ? '#c9922a' : '#b07a1a'}`,
+            borderLeft: `4px solid #c9922a`,
+            borderRadius: 8, padding: '12px 16px',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer',
+          }}
+        >
+          <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>🔔</span>
+          <span style={{ fontSize: 13, color: isDark ? '#e8d5a0' : '#5a3e00', fontFamily: "'DM Sans', sans-serif", lineHeight: 1.4 }}>
+            {eventAlertToast}
+          </span>
+        </div>
+      )}
       <WakeWordListener
         enabled={prefsLoaded && wakeOn}
         onDetected={() => {
