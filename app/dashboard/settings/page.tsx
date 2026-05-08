@@ -254,6 +254,26 @@ function SettingsPageInner() {
       setEventAlertImpactFilter(eaif); setSavedEventAlertImpactFilter(eaif)
 
       setLoading(false)
+
+      // Sync latest billing state from Stripe in the background
+      if (row?.stripe_subscription_id) {
+        fetch('/api/billing/sync', { method: 'POST' })
+          .then(r => r.json())
+          .then(data => {
+            if (!mounted || !data.synced) return
+            setProfile(prev => prev ? {
+              ...prev,
+              subscription_status: data.subscription_status ?? prev.subscription_status,
+              billing_interval: data.billing_interval ?? prev.billing_interval,
+              current_period_end: data.current_period_end ?? prev.current_period_end,
+              trial_ends_at: data.trial_ends_at ?? prev.trial_ends_at,
+              cancel_at_period_end: data.cancel_at_period_end ?? prev.cancel_at_period_end,
+              stripe_price_id: data.stripe_price_id ?? prev.stripe_price_id,
+              billing_zip: data.billing_zip ?? prev.billing_zip,
+            } : prev)
+          })
+          .catch(() => {})
+      }
     }
 
     load()
@@ -1061,7 +1081,7 @@ function SettingsPageInner() {
                   overflow: 'hidden',
                 }}>
                   {[
-  ['Plan', 'Hey Monday Pro'],
+  ['Plan', profile?.billing_interval === 'year' ? 'Hey Monday Pro (Annual)' : profile?.billing_interval === 'month' ? 'Hey Monday Pro (Monthly)' : 'Hey Monday Pro'],
   ['Status', subscriptionMeta.label],
   ['Billing interval', profile?.billing_interval || '—'],
   ['Trial ends', fmtDate(profile?.trial_ends_at || null)],
