@@ -962,15 +962,15 @@ useEffect(() => {
   useEffect(() => {
   if (typeof window === 'undefined') return
 
-  const prefs: DashboardPrefs = {
-    isDark,
-    layout,
-    slotPanels,
-    newsTab,
-  }
-
   try {
-    window.localStorage.setItem(DASHBOARD_PREFS_KEY, JSON.stringify(prefs))
+    const existing = JSON.parse(window.localStorage.getItem(DASHBOARD_PREFS_KEY) ?? '{}')
+    window.localStorage.setItem(DASHBOARD_PREFS_KEY, JSON.stringify({
+      ...existing,
+      isDark,
+      layout,
+      slotPanels,
+      newsTab,
+    }))
   } catch {}
 }, [isDark, layout, slotPanels, newsTab])
 
