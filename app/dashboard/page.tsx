@@ -761,6 +761,8 @@ function handleTouchEnd(e: React.TouchEvent) {
   const recordedChunksRef = useRef<BlobPart[]>([])
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
+  const ttsAudioContextRef = useRef<AudioContext | null>(null)
+  const ttsSourceNodeRef = useRef<AudioBufferSourceNode | null>(null)
   const autoSendRef = useRef<string | null>(null)
   const stopThinkingChimesRef = useRef<(() => void) | null>(null)
 
@@ -956,6 +958,27 @@ useEffect(() => {
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
       audioContextRef.current?.close()
+      ttsAudioContextRef.current?.close()
+    }
+  }, [])
+
+  // Unlock a persistent AudioContext on any user interaction so TTS can play
+  // even when triggered by a timer (no user gesture in scope).
+  useEffect(() => {
+    function unlock() {
+      if (!ttsAudioContextRef.current) {
+        const AudioCtx = (globalThis as any).AudioContext || (globalThis as any).webkitAudioContext
+        if (AudioCtx) ttsAudioContextRef.current = new AudioCtx()
+      }
+      if (ttsAudioContextRef.current?.state === 'suspended') {
+        ttsAudioContextRef.current.resume().catch(() => {})
+      }
+    }
+    document.addEventListener('click', unlock)
+    document.addEventListener('keydown', unlock)
+    return () => {
+      document.removeEventListener('click', unlock)
+      document.removeEventListener('keydown', unlock)
     }
   }, [])
 
@@ -1274,6 +1297,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
 
   function stopCurrentAudio() {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; audioRef.current = null }
+    if (ttsSourceNodeRef.current) { try { ttsSourceNodeRef.current.stop() } catch {} ttsSourceNodeRef.current = null }
     setIsSpeaking(false)
   }
 
@@ -1342,22 +1366,39 @@ function startThinkingChimes(): () => void {
     try {
       stopCurrentAudio()
       const res = await fetch('/api/tts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-    text,
-    watchlist: watchlist.map((w: any) => ({
-      ticker: w.ticker,
-      company_name: w.company_name,
-    })),
-  }),
-})
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          watchlist: watchlist.map((w: any) => ({ ticker: w.ticker, company_name: w.company_name })),
+        }),
+      })
       if (!res.ok) { console.error('TTS failed:', res.status); return }
-      const blob = await res.blob(); const url = URL.createObjectURL(blob); const audio = new Audio(url)
-      audioRef.current = audio; setIsSpeaking(true)
-      audio.onended = () => { URL.revokeObjectURL(url); setIsSpeaking(false); if (audioRef.current === audio) audioRef.current = null; onEnded?.() }
-      audio.onerror = () => { URL.revokeObjectURL(url); setIsSpeaking(false); if (audioRef.current === audio) audioRef.current = null }
-      await audio.play()
+      const blob = await res.blob()
+
+      // Use unlocked Web Audio context when available — bypasses autoplay restrictions
+      // so alerts fired by timers (no user gesture) still play.
+      const actx = ttsAudioContextRef.current
+      if (actx && actx.state !== 'closed') {
+        if (actx.state === 'suspended') await actx.resume()
+        const arrayBuffer = await blob.arrayBuffer()
+        const audioBuffer = await actx.decodeAudioData(arrayBuffer)
+        const source = actx.createBufferSource()
+        source.buffer = audioBuffer
+        source.connect(actx.destination)
+        ttsSourceNodeRef.current = source
+        setIsSpeaking(true)
+        source.onended = () => { ttsSourceNodeRef.current = null; setIsSpeaking(false); onEnded?.() }
+        source.start(0)
+      } else {
+        // Fallback: HTMLAudioElement (requires recent user gesture)
+        const url = URL.createObjectURL(blob)
+        const audio = new Audio(url)
+        audioRef.current = audio; setIsSpeaking(true)
+        audio.onended = () => { URL.revokeObjectURL(url); setIsSpeaking(false); if (audioRef.current === audio) audioRef.current = null; onEnded?.() }
+        audio.onerror = () => { URL.revokeObjectURL(url); setIsSpeaking(false); if (audioRef.current === audio) audioRef.current = null }
+        await audio.play()
+      }
     } catch { setIsSpeaking(false) }
   }
 
