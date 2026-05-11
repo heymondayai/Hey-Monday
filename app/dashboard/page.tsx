@@ -1208,15 +1208,20 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
             group[0].eventUtcMs + 10 * 60_000
           )
           const mins = Math.round(group[0].minutesUntil)
-          const minStr = mins <= 0 ? 'within the minute' : mins === 1 ? 'about 1 minute' : `about ${mins} minutes`
+          const timeStr = mins <= 0 ? 'within the minute' : mins === 1 ? 'in about 1 minute' : `in about ${mins} minutes`
+          const intros = ['Heads up', 'Watch out', 'Be careful', 'Just a reminder', 'Take note', 'Market alert', 'Pay attention', 'Upcoming event']
+          const intro = intros[Math.floor(Math.random() * intros.length)]
           let text: string
           if (group.length === 1) {
             const { ev } = group[0]
-            text = `Heads up — ${ev.name} is coming up in ${minStr}.`
+            const impact = ev.impact === 'HIGH' ? 'high' : 'medium'
+            text = `${intro} — ${ev.name} is coming up ${timeStr} and has a ${impact} impact on the general market.`
           } else {
             const names = group.map(({ ev }) => ev.name)
             const last = names.pop()!
-            text = `Heads up — ${names.join(', ')} and ${last} are all coming up in ${minStr}.`
+            const anyHigh = group.some(({ ev }) => ev.impact === 'HIGH')
+            const impact = anyHigh ? 'high' : 'medium'
+            text = `${intro} — ${names.join(', ')} and ${last} are all coming up ${timeStr} and have a ${impact} impact on the general market.`
           }
           showToast(text)
           if (speechOn) void speakText(text)
