@@ -360,41 +360,7 @@ export async function GET(req: NextRequest) {
       return parseInt(match[1]) * 60 + parseInt(match[2])
     }
 
-    // ── TEST EVENTS: remove when done testing ─────────────────────────────────
-    const testEventDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-    const testEvent1: CalendarEvent = {
-      id: `test-fed-04:21-${testEventDate}`,
-      date: testEventDate,
-      time: '04:21',
-      timeET: '4:21 AM ET',
-      name: 'Fed Reserve Balance Sheet',
-      country: 'US',
-      impact: 'HIGH',
-      category: 'FED',
-      actual: null,
-      forecast: '8.85',
-      previous: '8.87',
-      unit: 'T',
-      source: 'benzinga',
-    }
-    const testEvent2: CalendarEvent = {
-      id: `test-cpi-04:21-${testEventDate}`,
-      date: testEventDate,
-      time: '04:21',
-      timeET: '4:21 AM ET',
-      name: 'U.S. CPI Month-over-Month',
-      country: 'US',
-      impact: 'HIGH',
-      category: 'INFLATION',
-      actual: null,
-      forecast: '0.3',
-      previous: '0.2',
-      unit: '%',
-      source: 'benzinga',
-    }
-    // ─────────────────────────────────────────────────────────────────────────
-
-    let allEvents = dedupeEvents([...macroEvents, ...earningsCalendarEvents, testEvent1, testEvent2]).sort((a, b) => {
+    let allEvents = dedupeEvents([...macroEvents, ...earningsCalendarEvents]).sort((a, b) => {
       const dateCmp = a.date.localeCompare(b.date)
       if (dateCmp !== 0) return dateCmp
       return timeToMinutes(a.time) - timeToMinutes(b.time)
