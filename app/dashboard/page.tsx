@@ -1846,7 +1846,7 @@ const visibleDaySummaries = useMemo(() => {
             display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer',
           }}
         >
-          <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>🔔</span>
+
           <span style={{ fontSize: 13, color: isDark ? '#e8d5a0' : '#5a3e00', fontFamily: "'DM Sans', sans-serif", lineHeight: 1.4 }}>
             {eventAlertToast}
           </span>
