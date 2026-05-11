@@ -188,7 +188,7 @@ function getTimeUntil(dateStr: string, timeStr: string): string | null {
   try {
     const diffMs = eventToUTC(dateStr, timeStr) - Date.now()
     if (diffMs <= 0) return null
-    const totalMin = Math.max(1, Math.round(diffMs / 60000))
+    const totalMin = Math.ceil(diffMs / 60000)
     if (totalMin > 60 * 24 * 2) return null
     const hrs = Math.floor(totalMin / 60); const mins = totalMin % 60
     return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`
