@@ -360,7 +360,26 @@ export async function GET(req: NextRequest) {
       return parseInt(match[1]) * 60 + parseInt(match[2])
     }
 
-    let allEvents = dedupeEvents([...macroEvents, ...earningsCalendarEvents]).sort((a, b) => {
+    // ── TEST EVENT: remove when done testing ──────────────────────────────────
+    const testEventDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+    const testEvent: CalendarEvent = {
+      id: `test-fed-02:40-${testEventDate}`,
+      date: testEventDate,
+      time: '02:40',
+      timeET: '2:40 AM ET',
+      name: 'Fed Reserve Balance Sheet',
+      country: 'US',
+      impact: 'HIGH',
+      category: 'FED',
+      actual: null,
+      forecast: '8.85',
+      previous: '8.87',
+      unit: 'T',
+      source: 'benzinga',
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    let allEvents = dedupeEvents([...macroEvents, ...earningsCalendarEvents, testEvent]).sort((a, b) => {
       const dateCmp = a.date.localeCompare(b.date)
       if (dateCmp !== 0) return dateCmp
       return timeToMinutes(a.time) - timeToMinutes(b.time)
