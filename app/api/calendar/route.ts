@@ -363,10 +363,10 @@ export async function GET(req: NextRequest) {
     // ── TEST EVENT: remove when done testing ──────────────────────────────────
     const testEventDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
     const testEvent: CalendarEvent = {
-      id: `test-fed-02:40-${testEventDate}`,
+      id: `test-fed-02:45-${testEventDate}`,
       date: testEventDate,
-      time: '02:40',
-      timeET: '2:40 AM ET',
+      time: '02:45',
+      timeET: '2:45 AM ET',
       name: 'Fed Reserve Balance Sheet',
       country: 'US',
       impact: 'HIGH',
