@@ -1207,11 +1207,12 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
             resultWindowUntilRef.current,
             group[0].eventUtcMs + 10 * 60_000
           )
-          const minStr = Math.ceil(group[0].minutesUntil) === 1 ? '1 minute' : `${Math.ceil(group[0].minutesUntil)} minutes`
+          const mins = Math.round(group[0].minutesUntil)
+          const minStr = mins <= 0 ? 'within the minute' : mins === 1 ? 'about 1 minute' : `about ${mins} minutes`
           let text: string
           if (group.length === 1) {
             const { ev } = group[0]
-            text = `Heads up — ${ev.name} is coming up in ${minStr}.${ev.forecast ? ` Forecast: ${ev.forecast}${ev.unit ? ' ' + ev.unit : ''}.` : ''}`
+            text = `Heads up — ${ev.name} is coming up in ${minStr}.`
           } else {
             const names = group.map(({ ev }) => ev.name)
             const last = names.pop()!
