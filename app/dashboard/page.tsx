@@ -1247,6 +1247,8 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
             const impact = anyHigh ? 'high' : 'medium'
             text = `${intro} — ${names.join(', ')} and ${last} are all coming up ${timeStr} and have a ${impact} impact on the general market.`
           }
+          const alertTimeStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date())
+          setMessages((prev) => [...prev, { role: 'monday', time: alertTimeStr, text }])
           showToast(text)
           if (speechOn) void speakText(text)
         }
@@ -1284,6 +1286,8 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
               const last = parts.pop()!
               text = `Results are in — ${parts.join(', ')}, and ${last}.`
             }
+            const resultTimeStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date())
+            setMessages((prev) => [...prev, { role: 'monday', time: resultTimeStr, text }])
             showToast(text)
             if (speechOn) void speakText(text)
           }
