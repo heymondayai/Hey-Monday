@@ -1254,13 +1254,22 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
         // ── Result alerts: group by time slot, one announcement per slot ─────
         if (prefs.announceResults) {
           const resultGroups = new Map<number, Rich[]>()
+          let staleSilenced = false
           for (const item of enriched) {
             if (item.ev.actual != null && !firedResultAlertRef.current.has(`result:${item.ev.id}`)) {
+              const minutesSinceEvent = (nowMs - item.eventUtcMs) / 60000
+              if (minutesSinceEvent > 60) {
+                // Stale result (laptop was asleep) — mark fired silently, no announcement
+                firedResultAlertRef.current.add(`result:${item.ev.id}`)
+                staleSilenced = true
+                continue
+              }
               const bucket = resultGroups.get(item.eventUtcMs) ?? []
               bucket.push(item)
               resultGroups.set(item.eventUtcMs, bucket)
             }
           }
+          if (staleSilenced) persistFired()
           for (const [, group] of resultGroups) {
             for (const { ev } of group) firedResultAlertRef.current.add(`result:${ev.id}`)
             persistFired()
