@@ -1112,6 +1112,29 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
       eventAlertPollRef.current = null
     }
 
+    // Restore fired IDs from localStorage so page reloads don't re-trigger alerts
+    const FIRED_KEY = 'heymonday_fired_event_alerts'
+    const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(FIRED_KEY) ?? '{}')
+      if (stored.date === todayET) {
+        ;(stored.pre ?? []).forEach((id: string) => firedEventAlertRef.current.add(id))
+        ;(stored.result ?? []).forEach((id: string) => firedResultAlertRef.current.add(id))
+      } else {
+        window.localStorage.removeItem(FIRED_KEY)
+      }
+    } catch {}
+
+    function persistFired() {
+      try {
+        window.localStorage.setItem(FIRED_KEY, JSON.stringify({
+          date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+          pre: [...firedEventAlertRef.current],
+          result: [...firedResultAlertRef.current],
+        }))
+      } catch {}
+    }
+
     function getEventAlertPrefs() {
       try {
         const raw = window.localStorage.getItem(DASHBOARD_PREFS_KEY)
@@ -1202,6 +1225,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
 
         for (const [, group] of preGroups) {
           for (const { ev } of group) firedEventAlertRef.current.add(`pre:${ev.id}`)
+          persistFired()
           // Switch to fast polling: results expected up to 30 min after event time
           resultWindowUntilRef.current = Math.max(
             resultWindowUntilRef.current,
@@ -1239,6 +1263,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
           }
           for (const [, group] of resultGroups) {
             for (const { ev } of group) firedResultAlertRef.current.add(`result:${ev.id}`)
+            persistFired()
             let text: string
             if (group.length === 1) {
               const { ev } = group[0]
