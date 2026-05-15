@@ -854,6 +854,7 @@ const wakePreferredOnRef = useRef(true)
   const firedResultAlertRef = useRef<Set<string>>(new Set())
   const eventAlertPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const resultWindowUntilRef = useRef<number>(0)
+  const lastAlertCheckRef = useRef<number>(Date.now())
   const [eventAlertToast, setEventAlertToast] = useState<string | null>(null)
   const eventAlertToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -1154,15 +1155,20 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
 
     async function checkEventAlerts() {
       const prefs = getEventAlertPrefs()
+      const nowMs = Date.now()
+
+      // Detect laptop wake: if more than 5 min passed since last check, browser was sleeping
+      const gapMs = nowMs - lastAlertCheckRef.current
+      const wokeFromSleep = gapMs > 5 * 60 * 1000
+      lastAlertCheckRef.current = nowMs
 
       // Schedule the next poll before doing any work so a throw can't break the loop
-      const inResultWindow = Date.now() < resultWindowUntilRef.current
+      const inResultWindow = nowMs < resultWindowUntilRef.current
       eventAlertPollRef.current = setTimeout(() => { void checkEventAlerts() }, inResultWindow ? 15_000 : 60_000)
 
       if (!prefs.enabled) return
 
       try {
-        const nowMs = Date.now()
         const isFresh = nowMs < resultWindowUntilRef.current
         const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
         const tickers = watchlistRef.current.map((w) => w.ticker).join(',')
@@ -1205,6 +1211,23 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
           if (eventUtcMs === null) continue
 
           enriched.push({ ev, eventUtcMs, minutesUntil: (eventUtcMs - nowMs) / 60000 })
+        }
+
+        // ── Wake-from-sleep guard: silently mark all stale events fired ────────
+        if (wokeFromSleep) {
+          let silenced = false
+          for (const item of enriched) {
+            if (item.minutesUntil < 0 && !firedEventAlertRef.current.has(`pre:${item.ev.id}`)) {
+              firedEventAlertRef.current.add(`pre:${item.ev.id}`)
+              silenced = true
+            }
+            if (item.ev.actual != null && !firedResultAlertRef.current.has(`result:${item.ev.id}`)) {
+              firedResultAlertRef.current.add(`result:${item.ev.id}`)
+              silenced = true
+            }
+          }
+          if (silenced) persistFired()
+          return
         }
 
         // ── Pre-event alerts: group by time slot, one announcement per slot ──
@@ -1256,22 +1279,13 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
         // ── Result alerts: group by time slot, one announcement per slot ─────
         if (prefs.announceResults) {
           const resultGroups = new Map<number, Rich[]>()
-          let staleSilenced = false
           for (const item of enriched) {
             if (item.ev.actual != null && !firedResultAlertRef.current.has(`result:${item.ev.id}`)) {
-              const minutesSinceEvent = (nowMs - item.eventUtcMs) / 60000
-              if (minutesSinceEvent > 60) {
-                // Stale result (laptop was asleep) — mark fired silently, no announcement
-                firedResultAlertRef.current.add(`result:${item.ev.id}`)
-                staleSilenced = true
-                continue
-              }
               const bucket = resultGroups.get(item.eventUtcMs) ?? []
               bucket.push(item)
               resultGroups.set(item.eventUtcMs, bucket)
             }
           }
-          if (staleSilenced) persistFired()
           for (const [, group] of resultGroups) {
             for (const { ev } of group) firedResultAlertRef.current.add(`result:${ev.id}`)
             persistFired()
