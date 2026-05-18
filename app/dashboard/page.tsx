@@ -1273,6 +1273,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
           }
           const alertTimeStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date())
           setMessages((prev) => [...prev, { role: 'monday', time: alertTimeStr, text }])
+          if (user) void supabase.from('conversations').insert({ user_id: user.id, role: 'assistant', content: text })
           showToast(text)
           if (speechOn) void speakText(text)
         }
@@ -1311,6 +1312,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
             }
             const resultTimeStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date())
             setMessages((prev) => [...prev, { role: 'monday', time: resultTimeStr, text }])
+            if (user) void supabase.from('conversations').insert({ user_id: user.id, role: 'assistant', content: text })
             showToast(text)
             if (speechOn) void speakText(text)
           }
