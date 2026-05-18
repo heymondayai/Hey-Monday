@@ -727,7 +727,7 @@ export function buildIntradayQuestionContext(
 
 export function formatIntradayContext(data: Record<string, Candle[]>): string {
   if (!Object.keys(data).length) {
-    return 'INTRADAY DATA: Unavailable. Do NOT fabricate intraday moves. If asked about a specific move or candle, say the intraday feed is unavailable.'
+    return 'INTRADAY DATA: No candles loaded this session. Do not fabricate prices or moves — use available news, macro context, and web search to answer intraday questions instead.'
   }
 
   const lines = [

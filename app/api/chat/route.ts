@@ -686,7 +686,6 @@ console.log('[chat intraday fetch result]', {
     console.log(`[chat] data quality score=${dataScore} decision=${dataDecision}`, scoreReasons)
 
     const currentDataEnough = dataDecision === 'confident' || dataDecision === 'limited'
-    const isLimitedData = dataDecision === 'limited'
     const useLiveSearch = dataDecision === 'research' && sonnetAllowed
     const useHaikuSearch = dataDecision === 'research' && !sonnetAllowed
     const useSearch = useLiveSearch || useHaikuSearch
@@ -835,7 +834,7 @@ RESPONSE RULES:
 - If the requested ET date is not present in the current feed, say that exact date is not available in the current intraday dataset.
 - If the user asked "why did it drop" or "what happened," analyze the broader move window, not a single candle in isolation.
 - Do not say a stock rallied just because one candle was green if the surrounding move was down.
-- If no clear catalyst is present in the supplied data, say there is no clear catalyst in the current feed.
+- If no specific catalyst is visible in the candle data, explain the move using price action, sector context, macro data, or news — never just say "no catalyst found."
 - Stop after the direct answer.
 `
               : intent.requestType === 'briefing'
@@ -882,7 +881,7 @@ CORE RULES:
 3. Do not add unsolicited macro color, volume commentary, or analyst context to simple factual questions.
 4. Frame bullish/bearish views as scenario analysis, never as advice.
 5. Never tell the user to buy, sell, or size a position.
-6. ${useSearch ? 'You have the web_search tool available — use it proactively to answer this question. Never say "I don\'t have web search capability" or "I can\'t search the web." Never fall back to "data unavailable" when a web search can find the answer.' : 'If data is missing, say so in one sentence and stop.'}
+6. ${useSearch ? 'You have the web_search tool available — use it proactively to answer this question. Never say "I don\'t have web search capability" or "I can\'t search the web." Never fall back to "data unavailable" when a web search can find the answer.' : 'Answer from all available data. Do not volunteer that data is missing or limited unless it is the direct reason the question literally cannot be answered at all. Never say "intraday feed unavailable" — if candles are absent, use price data, news, and macro context instead.'}
 7. For calendar questions, treat HIGH and MEDIUM impact events as market-moving. Do not say "no high impact events" if MEDIUM impact events exist — list them.
 8. Treat the CANONICAL MARKET SNAPSHOT as the primary source of truth for upcoming economic events, calendar timing, macro context, and key headlines.
 9. Do not claim that tomorrow's or future events are unavailable if they appear in the canonical market snapshot.
@@ -890,9 +889,8 @@ CORE RULES:
 11. For exact intraday timestamp questions, use the matched candle nearest that ET time and state whether it was exact or nearest.
 12. For move questions like "why did it drop" or "what happened from 1:06 to 2:40", analyze the move across the whole requested window, not one candle in isolation.
 13. Never describe the move as bullish or a rally if the broader requested move window was down.
-14. If the current feed does not show a clear catalyst, use web search if available, otherwise say there is no clear catalyst in the current feed.
+14. If the current feed does not show a clear catalyst, use web search if available. If web search is also unavailable, answer with the best available context — price action, macro data, news — rather than simply saying no catalyst exists.
 15. When using web search, only report facts from actual search results. If search returns no clear results about a specific real-time event, say the search did not surface a clear catalyst. Never fabricate prices, dates, people, or events.
-${isLimitedData ? `\n16. DATA QUALITY FLAG: The available data for this question is incomplete or may be stale. Answer from what is available but add a brief note that data may be limited. Do not fabricate missing data points.` : ''}
 
 ${lengthRules}`
 
