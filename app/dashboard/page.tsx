@@ -855,6 +855,7 @@ const wakePreferredOnRef = useRef(true)
   const eventAlertPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const resultWindowUntilRef = useRef<number>(0)
   const lastAlertCheckRef = useRef<number>(Date.now())
+  const pageVisibleSinceRef = useRef<number>(Date.now())
   const [eventAlertToast, setEventAlertToast] = useState<string | null>(null)
   const eventAlertToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -981,6 +982,16 @@ useEffect(() => {
       document.removeEventListener('click', unlock)
       document.removeEventListener('keydown', unlock)
     }
+  }, [])
+
+  useEffect(() => {
+    function onVisibility() {
+      if (document.visibilityState === 'visible') {
+        pageVisibleSinceRef.current = Date.now()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [])
 
   useEffect(() => {
@@ -1157,10 +1168,17 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
       const prefs = getEventAlertPrefs()
       const nowMs = Date.now()
 
-      // Detect laptop wake: if more than 5 min passed since last check, browser was sleeping
+      // Detect laptop wake: if more than 5 min passed since last check, browser was sleeping.
+      // Return early before any fetch (network may not be ready). Update pageVisibleSinceRef
+      // so the next cycle's result-alert filter treats all pre-wake events as stale.
       const gapMs = nowMs - lastAlertCheckRef.current
-      const wokeFromSleep = gapMs > 5 * 60 * 1000
       lastAlertCheckRef.current = nowMs
+      if (gapMs > 5 * 60 * 1000) {
+        pageVisibleSinceRef.current = nowMs
+        const inResultWindow = nowMs < resultWindowUntilRef.current
+        eventAlertPollRef.current = setTimeout(() => { void checkEventAlerts() }, inResultWindow ? 15_000 : 60_000)
+        return
+      }
 
       // Schedule the next poll before doing any work so a throw can't break the loop
       const inResultWindow = nowMs < resultWindowUntilRef.current
@@ -1213,23 +1231,6 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
           enriched.push({ ev, eventUtcMs, minutesUntil: (eventUtcMs - nowMs) / 60000 })
         }
 
-        // ── Wake-from-sleep guard: silently mark all stale events fired ────────
-        if (wokeFromSleep) {
-          let silenced = false
-          for (const item of enriched) {
-            if (item.minutesUntil < 0 && !firedEventAlertRef.current.has(`pre:${item.ev.id}`)) {
-              firedEventAlertRef.current.add(`pre:${item.ev.id}`)
-              silenced = true
-            }
-            if (item.ev.actual != null && !firedResultAlertRef.current.has(`result:${item.ev.id}`)) {
-              firedResultAlertRef.current.add(`result:${item.ev.id}`)
-              silenced = true
-            }
-          }
-          if (silenced) persistFired()
-          return
-        }
-
         // ── Pre-event alerts: group by time slot, one announcement per slot ──
         const preGroups = new Map<number, Rich[]>()
         for (const item of enriched) {
@@ -1279,13 +1280,21 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
         // ── Result alerts: group by time slot, one announcement per slot ─────
         if (prefs.announceResults) {
           const resultGroups = new Map<number, Rich[]>()
+          let staleSilenced = false
           for (const item of enriched) {
             if (item.ev.actual != null && !firedResultAlertRef.current.has(`result:${item.ev.id}`)) {
+              if (item.eventUtcMs < pageVisibleSinceRef.current) {
+                // Result from before this tab was last visible — silently mark fired
+                firedResultAlertRef.current.add(`result:${item.ev.id}`)
+                staleSilenced = true
+                continue
+              }
               const bucket = resultGroups.get(item.eventUtcMs) ?? []
               bucket.push(item)
               resultGroups.set(item.eventUtcMs, bucket)
             }
           }
+          if (staleSilenced) persistFired()
           for (const [, group] of resultGroups) {
             for (const { ev } of group) firedResultAlertRef.current.add(`result:${ev.id}`)
             persistFired()
@@ -1749,8 +1758,8 @@ function startThinkingChimes(): () => void {
     userId: user.id,
   }),
 })
-      const data = await res.json(); const reply = data.reply || 'Scheduled summary could not be generated.'; const nowIso = new Date().toISOString()
-      await supabase.from('briefings').insert({ user_id: user.id, title: summary.name, content: reply, audio_url: null, briefing_date: nowIso })
+      const data = await res.json(); const reply = data.reply || 'Scheduled summary could not be generated.'
+      await supabase.from('briefings').insert({ user_id: user.id, title: summary.name, content: reply, audio_url: null, briefing_date: summary.run_at })
       const rec = summary.recurrence ?? 'none'
 
 if (rec !== 'none') {
