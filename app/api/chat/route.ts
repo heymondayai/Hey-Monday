@@ -26,7 +26,7 @@ import { getNyseEquitiesStatus } from '@/lib/market-hours'
 
 // ── SONNET DAILY CAP ─────────────────────────────────────────────────────────
 const sonnetUsage = new Map<string, { count: number; dateET: string }>()
-const SONNET_DAILY_CAP = 10
+const SONNET_DAILY_CAP = 20
 
 function getTodayET(): string {
   return new Intl.DateTimeFormat('en-US', {
@@ -91,7 +91,6 @@ interface DataQualityInput {
   level2?: any
   intradayData?: any
   marketState?: MarketStateSnapshot | null
-  macroFetched: boolean
   sectorFetched: boolean
   insiderFetched: boolean
   analystFetched: boolean
@@ -220,12 +219,6 @@ function buildSafeFallback(intent: QuestionIntent): string {
   return "I don't have enough verified data in the current feed to answer that confidently."
 }
 
-function buildResearchCapFallback(intent: QuestionIntent): string {
-  if (intent.requestType === 'simple') {
-    return "I don't have enough current verified data for that exact answer right now."
-  }
-  return "I don't have enough verified data in the current feed to answer that confidently, and deeper research is unavailable right now."
-}
 
 function slimNewsForResearch(news?: any[]): string {
   if (!news?.length) return ''
@@ -422,7 +415,7 @@ function scoreDataQuality(input: DataQualityInput): { score: number; decision: R
   const {
     message, intent, watchlistTickers, prices, news,
     level2, intradayData, marketState,
-    macroFetched, sectorFetched, insiderFetched, analystFetched, optionsFetched, signals,
+    sectorFetched, insiderFetched, analystFetched, optionsFetched, signals,
   } = input
 
   let score = 0
@@ -430,6 +423,10 @@ function scoreDataQuality(input: DataQualityInput): { score: number; decision: R
   const lower = message.toLowerCase()
 
   // ── HARD DISQUALIFIERS ────────────────────────────────────────────────────
+  // User explicitly asked to search the web
+  if (/\b(research\s+online|search\s+online|search\s+the\s+web|search\s+the\s+internet|look\s+up\s+online|google\s+this|google\s+it|find\s+online)\b/.test(lower)) {
+    return { score: -10, decision: 'research', reasons: ['user explicitly requested web search'] }
+  }
   if (intent.offWatchlistSymbol) {
     return { score: -10, decision: 'research', reasons: ['off-watchlist symbol with no data'] }
   }
@@ -557,9 +554,6 @@ const intent = classifyIntent(message, watchlistTickers, priceSymbols)
     const now = new Date()
     const nyseStatus = getNyseEquitiesStatus(now)
     const marketStatus = nyseStatus.label
-    const marketOpen = nyseStatus.session === 'open'
-    const preMarket = nyseStatus.session === 'premarket'
-    const afterHours = nyseStatus.session === 'afterhours'
     const minutesToClose = nyseStatus.minutesToClose
 
     const etParts = new Intl.DateTimeFormat('en-US', {
@@ -682,7 +676,6 @@ console.log('[chat intraday fetch result]', {
       level2,
       intradayData: intradayResult?.data,
       marketState: canonicalMarketState,
-      macroFetched: !!macroData,
       sectorFetched: !!sectorData,
       insiderFetched: !!tier2.insider,
       analystFetched: !!tier2.analyst,
@@ -822,7 +815,16 @@ RESPONSE RULES (HARD LIMITS):
 - Do NOT add: intraday range, volume, news context, analyst commentary, macro color, or any other unsolicited detail.
 - The user asked a simple question. Give a simple answer. Stop.
 `
-          : intent.isOpenEndedWhyQuestion || intent.mentionsExactTimestamp
+          : useSearch
+              ? `
+RESPONSE RULES:
+- 2–3 sentences maximum.
+- Use the web_search tool to research this question. You have it — use it.
+- Answer first, then one supporting fact only if it changes the answer.
+- No filler, no restating the question, no extra color.
+- Only report facts returned by actual search results. If search returns no clear result, say the search didn't surface a clear catalyst. Never fabricate. Never say "I don't have web search capability."
+`
+            : intent.isOpenEndedWhyQuestion || intent.mentionsExactTimestamp
   ? `
 RESPONSE RULES:
 - Answer in 2-3 sentences maximum.
@@ -835,14 +837,6 @@ RESPONSE RULES:
 - Do not say a stock rallied just because one candle was green if the surrounding move was down.
 - If no clear catalyst is present in the supplied data, say there is no clear catalyst in the current feed.
 - Stop after the direct answer.
-`
-            : useSearch
-              ? `
-RESPONSE RULES:
-- 2–3 sentences maximum.
-- Answer first, then one supporting fact only if it changes the answer.
-- No filler, no restating the question, no extra color.
-- Only report facts returned by actual search results. If no clear result was found, say so in one sentence. Never fabricate.
 `
               : intent.requestType === 'briefing'
                 ? `
@@ -883,12 +877,12 @@ CLOSING PRICE DAY RULE (NO EXCEPTIONS):
 Every time you state a closing price, you MUST name the day. Use only the weekday name from "Last trading session close" above. Never say "yesterday" or "today". Correct: "GLD closed at $423.18 on Friday." Wrong: "GLD closed at $423.18."
 
 CORE RULES:
-1. Use only facts in the supplied data. Never invent prices, events, or timestamps.
+1. Use only facts in the supplied data or web search results. Never invent prices, events, or timestamps.
 2. Do not restate the question.
 3. Do not add unsolicited macro color, volume commentary, or analyst context to simple factual questions.
 4. Frame bullish/bearish views as scenario analysis, never as advice.
 5. Never tell the user to buy, sell, or size a position.
-6. If data is missing, say so in one sentence and stop.
+6. ${useSearch ? 'You have the web_search tool available — use it proactively to answer this question. Never say "I don\'t have web search capability" or "I can\'t search the web." Never fall back to "data unavailable" when a web search can find the answer.' : 'If data is missing, say so in one sentence and stop.'}
 7. For calendar questions, treat HIGH and MEDIUM impact events as market-moving. Do not say "no high impact events" if MEDIUM impact events exist — list them.
 8. Treat the CANONICAL MARKET SNAPSHOT as the primary source of truth for upcoming economic events, calendar timing, macro context, and key headlines.
 9. Do not claim that tomorrow's or future events are unavailable if they appear in the canonical market snapshot.
@@ -896,8 +890,8 @@ CORE RULES:
 11. For exact intraday timestamp questions, use the matched candle nearest that ET time and state whether it was exact or nearest.
 12. For move questions like "why did it drop" or "what happened from 1:06 to 2:40", analyze the move across the whole requested window, not one candle in isolation.
 13. Never describe the move as bullish or a rally if the broader requested move window was down.
-14. If the current feed does not show a clear catalyst, say there is no clear catalyst in the current feed rather than inventing one.
-15. When using web search, only report facts from actual search results. If search returns no clear results about a specific real-time event, say the search did not surface a clear catalyst rather than inventing one. Never fabricate prices, dates, people, or events.
+14. If the current feed does not show a clear catalyst, use web search if available, otherwise say there is no clear catalyst in the current feed.
+15. When using web search, only report facts from actual search results. If search returns no clear results about a specific real-time event, say the search did not surface a clear catalyst. Never fabricate prices, dates, people, or events.
 ${isLimitedData ? `\n16. DATA QUALITY FLAG: The available data for this question is incomplete or may be stale. Answer from what is available but add a brief note that data may be limited. Do not fabricate missing data points.` : ''}
 
 ${lengthRules}`
@@ -911,7 +905,7 @@ ${lengthRules}`
         content: useSearch ? m.content.slice(0, 500) : m.content.slice(0, 800),
       }))
 
-    const model = useLiveSearch ? 'claude-sonnet-4-5' : 'claude-haiku-4-5-20251001'
+    const model = useLiveSearch ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001'
 
     // Token limits — kept tight to enforce brevity
     const maxTokens = useLiveSearch
