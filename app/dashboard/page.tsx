@@ -1761,7 +1761,7 @@ function startThinkingChimes(): () => void {
   }),
 })
       const data = await res.json(); const reply = data.reply || 'Scheduled summary could not be generated.'; const nowIso = new Date().toISOString()
-      await supabase.from('briefings').insert({ user_id: user.id, title: summary.name, content: reply, audio_url: null, briefing_date: summary.run_at })
+      await supabase.from('briefings').insert({ user_id: user.id, title: summary.name, content: reply, audio_url: null, briefing_date: nowIso })
       const rec = summary.recurrence ?? 'none'
 
 if (rec !== 'none') {
