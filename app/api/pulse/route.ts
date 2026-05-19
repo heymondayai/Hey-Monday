@@ -131,7 +131,7 @@ async function generatePulseWithClaude(params: {
 
   const calendarItems = (latestMarketState?.calendar_events ?? [])
     .slice(0, 3)
-    .map((e: any) => `${e.name}${e.time ? ` at ${e.time} ET` : ''}${e.impact ? ` [${e.impact}]` : ''}`)
+    .map((e: any) => `${e.name}${e.time ? ` at ${e.time}` : ''}${e.impact ? ` [${e.impact}]` : ''}`)
     .join('; ')
 
   const traderLabel =

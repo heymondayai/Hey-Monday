@@ -76,6 +76,17 @@ function getTodayStrET(): string {
   })
 }
 
+function formatHHMMtoETDisplay(hhmm: string): string {
+  const match = hhmm.match(/^(\d{2}):(\d{2})/)
+  if (!match) return hhmm
+  let h = parseInt(match[1], 10)
+  const m = match[2]
+  const period = h >= 12 ? 'PM' : 'AM'
+  if (h > 12) h -= 12
+  if (h === 0) h = 12
+  return `${h}:${m} ${period} ET`
+}
+
 function safeNum(value: unknown): number | null {
   const n = typeof value === 'string' ? parseFloat(value) : typeof value === 'number' ? value : NaN
   return Number.isFinite(n) ? n : null
@@ -193,7 +204,7 @@ function normalizeCalendarEvents(events: EconomicEvent[], todayStr: string): Mar
     .filter((e) => e.date >= todayStr)
     .slice(0, 40)
     .map((e) => ({
-      time: e.time ? `${e.date} ${e.time} ET` : e.date,
+      time: e.time ? formatHHMMtoETDisplay(e.time) : undefined,
       name: e.event,
       impact: e.impact,
     }))

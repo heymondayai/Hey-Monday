@@ -769,6 +769,17 @@ export function formatIntradayContext(data: Record<string, Candle[]>): string {
   return lines.join('\n')
 }
 
+function fmtTimeET(hhmm: string): string {
+  const match = hhmm.match(/^(\d{2}):(\d{2})/)
+  if (!match) return hhmm
+  let h = parseInt(match[1], 10)
+  const m = match[2]
+  const period = h >= 12 ? 'PM' : 'AM'
+  if (h > 12) h -= 12
+  if (h === 0) h = 12
+  return `${h}:${m} ${period} ET`
+}
+
 export function formatEconomicCalendar(events: EconomicEvent[], todayStr: string): string {
   if (!events.length) return ''
 
@@ -784,7 +795,7 @@ export function formatEconomicCalendar(events: EconomicEvent[], todayStr: string
       const actual   = e.actual   ? `Actual: ${e.actual}`   : '(pending)'
       const forecast = e.forecast ? `Est: ${e.forecast}`    : ''
       const prev     = e.previous ? `Prev: ${e.previous}`   : ''
-      lines.push(`    ${e.time || '--'} ET  [${e.impact}]  ${e.event}  ${actual}  ${forecast}  ${prev}`.trim())
+      lines.push(`    ${e.time ? fmtTimeET(e.time) : '--'}  [${e.impact}]  ${e.event}  ${actual}  ${forecast}  ${prev}`.trim())
     }
   }
 
@@ -795,7 +806,7 @@ export function formatEconomicCalendar(events: EconomicEvent[], todayStr: string
       const forecast = e.forecast ? `Est: ${e.forecast}` : ''
       const prev     = e.previous ? `Prev: ${e.previous}` : ''
       const dayLabel = new Date(`${e.date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/New_York' })
-      lines.push(`    ${e.date} (${dayLabel})  ${e.time || '--'} ET  [${e.impact}]  ${e.event}  ${forecast}  ${prev}`.trim())
+      lines.push(`    ${e.date} (${dayLabel})  ${e.time ? fmtTimeET(e.time) : '--'}  [${e.impact}]  ${e.event}  ${forecast}  ${prev}`.trim())
     }
   }
 
