@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     const normalized = normalizeTTS(text, {
       tickerMap: dynamicTickerMap,
     })
-    const trimmed = normalized.trim().slice(0, 2500)
+    const trimmed = normalized.trim().slice(0, 4000)
 
     const elevenRes = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,

@@ -907,11 +907,11 @@ ${lengthRules}`
 
     // Token limits — kept tight to enforce brevity
     const maxTokens = useLiveSearch
-      ? mode === 'summary' ? 200 : 140
+      ? mode === 'summary' ? 550 : 140
       : useHaikuSearch
-        ? mode === 'summary' ? 180 : 160
+        ? mode === 'summary' ? 550 : 160
         : mode === 'summary'
-        ? 160
+        ? 550
         : intent.isCasualConversation ? 50
         : intent.requestType === 'simple' ? 60
         : intent.isOpenEndedWhyQuestion ? 120
