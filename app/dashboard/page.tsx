@@ -763,6 +763,9 @@ function handleTouchEnd(e: React.TouchEvent) {
   const audioContextRef = useRef<AudioContext | null>(null)
   const ttsAudioContextRef = useRef<AudioContext | null>(null)
   const ttsSourceNodeRef = useRef<AudioBufferSourceNode | null>(null)
+  const ttsBarRef = useRef<HTMLDivElement>(null)
+  const ttsSpeechStartRef = useRef<number>(0)
+  const ttsSpeechDurationRef = useRef<number>(0)
   const autoSendRef = useRef<string | null>(null)
   const stopThinkingChimesRef = useRef<(() => void) | null>(null)
 
@@ -963,6 +966,27 @@ useEffect(() => {
       ttsAudioContextRef.current?.close()
     }
   }, [])
+
+  // Animate the top-bar progress strip linearly over the TTS audio duration
+  useEffect(() => {
+    const bar = ttsBarRef.current
+    if (!bar) return
+    if (!isSpeaking) {
+      bar.style.transition = 'none'
+      bar.style.width = '0%'
+      return
+    }
+    const duration = ttsSpeechDurationRef.current
+    if (!duration) return
+    const elapsed = (Date.now() - ttsSpeechStartRef.current) / 1000
+    const remaining = Math.max(0, duration - elapsed)
+    const startPct = Math.min(100, (elapsed / duration) * 100)
+    bar.style.transition = 'none'
+    bar.style.width = `${startPct}%`
+    void bar.getBoundingClientRect() // force reflow before transition
+    bar.style.transition = `width ${remaining}s linear`
+    bar.style.width = '100%'
+  }, [isSpeaking])
 
   // Unlock a persistent AudioContext on any user interaction so TTS can play
   // even when triggered by a timer (no user gesture in scope).
@@ -1456,6 +1480,8 @@ function startThinkingChimes(): () => void {
         source.buffer = audioBuffer
         source.connect(actx.destination)
         ttsSourceNodeRef.current = source
+        ttsSpeechStartRef.current = Date.now()
+        ttsSpeechDurationRef.current = audioBuffer.duration
         setIsSpeaking(true)
         source.onended = () => { ttsSourceNodeRef.current = null; setIsSpeaking(false); onEnded?.() }
         source.start(0)
@@ -1463,10 +1489,13 @@ function startThinkingChimes(): () => void {
         // Fallback: HTMLAudioElement (requires recent user gesture)
         const url = URL.createObjectURL(blob)
         const audio = new Audio(url)
-        audioRef.current = audio; setIsSpeaking(true)
+        audioRef.current = audio
         audio.onended = () => { URL.revokeObjectURL(url); setIsSpeaking(false); if (audioRef.current === audio) audioRef.current = null; onEnded?.() }
         audio.onerror = () => { URL.revokeObjectURL(url); setIsSpeaking(false); if (audioRef.current === audio) audioRef.current = null }
         await audio.play()
+        ttsSpeechStartRef.current = Date.now()
+        ttsSpeechDurationRef.current = audio.duration ?? 0
+        setIsSpeaking(true)
       }
     } catch { setIsSpeaking(false) }
   }
@@ -2694,7 +2723,7 @@ const visibleDaySummaries = useMemo(() => {
                         : 'Create a scheduled summary below to populate this section'}
                   </div>
                   <div style={{ height: '2px', background: T.goldFaint3, borderRadius: '1px', position: 'relative' }}>
-                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: isSpeaking ? '35%' : '0%', background: T.gold, borderRadius: '1px', transition: 'width 0.5s' }} />
+                    <div ref={ttsBarRef} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '0%', background: T.gold, borderRadius: '1px' }} />
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '3px', height: '30px', flexShrink: 0 }}>
