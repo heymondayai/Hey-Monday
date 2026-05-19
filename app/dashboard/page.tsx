@@ -1813,8 +1813,7 @@ if (rec !== 'none') {
   const enabledSummaries = scheduledSummaries.filter((s) => s.enabled)
 
   const nextSummary = useMemo(() => {
-    const future = enabledSummaries.filter((s) => new Date(s.run_at).getTime() > Date.now()).sort((a, b) => new Date(a.run_at).getTime() - new Date(b.run_at).getTime())
-    return future[0] ?? null
+    return [...enabledSummaries].sort((a, b) => new Date(a.run_at).getTime() - new Date(b.run_at).getTime())[0] ?? null
   }, [enabledSummaries, countdownTick])
 
   const nextSummaryCountdown = nextSummary ? formatCountdown(new Date(nextSummary.run_at).getTime() - countdownTick) : null
