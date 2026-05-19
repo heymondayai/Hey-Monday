@@ -129,7 +129,23 @@ async function generatePulseWithClaude(params: {
     .map((m: any) => `${m.label}: ${m.value}${m.implication ? ` (${m.implication})` : ''}`)
     .join(', ')
 
+  const todayET = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date())
+  const calNowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }))
+  const nowMinutesET = calNowET.getHours() * 60 + calNowET.getMinutes()
+
   const calendarItems = (latestMarketState?.calendar_events ?? [])
+    .filter((e: any) => {
+      if (!e.date || e.date > todayET) return true
+      if (e.date < todayET) return false
+      // same day — keep only events whose time hasn't passed yet
+      if (!e.time) return true
+      const m = (e.time as string).match(/(\d+):(\d+)\s*(AM|PM)/i)
+      if (!m) return true
+      let h = parseInt(m[1]); const min = parseInt(m[2]); const period = m[3].toUpperCase()
+      if (period === 'PM' && h !== 12) h += 12
+      if (period === 'AM' && h === 12) h = 0
+      return h * 60 + min > nowMinutesET
+    })
     .slice(0, 3)
     .map((e: any) => `${e.name}${e.time ? ` at ${e.time}` : ''}${e.impact ? ` [${e.impact}]` : ''}`)
     .join('; ')

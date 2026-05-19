@@ -31,6 +31,7 @@ export interface MarketMacroItem {
 }
 
 export interface MarketCalendarItem {
+  date?: string
   time?: string
   name: string
   impact?: string
@@ -204,6 +205,7 @@ function normalizeCalendarEvents(events: EconomicEvent[], todayStr: string): Mar
     .filter((e) => e.date >= todayStr)
     .slice(0, 40)
     .map((e) => ({
+      date: e.date,
       time: e.time ? formatHHMMtoETDisplay(e.time) : undefined,
       name: e.event,
       impact: e.impact,
