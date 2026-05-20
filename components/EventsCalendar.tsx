@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 
 // ── TYPES ─────────────────────────────────────────────────────────────────────
 
@@ -277,6 +277,28 @@ function getCategoryColor(cat: CalendarEvent['category'], T: ThemeTokens): strin
   }
 }
 
+function ETTimeCell({ e, style, T }: { e: CalendarEvent; style?: React.CSSProperties; T: ThemeTokens }) {
+  const [hovered, setHovered] = useState(false)
+  const localTime = (() => {
+    if (!e.time || e.time === '--' || e.timeET === 'Before Open' || e.timeET === 'After Close' || e.timeET === 'During Market') return null
+    try {
+      const utcMs = eventToUTC(e.date, e.time)
+      return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(utcMs))
+    } catch { return null }
+  })()
+
+  return (
+    <div style={{ position: 'relative', ...style }} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+      {e.timeET}
+      {hovered && localTime && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 200, marginTop: '3px', background: T.cardBg, border: `1px solid ${T.borderFaint}`, padding: '2px 7px', fontSize: '9px', color: T.text5, whiteSpace: 'nowrap', letterSpacing: '0.04em' }}>
+          {localTime} local
+        </div>
+      )}
+    </div>
+  )
+}
+
 function getImpactPipColor(impact: string, T: ThemeTokens): string {
   return impact === 'HIGH' ? T.red : T.gold
 }
@@ -382,7 +404,7 @@ export function EventsPanel({ watchlistTickers, onOpenCalendar, T, isDark }: Eve
           return (
             <div key={e.id} style={{ display: 'flex', alignItems: 'stretch', gap: '12px', padding: '12px 18px', borderBottom: `1px solid ${T.borderFaint2}`, opacity: isPast ? 0.85 : 1 }}>
               <div style={{ width: '2px', background: pipColor, flexShrink: 0, borderRadius: '1px', opacity: isPast ? 0.6 : 1, boxShadow: !isPast && e.impact === 'HIGH' ? `0 0 6px ${pipColor}` : 'none' }} />
-              <div style={{ fontSize: '10px', color: T.text5, width: '52px', flexShrink: 0, fontFamily: "'DM Mono', monospace", paddingTop: '2px' }}>{e.timeET}</div>
+              <ETTimeCell e={e} T={T} style={{ fontSize: '10px', color: T.text5, width: '52px', flexShrink: 0, fontFamily: "'DM Mono', monospace", paddingTop: '2px' }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '4px', color: isPast ? T.text3 : T.text, lineHeight: 1.3 }}>{e.name}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
@@ -541,7 +563,7 @@ export function CalendarModal({ onClose, watchlistTickers, T, isDark }: Calendar
                     <div key={e.id} style={{ display: 'flex', alignItems: 'stretch', gap: '14px', padding: '14px 24px', borderBottom: `1px solid ${T.borderItem}`, background: isWatchlist ? T.goldFaint : 'transparent', transition: 'background 0.35s' }}>
                       <div style={{ width: '3px', background: pipColor, flexShrink: 0, borderRadius: '2px', opacity: isPast ? 0.5 : 1, boxShadow: !isPast && e.impact === 'HIGH' ? `0 0 8px ${pipColor}80` : 'none' }} />
                       <div style={{ width: '90px', flexShrink: 0, paddingTop: '2px' }}>
-                        <div style={{ fontSize: '12px', color: T.text4, fontFamily: "'DM Mono', monospace" }}>{e.timeET}</div>
+                        <ETTimeCell e={e} T={T} style={{ fontSize: '12px', color: T.text4, fontFamily: "'DM Mono', monospace" }} />
                         <div style={{ fontSize: '10px', color: T.text6, marginTop: '2px' }}>USA</div>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>

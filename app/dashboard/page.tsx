@@ -361,11 +361,35 @@ function formatCountdown(ms: number) {
 }
 
 function formatSummaryRunAt(iso: string) {
-  return new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(iso))
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(iso)) + ' ET'
 }
 
 function formatSummaryTimeOnly(iso: string) {
-  return new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(iso))
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(iso)) + ' ET'
+}
+
+function isoToLocal(iso: string): string {
+  try {
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).format(d)
+  } catch { return '' }
+}
+
+function TimeHover({ iso, label, cardBg, borderFaint, text5 }: { iso: string; label: string; cardBg: string; borderFaint: string; text5: string }) {
+  const [show, setShow] = React.useState(false)
+  const local = isoToLocal(iso)
+  if (!local || local === label.replace(' ET', '')) return <>{label}</>
+  return (
+    <span style={{ position: 'relative' }} onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      {label}
+      {show && (
+        <span style={{ position: 'absolute', top: '100%', left: 0, zIndex: 200, marginTop: '3px', background: cardBg, border: `1px solid ${borderFaint}`, padding: '2px 7px', fontSize: '9px', color: text5, whiteSpace: 'nowrap', letterSpacing: '0.04em', fontFamily: "'DM Mono', monospace" }}>
+          {local} local
+        </span>
+      )}
+    </span>
+  )
 }
 
 const SUGGESTED_QUESTIONS = [
@@ -2269,7 +2293,7 @@ const visibleDaySummaries = useMemo(() => {
                       <div key={s.id} style={{ background: T.cardBg, padding: '14px', borderTop: `3px solid ${s.top_color}`, border: `1px solid ${T.borderFaint3}` }}>
                         <div style={{ fontSize: '22px', marginBottom: '6px' }}>{s.icon}</div>
                         <div style={{ fontSize: '15px', fontWeight: 600, color: T.text, marginBottom: '4px' }}>{s.name}</div>
-                        <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '8px' }}>{formatSummaryRunAt(s.run_at)}</div>
+                        <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '8px' }}><TimeHover iso={s.run_at} label={formatSummaryRunAt(s.run_at)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></div>
                         <div style={{ display: 'inline-block', padding: '4px 10px', border: `1px solid ${T.goldFaint7}`, background: T.goldFaint2, color: T.gold, fontSize: '11px', fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>
                           {msUntil <= 0 ? 'READY' : formatCountdown(msUntil)}
                         </div>
@@ -2282,7 +2306,7 @@ const visibleDaySummaries = useMemo(() => {
                       {pastBriefings.slice(0, 5).map(item => (
                         <div key={item.id} onClick={() => setSelectedPastSummary(item)} style={{ padding: '12px', borderBottom: `1px solid ${T.borderFaint3}`, cursor: 'pointer' }}>
                           <div style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '3px' }}>{item.title}</div>
-                          <div style={{ fontSize: '10px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '4px' }}>{formatSummaryRunAt(item.created_at || item.briefing_date)}</div>
+                          <div style={{ fontSize: '10px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '4px' }}><TimeHover iso={item.created_at || item.briefing_date} label={formatSummaryRunAt(item.created_at || item.briefing_date)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></div>
                           <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.5, maxHeight: '36px', overflow: 'hidden' }}>{item.content}</div>
                         </div>
                       ))}
@@ -2314,7 +2338,7 @@ const visibleDaySummaries = useMemo(() => {
                         <div style={{ fontSize: '13px', color: T.text, lineHeight: 1.5 }}>{alert.message}</div>
                         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                           {alert.price != null && <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>${Number(alert.price).toFixed(2)}</span>}
-                          <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>{new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(alert.created_at))} ET</span>
+                          <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}><TimeHover iso={alert.created_at} label={formatSummaryRunAt(alert.created_at)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></span>
                         </div>
                       </div>
                     ))}
@@ -2641,7 +2665,7 @@ const visibleDaySummaries = useMemo(() => {
                               <div style={{ width: '3px', alignSelf: 'stretch', background: item.top_color, borderRadius: '2px', flexShrink: 0 }} />
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '2px' }}>{item.name}</div>
-                                <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>{formatSummaryTimeOnly(item.run_at)}</div>
+                                <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}><TimeHover iso={item.run_at} label={formatSummaryTimeOnly(item.run_at)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></div>
                                 {rec !== 'none' && <div style={{ fontSize: '10px', color: T.gold, marginTop: '2px' }}>↻ {rec}</div>}
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px', flexShrink: 0 }}>
@@ -2665,7 +2689,7 @@ const visibleDaySummaries = useMemo(() => {
                 <div style={{ padding: '18px 20px 14px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'space-between' }}>
                   <div>
                     <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '17px', fontStyle: 'italic', color: T.text }}>{selectedPastSummary.title}</div>
-                    <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginTop: '4px' }}>{formatSummaryRunAt(selectedPastSummary.created_at || selectedPastSummary.briefing_date)}</div>
+                    <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginTop: '4px' }}><TimeHover iso={selectedPastSummary.created_at || selectedPastSummary.briefing_date} label={formatSummaryRunAt(selectedPastSummary.created_at || selectedPastSummary.briefing_date)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></div>
                   </div>
                   <div onClick={() => setSelectedPastSummary(null)} style={{ fontSize: '18px', color: T.text6, cursor: 'pointer', padding: '4px' }}>✕</div>
                 </div>
@@ -3179,7 +3203,7 @@ const visibleDaySummaries = useMemo(() => {
                                       <div key={s.id} style={{ background: T.cardBg, padding: '12px 10px', cursor: 'pointer', borderTop: `2px solid ${s.top_color}`, border: `1px solid ${T.borderFaint3}` }}>
                                         <div style={{ fontSize: '20px', marginBottom: '7px' }}>{s.icon}</div>
                                         <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px', color: T.text, lineHeight: 1.35 }}>{s.name}</div>
-                                        <div style={{ fontSize: '10px', color: T.text5, marginBottom: '8px', fontFamily: "'DM Mono', monospace", lineHeight: 1.45 }}>{formatSummaryRunAt(s.run_at)}</div>
+                                        <div style={{ fontSize: '10px', color: T.text5, marginBottom: '8px', fontFamily: "'DM Mono', monospace", lineHeight: 1.45 }}><TimeHover iso={s.run_at} label={formatSummaryRunAt(s.run_at)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></div>
                                         <div style={{ display: 'inline-block', padding: '4px 8px', border: `1px solid ${T.goldFaint7}`, background: T.goldFaint2, color: T.gold, fontSize: '10px', fontWeight: 600, letterSpacing: '0.06em', fontFamily: "'DM Mono', monospace" }}>
                                           {msUntil <= 0 ? 'READY' : formatCountdown(msUntil).replace('In ', '').toUpperCase()}
                                         </div>
@@ -3201,7 +3225,7 @@ const visibleDaySummaries = useMemo(() => {
                               <div key={s.id} style={{ background: T.cardBg, padding: '18px 16px', borderTop: `3px solid ${s.top_color}`, border: `1px solid ${T.borderFaint3}`, minHeight: '170px' }}>
                                 <div style={{ fontSize: '28px', marginBottom: '12px' }}>{s.icon}</div>
                                 <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '8px', color: T.text, lineHeight: 1.35 }}>{s.name}</div>
-                                <div style={{ fontSize: '11px', color: T.text5, marginBottom: '12px', fontFamily: "'DM Mono', monospace" }}>{formatSummaryTimeOnly(s.run_at)}</div>
+                                <div style={{ fontSize: '11px', color: T.text5, marginBottom: '12px', fontFamily: "'DM Mono', monospace" }}><TimeHover iso={s.run_at} label={formatSummaryTimeOnly(s.run_at)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></div>
                                 <div style={{ display: 'inline-block', padding: '6px 10px', border: `1px solid ${T.goldFaint7}`, background: T.goldFaint2, color: T.gold, fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', fontFamily: "'DM Mono', monospace" }}>
                                   {msUntil <= 0 ? 'READY' : formatCountdown(msUntil).replace('In ', '').toUpperCase()}
                                 </div>
@@ -3219,7 +3243,7 @@ const visibleDaySummaries = useMemo(() => {
                             onMouseEnter={(e) => (e.currentTarget.style.background = T.pastHover)}
                             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                             <div style={{ fontSize: '14px', fontWeight: 600, color: T.text, marginBottom: '4px' }}>{item.title}</div>
-                            <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '6px' }}>{formatSummaryRunAt(item.created_at || item.briefing_date)}</div>
+                            <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '6px' }}><TimeHover iso={item.created_at || item.briefing_date} label={formatSummaryRunAt(item.created_at || item.briefing_date)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></div>
                             <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.55, maxHeight: '38px', overflow: 'hidden' }}>{item.content}</div>
                           </div>
                         ))}
@@ -3233,7 +3257,7 @@ const visibleDaySummaries = useMemo(() => {
                             onMouseEnter={(e) => (e.currentTarget.style.background = T.pastHover)}
                             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                             <div style={{ fontSize: '14px', fontWeight: 600, color: T.text, marginBottom: '4px' }}>{item.title}</div>
-                            <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '6px' }}>{formatSummaryRunAt(item.created_at || item.briefing_date)}</div>
+                            <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '6px' }}><TimeHover iso={item.created_at || item.briefing_date} label={formatSummaryRunAt(item.created_at || item.briefing_date)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></div>
                             <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.55, maxHeight: '38px', overflow: 'hidden' }}>{item.content}</div>
                           </div>
                         ))}
@@ -3268,7 +3292,7 @@ const visibleDaySummaries = useMemo(() => {
                               <div style={{ fontSize: '13px', color: T.text, lineHeight: 1.5 }}>{alert.message}</div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                 {alert.price != null && <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>${Number(alert.price).toFixed(2)}</span>}
-                                <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>{new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(alert.created_at))} ET</span>
+                                <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}><TimeHover iso={alert.created_at} label={formatSummaryRunAt(alert.created_at)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></span>
                               </div>
                             </div>
                           ))}
@@ -3720,7 +3744,7 @@ const visibleDaySummaries = useMemo(() => {
                                 </div>
                               ) : (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                  <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>{formatSummaryRunAt(item.run_at)}</span>
+                                  <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}><TimeHover iso={item.run_at} label={formatSummaryRunAt(item.run_at)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></span>
                                   <span onClick={() => { setEditingSummaryId(item.id); setEditingSummaryTime(getEtTimeHHMMFromIso(item.run_at)) }} style={{ fontSize: '10px', color: T.goldText4, cursor: 'pointer', letterSpacing: '0.05em', textDecoration: 'underline' }}>Edit time</span>
                                   {rec !== 'none' && <span style={{ fontSize: '10px', color: T.gold, background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '1px 6px', letterSpacing: '0.08em', textTransform: 'uppercase' }}>↻ {rec}{item.recurrence_end ? ` until ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(item.recurrence_end))}` : ''}</span>}
                                 </div>
@@ -3750,7 +3774,7 @@ const visibleDaySummaries = useMemo(() => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '20px', fontStyle: 'italic', color: T.text }}>{selectedPastSummary.title}</div>
-                    <div style={{ fontSize: '12px', color: T.text5, marginTop: '5px', fontFamily: "'DM Mono', monospace" }}>{formatSummaryRunAt(selectedPastSummary.created_at || selectedPastSummary.briefing_date)}</div>
+                    <div style={{ fontSize: '12px', color: T.text5, marginTop: '5px', fontFamily: "'DM Mono', monospace" }}><TimeHover iso={selectedPastSummary.created_at || selectedPastSummary.briefing_date} label={formatSummaryRunAt(selectedPastSummary.created_at || selectedPastSummary.briefing_date)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></div>
                   </div>
                   <div onClick={() => setSelectedPastSummary(null)} style={{ fontSize: '18px', color: T.text6, cursor: 'pointer', padding: '4px' }}>✕</div>
                 </div>
@@ -3765,7 +3789,7 @@ const visibleDaySummaries = useMemo(() => {
                     <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, marginBottom: '12px', fontWeight: 600 }}>Previous Summary</div>
                     <div onClick={() => setSelectedPastSummary(previousPastSummary)} style={{ padding: '14px', background: T.inputBg, border: `1px solid ${T.borderFaint}`, cursor: 'pointer' }}>
                       <div style={{ color: T.text, fontWeight: 600, marginBottom: '4px' }}>{previousPastSummary.title}</div>
-                      <div style={{ fontSize: '12px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '8px' }}>{formatSummaryRunAt(previousPastSummary.created_at || previousPastSummary.briefing_date)}</div>
+                      <div style={{ fontSize: '12px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '8px' }}><TimeHover iso={previousPastSummary.created_at || previousPastSummary.briefing_date} label={formatSummaryRunAt(previousPastSummary.created_at || previousPastSummary.briefing_date)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></div>
                       <div style={{ fontSize: '13px', color: T.text4, lineHeight: 1.6, maxHeight: '62px', overflow: 'hidden' }}>{previousPastSummary.content}</div>
                     </div>
                   </div>
