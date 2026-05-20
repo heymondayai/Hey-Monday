@@ -794,13 +794,12 @@ const fullContextBlocks = [
     const lengthRules = mode === 'summary'
       ? `
 SUMMARY RESPONSE RULES (HARD LIMITS):
-- Maximum 4 sentences total. No exceptions.
-- Sentence 1: The single most important move or theme with a number (e.g. "TSLA fell 3.18% to $380.30, the session's biggest mover on your list.").
-- Sentence 2: One other notable move or macro data point if directly relevant.
-- Sentence 3: One key catalyst or risk driving the action.
-- Sentence 4 (optional): One forward-looking note only if it adds real value.
-- Do NOT include: intraday ranges, volume commentary, multiple catalysts, multiple news items, analyst detail, or anything that does not directly change the summary conclusion.
-- If you find yourself writing more than 4 sentences, cut the least important one.
+- Maximum 3 short sentences. No exceptions. If you reach 3, stop.
+- Write like a trader talking to another trader — casual, direct, plain English. No formal tone.
+- Sentence 1: The one thing that matters most right now, with a number.
+- Sentence 2: One supporting fact — a mover, a catalyst, or a macro point — only if it changes the picture.
+- Sentence 3: One thing to watch. Skip it if nothing stands out.
+- Forbidden: intraday ranges, volume, multiple catalysts, analyst commentary, news headlines, filler phrases like "overall" or "keep in mind", sign-offs.
 `
       : intent.isCasualConversation
         ? `
@@ -907,11 +906,11 @@ ${lengthRules}`
 
     // Token limits — kept tight to enforce brevity
     const maxTokens = useLiveSearch
-      ? mode === 'summary' ? 550 : 140
+      ? mode === 'summary' ? 200 : 140
       : useHaikuSearch
-        ? mode === 'summary' ? 550 : 160
+        ? mode === 'summary' ? 200 : 160
         : mode === 'summary'
-        ? 550
+        ? 200
         : intent.isCasualConversation ? 50
         : intent.requestType === 'simple' ? 60
         : intent.isOpenEndedWhyQuestion ? 120
