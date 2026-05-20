@@ -898,7 +898,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [alertPrice, setAlertPrice] = useState('')
   const [alertSaving, setAlertSaving] = useState(false)
 
-  type TvAlert = { id: string; ticker: string | null; price: number | null; message: string; interval: string | null; exchange: string | null; created_at: string }
+  type TvAlert = { id: string; ticker: string | null; price: number | null; message: string; interval: string | null; exchange: string | null; created_at: string; raw_payload?: Record<string, unknown> }
   const [tvAlerts, setTvAlerts] = useState<TvAlert[]>([])
   const [tvAlertBehavior, setTvAlertBehavior] = useState<'speak' | 'speak_and_brief' | 'silent'>(() => {
     if (typeof window === 'undefined') return 'speak'
@@ -1782,7 +1782,7 @@ function startThinkingChimes(): () => void {
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
     const { data } = await supabase
       .from('tradingview_alerts')
-      .select('id, ticker, price, message, interval, exchange, created_at')
+      .select('id, ticker, price, message, interval, exchange, created_at, raw_payload')
       .eq('user_id', userId)
       .gte('created_at', cutoff)
       .order('created_at', { ascending: false })
@@ -1825,15 +1825,24 @@ function startThinkingChimes(): () => void {
     eventAlertToastTimerRef.current = setTimeout(() => setEventAlertToast(null), 12_000)
 
     if (tvAlertBehaviorRef.current !== 'silent' && speechOnRef.current) {
+      const action = typeof alert.raw_payload?.action === 'string' ? alert.raw_payload.action.toLowerCase() : null
+      const contracts = alert.raw_payload?.contracts != null ? parseFloat(String(alert.raw_payload.contracts)) : null
       const parts: string[] = []
-      if (alert.ticker) parts.push(`Alert on ${alert.ticker}.`)
-      parts.push(alert.message)
-      if (alert.price) parts.push(`Price: ${alert.price}.`)
+      if (action === 'buy' || action === 'sell' || action === 'close') {
+        parts.push(`${action.charAt(0).toUpperCase() + action.slice(1)} signal${alert.ticker ? ` on ${alert.ticker}` : ''}.`)
+        if (alert.price) parts.push(`At ${alert.price}.`)
+        if (contracts && isFinite(contracts)) parts.push(`${contracts} contracts.`)
+      } else {
+        if (alert.ticker) parts.push(`Alert on ${alert.ticker}.`)
+        parts.push(alert.message)
+        if (alert.price) parts.push(`Price: ${alert.price}.`)
+      }
       void speakText(parts.join(' '))
     }
 
     if (tvAlertBehaviorRef.current === 'speak_and_brief') {
-      const briefPrompt = `TradingView just fired an alert${alert.ticker ? ` on ${alert.ticker}` : ''}: "${alert.message}"${alert.price != null ? ` at price ${alert.price}` : ''}. Give a quick 2-3 sentence briefing on what this signal means and what to watch for right now.`
+      const action = typeof alert.raw_payload?.action === 'string' ? alert.raw_payload.action : null
+      const briefPrompt = `TradingView just fired an alert${alert.ticker ? ` on ${alert.ticker}` : ''}${action ? ` — ${action.toUpperCase()} signal` : ''}: "${alert.message}"${alert.price != null ? ` at price ${alert.price}` : ''}. Give a quick 2-3 sentence briefing on what this signal means and what to watch for right now.`
       void handleSendWithText(briefPrompt, false)
     }
   }
@@ -2316,19 +2325,27 @@ const visibleDaySummaries = useMemo(() => {
                   <div style={{ flex: 1, overflowY: 'auto', padding: '0', display: 'flex', flexDirection: 'column' }}>
                     {tvAlerts.length === 0 ? (
                       <div style={{ padding: '24px 16px', color: T.text6, fontStyle: 'italic', fontSize: '13px' }}>No alerts yet. Go to Setup to configure your webhook.</div>
-                    ) : tvAlerts.map(alert => (
+                    ) : tvAlerts.map(alert => {
+                      const tvAction = typeof alert.raw_payload?.action === 'string' ? alert.raw_payload.action.toUpperCase() : null
+                      const tvContracts = alert.raw_payload?.contracts != null ? parseFloat(String(alert.raw_payload.contracts)) : null
+                      const tvPosSize = alert.raw_payload?.position_size != null ? parseFloat(String(alert.raw_payload.position_size)) : null
+                      return (
                       <div key={alert.id} style={{ padding: '12px 16px', borderBottom: `1px solid ${T.borderFaint3}`, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                           {alert.ticker && <span style={{ fontSize: '13px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>{alert.ticker}</span>}
+                          {tvAction && <span style={{ fontSize: '10px', fontWeight: 700, padding: '1px 6px', letterSpacing: '0.08em', fontFamily: "'DM Mono', monospace", color: tvAction === 'BUY' ? T.green : tvAction === 'SELL' ? T.red : T.text5, background: tvAction === 'BUY' ? T.greenFaint3 : tvAction === 'SELL' ? T.redFaint3 : T.inputBg, border: `1px solid ${tvAction === 'BUY' ? T.greenBorder2 : tvAction === 'SELL' ? T.redBorder2 : T.borderFaint}` }}>{tvAction}</span>}
                           {alert.interval && <span style={{ fontSize: '10px', color: T.text6, background: T.goldFaint2, border: `1px solid ${T.goldFaint5}`, padding: '1px 5px', fontFamily: "'DM Mono', monospace" }}>{alert.interval}</span>}
                         </div>
                         <div style={{ fontSize: '13px', color: T.text, lineHeight: 1.5 }}>{alert.message}</div>
-                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                           {alert.price != null && <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>${Number(alert.price).toFixed(2)}</span>}
+                          {tvContracts && isFinite(tvContracts) && <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>{tvContracts} contracts</span>}
+                          {tvPosSize && isFinite(tvPosSize) && <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>pos {tvPosSize}</span>}
                           <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}><TimeHover iso={alert.created_at} label={formatSummaryRunAt(alert.created_at)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></span>
                         </div>
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 ) : (
                   <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -3270,20 +3287,28 @@ const visibleDaySummaries = useMemo(() => {
                         <div style={{ padding: '30px', color: T.text6, fontStyle: 'italic', fontSize: '13px' }}>No alerts yet. Go to Setup to configure your webhook.</div>
                       ) : (
                         <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-                          {tvAlerts.map((alert) => (
+                          {tvAlerts.map((alert) => {
+                            const tvAction = typeof alert.raw_payload?.action === 'string' ? alert.raw_payload.action.toUpperCase() : null
+                            const tvContracts = alert.raw_payload?.contracts != null ? parseFloat(String(alert.raw_payload.contracts)) : null
+                            const tvPosSize = alert.raw_payload?.position_size != null ? parseFloat(String(alert.raw_payload.position_size)) : null
+                            return (
                             <div key={alert.id} style={{ padding: '12px 18px', borderBottom: `1px solid ${T.borderFaint3}`, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                 {alert.ticker && <span style={{ fontSize: '13px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>{alert.ticker}</span>}
+                                {tvAction && <span style={{ fontSize: '10px', fontWeight: 700, padding: '1px 6px', letterSpacing: '0.08em', fontFamily: "'DM Mono', monospace", color: tvAction === 'BUY' ? T.green : tvAction === 'SELL' ? T.red : T.text5, background: tvAction === 'BUY' ? T.greenFaint3 : tvAction === 'SELL' ? T.redFaint3 : T.inputBg, border: `1px solid ${tvAction === 'BUY' ? T.greenBorder2 : tvAction === 'SELL' ? T.redBorder2 : T.borderFaint}` }}>{tvAction}</span>}
                                 {alert.interval && <span style={{ fontSize: '10px', color: T.text6, background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '1px 6px', fontFamily: "'DM Mono', monospace", letterSpacing: '0.06em' }}>{alert.interval}</span>}
                                 {alert.exchange && <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>{alert.exchange}</span>}
                               </div>
                               <div style={{ fontSize: '13px', color: T.text, lineHeight: 1.5 }}>{alert.message}</div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                                 {alert.price != null && <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>${Number(alert.price).toFixed(2)}</span>}
+                                {tvContracts && isFinite(tvContracts) && <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>{tvContracts} contracts</span>}
+                                {tvPosSize && isFinite(tvPosSize) && <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>pos {tvPosSize}</span>}
                                 <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}><TimeHover iso={alert.created_at} label={formatSummaryRunAt(alert.created_at)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></span>
                               </div>
                             </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       )
                     ) : (
@@ -3314,13 +3339,40 @@ const visibleDaySummaries = useMemo(() => {
                         </div>
                         <div>
                           <div onClick={() => setShowTvFormatGuide(v => !v)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
-                            <div style={{ fontSize: '11px', letterSpacing: '0.16em', textTransform: 'uppercase', color: T.gold, fontWeight: 600 }}>Alert Message Format</div>
+                            <div style={{ fontSize: '11px', letterSpacing: '0.16em', textTransform: 'uppercase', color: T.gold, fontWeight: 600 }}>Pine Script Templates</div>
                             <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>{showTvFormatGuide ? '▲ hide' : '▼ show'}</div>
                           </div>
                           {showTvFormatGuide && (
-                            <div style={{ marginTop: '10px' }}>
-                              <div style={{ fontSize: '12px', color: T.text5, marginBottom: '10px', lineHeight: 1.6 }}>In TradingView, set your alert's Message field to JSON using these dynamic variables:</div>
-                              <div style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, padding: '12px', fontFamily: "'DM Mono', monospace", fontSize: '11px', color: T.text4, lineHeight: 1.8, whiteSpace: 'pre' }}>{`{\n  "ticker": "{{ticker}}",\n  "price": "{{close}}",\n  "message": "Your alert text here",\n  "interval": "{{interval}}",\n  "exchange": "{{exchange}}"\n}`}</div>
+                            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                              <div style={{ fontSize: '12px', color: T.text5, lineHeight: 1.6 }}>Copy one of these into your TradingView alert's <strong>Message</strong> field. TradingView fills in the <code style={{ fontSize: '11px', background: T.inputBg, padding: '0 3px' }}>{'{{variables}}'}</code> automatically when the alert fires.</div>
+                              {([
+                                {
+                                  title: 'Price Alert',
+                                  desc: 'Basic alert with ticker, price, and bar info.',
+                                  json: `{\n  "ticker": "{{ticker}}",\n  "price": {{close}},\n  "message": "{{ticker}} alert on {{interval}} at {{close}}",\n  "interval": "{{interval}}",\n  "exchange": "{{exchange}}"\n}`,
+                                },
+                                {
+                                  title: 'Strategy Signal',
+                                  desc: 'For Pine Script strategies — includes buy/sell action, contracts, and position size.',
+                                  json: `{\n  "ticker": "{{ticker}}",\n  "price": {{close}},\n  "action": "{{strategy.order.action}}",\n  "contracts": {{strategy.order.contracts}},\n  "position_size": {{strategy.position_size}},\n  "message": "{{strategy.order.action}} {{ticker}} at {{close}}",\n  "interval": "{{interval}}",\n  "exchange": "{{exchange}}"\n}`,
+                                },
+                                {
+                                  title: 'Full Bar Data',
+                                  desc: 'Includes complete OHLCV bar data for indicator-based alerts.',
+                                  json: `{\n  "ticker": "{{ticker}}",\n  "price": {{close}},\n  "open": {{open}},\n  "high": {{high}},\n  "low": {{low}},\n  "volume": {{volume}},\n  "message": "{{ticker}} {{interval}} close: {{close}}",\n  "interval": "{{interval}}",\n  "exchange": "{{exchange}}"\n}`,
+                                },
+                              ]).map(({ title, desc, json }) => (
+                                <div key={title} style={{ border: `1px solid ${T.borderFaint}`, background: T.cardBg }}>
+                                  <div style={{ padding: '8px 12px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div>
+                                      <div style={{ fontSize: '12px', fontWeight: 600, color: T.text }}>{title}</div>
+                                      <div style={{ fontSize: '11px', color: T.text5, marginTop: '1px' }}>{desc}</div>
+                                    </div>
+                                    <div onClick={() => void navigator.clipboard.writeText(json)} style={{ padding: '4px 10px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '11px', fontWeight: 600, flexShrink: 0, marginLeft: '10px' }}>Copy</div>
+                                  </div>
+                                  <div style={{ padding: '10px 12px', fontFamily: "'DM Mono', monospace", fontSize: '10px', color: T.text4, lineHeight: 1.8, whiteSpace: 'pre', overflowX: 'auto' }}>{json}</div>
+                                </div>
+                              ))}
                             </div>
                           )}
                         </div>
