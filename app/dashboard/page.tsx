@@ -235,7 +235,7 @@ const LIGHT = {
   pricingToggle:'rgba(0,0,0,0.03)',
 }
 
-type PanelId = 'pulse' | 'events' | 'news' | 'summaries'| 'chat'
+type PanelId = 'pulse' | 'events' | 'news' | 'summaries' | 'tradingview' | 'chat'
 type LayoutId = '2x2' | 'focus' | '2col' | '2row'
 const DASHBOARD_PREFS_KEY = 'heymonday_dashboard_prefs_v1'
 
@@ -717,7 +717,7 @@ const [slotPanels, setSlotPanels] = useState<PanelId[]>(() => {
     const raw = window.localStorage.getItem(DASHBOARD_PREFS_KEY)
     if (!raw) return ['pulse', 'events', 'news', 'summaries']
     const parsed = JSON.parse(raw) as Partial<DashboardPrefs>
-    const validPanels = ['pulse', 'events', 'news', 'summaries']
+    const validPanels = ['pulse', 'events', 'news', 'summaries', 'tradingview']
     const arr = Array.isArray(parsed.slotPanels) ? parsed.slotPanels.filter((p): p is PanelId => validPanels.includes(p)) : []
     return arr.length === 4 ? arr : ['pulse', 'events', 'news', 'summaries']
   } catch {
@@ -746,13 +746,14 @@ const [newsTab, setNewsTab] = useState<'watchlist' | 'general'>(() => {
   const touchStartXRef = useRef<number>(0)
 const touchStartYRef = useRef<number>(0)
 
-const MOBILE_PANELS: PanelId[] = ['pulse', 'events', 'news', 'summaries', 'chat']
+const MOBILE_PANELS: PanelId[] = ['pulse', 'events', 'news', 'summaries', 'tradingview', 'chat']
 const MOBILE_PANEL_LABELS: Record<PanelId, { label: string }> = {
-  pulse:     { label: 'Pulse' },
-  events:    { label: 'Events' },
-  news:      { label: 'News' },
-  summaries: { label: 'Briefs' },
-  chat:      { label: 'Chat' },
+  pulse:       { label: 'Pulse' },
+  events:      { label: 'Events' },
+  news:        { label: 'News' },
+  summaries:   { label: 'Briefs' },
+  tradingview: { label: 'TV Alerts' },
+  chat:        { label: 'Chat' },
 }
 
 function handleTouchStart(e: React.TouchEvent) {
@@ -831,7 +832,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [summaryWeekOffset, setSummaryWeekOffset] = useState(0)
   const [summaryDayOffset, setSummaryDayOffset] = useState(0)
   const [summaryView, setSummaryView] = useState<'day' | 'week'>('week')
-  const [summaryTab, setSummaryTab] = useState<'scheduled' | 'past' | 'tradingview'>('scheduled')
+  const [summaryTab, setSummaryTab] = useState<'scheduled' | 'past'>('scheduled')
   const [selectedPastSummary, setSelectedPastSummary] = useState<PastBriefing | null>(null)
   const [summaryName, setSummaryName] = useState('')
   const [summaryDate, setSummaryDate] = useState('')
@@ -2286,23 +2287,61 @@ const visibleDaySummaries = useMemo(() => {
                       ))}
                     </>
                   )}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
-                    <div style={{ fontSize: '10px', letterSpacing: '0.2em', textTransform: 'uppercase', color: T.goldText2, fontWeight: 600 }}>TradingView Alerts</div>
-                    <div onClick={() => { setSummaryTab('tradingview'); setTvAlertTab('setup'); if (!webhookKey) void fetchWebhookKey() }} style={{ fontSize: '10px', color: T.goldText, cursor: 'pointer' }}>Setup →</div>
-                  </div>
-                  {tvAlerts.length === 0 ? (
-                    <div style={{ fontSize: '12px', color: T.text7, fontStyle: 'italic' }}>No alerts yet</div>
-                  ) : tvAlerts.slice(0, 5).map(alert => (
-                    <div key={alert.id} style={{ padding: '10px 12px', background: T.cardBg, border: `1px solid ${T.borderFaint3}`, display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        {alert.ticker && <span style={{ fontSize: '12px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>{alert.ticker}</span>}
-                        {alert.interval && <span style={{ fontSize: '10px', color: T.text6, background: T.goldFaint2, border: `1px solid ${T.goldFaint5}`, padding: '1px 5px', fontFamily: "'DM Mono', monospace" }}>{alert.interval}</span>}
-                      </div>
-                      <div style={{ fontSize: '12px', color: T.text, lineHeight: 1.4 }}>{alert.message}</div>
-                      <div style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>{new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(alert.created_at))} ET</div>
+                </div>
+              </div>
+            )}
+
+            {mobilePanel === 'tradingview' && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: T.panelBg }}>
+                <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', gap: '16px', flexShrink: 0 }}>
+                  {(['feed', 'setup'] as const).map((t) => (
+                    <div key={t} onClick={() => { setTvAlertTab(t); if (t === 'setup' && !webhookKey) void fetchWebhookKey() }} style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: 'pointer', color: tvAlertTab === t ? T.gold : T.text6, borderBottom: `2px solid ${tvAlertTab === t ? T.gold : 'transparent'}`, paddingBottom: '4px' }}>
+                      {t === 'feed' ? `Feed${tvAlerts.length ? ` (${tvAlerts.length})` : ''}` : 'Setup'}
                     </div>
                   ))}
                 </div>
+                {tvAlertTab === 'feed' ? (
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '0', display: 'flex', flexDirection: 'column' }}>
+                    {tvAlerts.length === 0 ? (
+                      <div style={{ padding: '24px 16px', color: T.text6, fontStyle: 'italic', fontSize: '13px' }}>No alerts yet. Go to Setup to configure your webhook.</div>
+                    ) : tvAlerts.map(alert => (
+                      <div key={alert.id} style={{ padding: '12px 16px', borderBottom: `1px solid ${T.borderFaint3}`, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          {alert.ticker && <span style={{ fontSize: '13px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>{alert.ticker}</span>}
+                          {alert.interval && <span style={{ fontSize: '10px', color: T.text6, background: T.goldFaint2, border: `1px solid ${T.goldFaint5}`, padding: '1px 5px', fontFamily: "'DM Mono', monospace" }}>{alert.interval}</span>}
+                        </div>
+                        <div style={{ fontSize: '13px', color: T.text, lineHeight: 1.5 }}>{alert.message}</div>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                          {alert.price != null && <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>${Number(alert.price).toFixed(2)}</span>}
+                          <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>{new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(alert.created_at))} ET</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div style={{ padding: '10px 12px', background: isDark ? 'rgba(234,179,8,0.07)' : 'rgba(180,120,0,0.06)', border: `1px solid ${T.goldFaint7}`, borderLeft: `3px solid ${T.gold}` }}>
+                      <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.6 }}><span style={{ fontWeight: 700, color: T.gold }}>TradingView Pro required.</span> Webhooks are only available on Pro, Pro+, or Premium plans.</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', letterSpacing: '0.14em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: '8px' }}>Webhook URL</div>
+                      {webhookKeyLoading ? <div style={{ fontSize: '12px', color: T.text6, fontStyle: 'italic' }}>Loading...</div> : webhookKey ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, padding: '8px 10px', fontFamily: "'DM Mono', monospace", fontSize: '10px', color: T.text4, wordBreak: 'break-all', lineHeight: 1.6 }}>{`https://heymonday.store/api/webhooks/tradingview?key=${webhookKey}`}</div>
+                          <div onClick={() => void navigator.clipboard.writeText(`https://heymonday.store/api/webhooks/tradingview?key=${webhookKey}`)} style={{ padding: '7px 14px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 600, display: 'inline-block' }}>Copy URL</div>
+                        </div>
+                      ) : <div onClick={() => void fetchWebhookKey()} style={{ padding: '7px 14px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 600, display: 'inline-block' }}>Generate Webhook URL</div>}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', letterSpacing: '0.14em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: '8px' }}>When an Alert Fires</div>
+                      {([{ value: 'speak', label: 'Speak the alert' }, { value: 'speak_and_brief', label: 'Speak + AI briefing' }, { value: 'silent', label: 'Silent (log only)' }] as const).map(({ value, label }) => (
+                        <div key={value} onClick={() => { setTvAlertBehavior(value); localStorage.setItem('tv_alert_behavior', value) }} style={{ padding: '9px 12px', marginBottom: '6px', border: `1px solid ${tvAlertBehavior === value ? T.goldFaint9 : T.borderFaint}`, background: tvAlertBehavior === value ? T.goldFaint2 : 'transparent', cursor: 'pointer' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 600, color: tvAlertBehavior === value ? T.gold : T.text }}>{label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2959,8 +2998,8 @@ const visibleDaySummaries = useMemo(() => {
 
             {/* ── Dynamic panel grid ── */}
             {(() => {
-              const ALL_PANELS: PanelId[] = ['pulse', 'events', 'news', 'summaries']
-              const PANEL_LABELS: Record<PanelId, string> = { pulse: 'Pulse', events: 'Events', news: 'News', summaries: 'Summaries', chat: 'Chat' }
+              const ALL_PANELS: PanelId[] = ['pulse', 'events', 'news', 'summaries', 'tradingview']
+              const PANEL_LABELS: Record<PanelId, string> = { pulse: 'Pulse', events: 'Events', news: 'News', summaries: 'Summaries', tradingview: 'TV Alerts', chat: 'Chat' }
 
               const slotCount = layout === 'focus' ? 1 : layout === '2col' || layout === '2row' ? 2 : 4
 
@@ -3095,11 +3134,10 @@ const visibleDaySummaries = useMemo(() => {
                     <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0, flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                          {(['scheduled', 'past', 'tradingview'] as const).map((tab) => (
-                            <div key={tab} onClick={() => { setSummaryTab(tab); if (tab === 'tradingview' && !webhookKey) void fetchWebhookKey() }} style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: summaryTab === tab ? T.gold : T.text6, display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600, cursor: 'pointer', paddingBottom: '4px', borderBottom: summaryTab === tab ? `2px solid ${T.gold}` : '2px solid transparent', flexShrink: 0 }}>
+                          {(['scheduled', 'past'] as const).map((tab) => (
+                            <div key={tab} onClick={() => setSummaryTab(tab)} style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: summaryTab === tab ? T.gold : T.text6, display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600, cursor: 'pointer', paddingBottom: '4px', borderBottom: summaryTab === tab ? `2px solid ${T.gold}` : '2px solid transparent' }}>
                               {tab === 'scheduled' && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: summaryTab === 'scheduled' ? T.gold : T.text6 }} />}
-                              {tab === 'tradingview' && tvAlerts.length > 0 && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: T.gold }} />}
-                              {tab === 'scheduled' ? 'Scheduled' : tab === 'past' ? 'Past' : 'TradingView'}
+                              {tab === 'scheduled' ? 'Scheduled Summaries' : 'Past Summaries'}
                             </div>
                           ))}
                         </div>
@@ -3186,90 +3224,99 @@ const visibleDaySummaries = useMemo(() => {
                         ))}
                       </div>
                     ) : (
-                      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                        {/* Sub-tabs: Feed / Setup */}
-                        <div style={{ display: 'flex', borderBottom: `1px solid ${T.borderFaint}`, flexShrink: 0 }}>
-                          {(['feed', 'setup'] as const).map((t) => (
-                            <div key={t} onClick={() => { setTvAlertTab(t); if (t === 'setup' && !webhookKey) void fetchWebhookKey() }} style={{ padding: '10px 18px', fontSize: '11px', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: 'pointer', color: tvAlertTab === t ? T.gold : T.text6, borderBottom: `2px solid ${tvAlertTab === t ? T.gold : 'transparent'}` }}>
-                              {t === 'feed' ? `Feed${tvAlerts.length ? ` (${tvAlerts.length})` : ''}` : 'Setup'}
+                      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                        {orderedPastBriefings.length === 0 ? (
+                          <div style={{ padding: '30px', color: T.text6, fontStyle: 'italic' }}>No past summaries yet</div>
+                        ) : orderedPastBriefings.map((item) => (
+                          <div key={item.id} onClick={() => setSelectedPastSummary(item)} style={{ padding: '14px 18px', borderBottom: `1px solid ${T.borderFaint3}`, cursor: 'pointer', background: 'transparent', transition: 'background 0.12s' }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = T.pastHover)}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                            <div style={{ fontSize: '14px', fontWeight: 600, color: T.text, marginBottom: '4px' }}>{item.title}</div>
+                            <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '6px' }}>{formatSummaryRunAt(item.briefing_date)}</div>
+                            <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.55, maxHeight: '38px', overflow: 'hidden' }}>{item.content}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+                if (pid === 'tradingview') return (
+                  <div key={`slot-${slotIdx}`} style={{ background: T.panelBg, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    {selector}
+                    <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                        {(['feed', 'setup'] as const).map((t) => (
+                          <div key={t} onClick={() => { setTvAlertTab(t); if (t === 'setup' && !webhookKey) void fetchWebhookKey() }} style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: tvAlertTab === t ? T.gold : T.text6, display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600, cursor: 'pointer', paddingBottom: '4px', borderBottom: tvAlertTab === t ? `2px solid ${T.gold}` : '2px solid transparent' }}>
+                            {t === 'feed' ? `Feed${tvAlerts.length ? ` (${tvAlerts.length})` : ''}` : 'Setup'}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {tvAlertTab === 'feed' ? (
+                      tvAlerts.length === 0 ? (
+                        <div style={{ padding: '30px', color: T.text6, fontStyle: 'italic', fontSize: '13px' }}>No alerts yet. Go to Setup to configure your webhook.</div>
+                      ) : (
+                        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                          {tvAlerts.map((alert) => (
+                            <div key={alert.id} style={{ padding: '12px 18px', borderBottom: `1px solid ${T.borderFaint3}`, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                {alert.ticker && <span style={{ fontSize: '13px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>{alert.ticker}</span>}
+                                {alert.interval && <span style={{ fontSize: '10px', color: T.text6, background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '1px 6px', fontFamily: "'DM Mono', monospace", letterSpacing: '0.06em' }}>{alert.interval}</span>}
+                                {alert.exchange && <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>{alert.exchange}</span>}
+                              </div>
+                              <div style={{ fontSize: '13px', color: T.text, lineHeight: 1.5 }}>{alert.message}</div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                {alert.price != null && <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>${Number(alert.price).toFixed(2)}</span>}
+                                <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>{new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(alert.created_at))} ET</span>
+                              </div>
                             </div>
                           ))}
                         </div>
-
-                        {tvAlertTab === 'feed' ? (
-                          tvAlerts.length === 0 ? (
-                            <div style={{ padding: '30px', color: T.text6, fontStyle: 'italic', fontSize: '13px' }}>No alerts yet. Set up your webhook to start receiving TradingView alerts.</div>
-                          ) : (
-                            <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-                              {tvAlerts.map((alert) => (
-                                <div key={alert.id} style={{ padding: '12px 18px', borderBottom: `1px solid ${T.borderFaint3}`, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                    {alert.ticker && <span style={{ fontSize: '13px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>{alert.ticker}</span>}
-                                    {alert.interval && <span style={{ fontSize: '10px', color: T.text6, background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '1px 6px', fontFamily: "'DM Mono', monospace", letterSpacing: '0.06em' }}>{alert.interval}</span>}
-                                    {alert.exchange && <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>{alert.exchange}</span>}
-                                  </div>
-                                  <div style={{ fontSize: '13px', color: T.text, lineHeight: 1.5 }}>{alert.message}</div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                    {alert.price != null && <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>${Number(alert.price).toFixed(2)}</span>}
-                                    <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>{new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(alert.created_at))} ET</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )
-                        ) : (
-                          <div style={{ padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto' }}>
-                            {/* Pro plan notice */}
-                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 14px', background: isDark ? 'rgba(234,179,8,0.07)' : 'rgba(180,120,0,0.06)', border: `1px solid ${T.goldFaint7}`, borderLeft: `3px solid ${T.gold}` }}>
-                              <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.6 }}>
-                                <span style={{ fontWeight: 700, color: T.gold }}>TradingView Pro required.</span> Webhooks are only available on TradingView Pro, Pro+, or Premium plans. The "Webhook URL" field won't appear when creating alerts on a free account.
+                      )
+                    ) : (
+                      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 14px', background: isDark ? 'rgba(234,179,8,0.07)' : 'rgba(180,120,0,0.06)', border: `1px solid ${T.goldFaint7}`, borderLeft: `3px solid ${T.gold}` }}>
+                          <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.6 }}>
+                            <span style={{ fontWeight: 700, color: T.gold }}>TradingView Pro required.</span> Webhooks are only available on TradingView Pro, Pro+, or Premium plans. The "Webhook URL" field won't appear when creating alerts on a free account.
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '11px', letterSpacing: '0.16em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: '10px' }}>Webhook URL</div>
+                          <div style={{ fontSize: '12px', color: T.text5, marginBottom: '12px', lineHeight: 1.6 }}>Paste this URL into your TradingView alert's "Webhook URL" field. Keep it private — anyone with this URL can send alerts to your account.</div>
+                          {webhookKeyLoading ? (
+                            <div style={{ fontSize: '12px', color: T.text6, fontStyle: 'italic' }}>Loading...</div>
+                          ) : webhookKey ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <div style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, padding: '10px 12px', fontFamily: "'DM Mono', monospace", fontSize: '11px', color: T.text4, wordBreak: 'break-all', lineHeight: 1.6 }}>
+                                {`https://heymonday.store/api/webhooks/tradingview?key=${webhookKey}`}
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <div onClick={() => void navigator.clipboard.writeText(`https://heymonday.store/api/webhooks/tradingview?key=${webhookKey}`)} style={{ padding: '7px 14px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}>Copy URL</div>
+                                <div onClick={() => void regenerateWebhookKey()} style={{ padding: '7px 14px', border: `1px solid ${T.borderItem}`, color: T.text5, cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}>Regenerate</div>
                               </div>
                             </div>
-
-                            {/* Webhook URL */}
-                            <div>
-                              <div style={{ fontSize: '11px', letterSpacing: '0.16em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: '10px' }}>Webhook URL</div>
-                              <div style={{ fontSize: '12px', color: T.text5, marginBottom: '12px', lineHeight: 1.6 }}>Paste this URL into your TradingView alert's "Webhook URL" field. Keep it private — anyone with this URL can send alerts to your account.</div>
-                              {webhookKeyLoading ? (
-                                <div style={{ fontSize: '12px', color: T.text6, fontStyle: 'italic' }}>Loading...</div>
-                              ) : webhookKey ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                  <div style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, padding: '10px 12px', fontFamily: "'DM Mono', monospace", fontSize: '11px', color: T.text4, wordBreak: 'break-all', lineHeight: 1.6 }}>
-                                    {`https://heymonday.store/api/webhooks/tradingview?key=${webhookKey}`}
-                                  </div>
-                                  <div style={{ display: 'flex', gap: '8px' }}>
-                                    <div onClick={() => void navigator.clipboard.writeText(`https://heymonday.store/api/webhooks/tradingview?key=${webhookKey}`)} style={{ padding: '7px 14px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}>Copy URL</div>
-                                    <div onClick={() => void regenerateWebhookKey()} style={{ padding: '7px 14px', border: `1px solid ${T.borderItem}`, color: T.text5, cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}>Regenerate</div>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div onClick={() => void fetchWebhookKey()} style={{ padding: '8px 16px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 600, display: 'inline-block' }}>Generate Webhook URL</div>
-                              )}
+                          ) : (
+                            <div onClick={() => void fetchWebhookKey()} style={{ padding: '8px 16px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 600, display: 'inline-block' }}>Generate Webhook URL</div>
+                          )}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '11px', letterSpacing: '0.16em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: '10px' }}>Alert Message Format</div>
+                          <div style={{ fontSize: '12px', color: T.text5, marginBottom: '10px', lineHeight: 1.6 }}>In TradingView, set your alert's Message field to JSON using these dynamic variables:</div>
+                          <div style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, padding: '12px', fontFamily: "'DM Mono', monospace", fontSize: '11px', color: T.text4, lineHeight: 1.8, whiteSpace: 'pre' }}>{`{\n  "ticker": "{{ticker}}",\n  "price": "{{close}}",\n  "message": "Your alert text here",\n  "interval": "{{interval}}",\n  "exchange": "{{exchange}}"\n}`}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '11px', letterSpacing: '0.16em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: '10px' }}>When an Alert Fires</div>
+                          {([
+                            { value: 'speak', label: 'Speak the alert', desc: 'Monday reads the alert aloud' },
+                            { value: 'speak_and_brief', label: 'Speak + AI briefing', desc: 'Reads alert and triggers a full Monday briefing on that ticker' },
+                            { value: 'silent', label: 'Silent (log only)', desc: 'Stores the alert but no audio or chat' },
+                          ] as const).map(({ value, label, desc }) => (
+                            <div key={value} onClick={() => { setTvAlertBehavior(value); localStorage.setItem('tv_alert_behavior', value) }} style={{ padding: '10px 12px', marginBottom: '6px', border: `1px solid ${tvAlertBehavior === value ? T.goldFaint9 : T.borderFaint}`, background: tvAlertBehavior === value ? T.goldFaint2 : 'transparent', cursor: 'pointer', transition: 'all 0.15s' }}>
+                              <div style={{ fontSize: '13px', fontWeight: 600, color: tvAlertBehavior === value ? T.gold : T.text, marginBottom: '2px' }}>{label}</div>
+                              <div style={{ fontSize: '11px', color: T.text5 }}>{desc}</div>
                             </div>
-
-                            {/* Alert message format */}
-                            <div>
-                              <div style={{ fontSize: '11px', letterSpacing: '0.16em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: '10px' }}>Alert Message Format</div>
-                              <div style={{ fontSize: '12px', color: T.text5, marginBottom: '10px', lineHeight: 1.6 }}>In TradingView, set your alert's Message field to JSON using these dynamic variables:</div>
-                              <div style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, padding: '12px', fontFamily: "'DM Mono', monospace", fontSize: '11px', color: T.text4, lineHeight: 1.8, whiteSpace: 'pre' }}>{`{\n  "ticker": "{{ticker}}",\n  "price": "{{close}}",\n  "message": "Your alert text here",\n  "interval": "{{interval}}",\n  "exchange": "{{exchange}}"\n}`}</div>
-                            </div>
-
-                            {/* Behavior */}
-                            <div>
-                              <div style={{ fontSize: '11px', letterSpacing: '0.16em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: '10px' }}>When an Alert Fires</div>
-                              {([
-                                { value: 'speak', label: 'Speak the alert', desc: 'Monday reads the alert aloud' },
-                                { value: 'speak_and_brief', label: 'Speak + AI briefing', desc: 'Reads alert and triggers a full Monday briefing on that ticker' },
-                                { value: 'silent', label: 'Silent (log only)', desc: 'Stores the alert but no audio or chat' },
-                              ] as const).map(({ value, label, desc }) => (
-                                <div key={value} onClick={() => { setTvAlertBehavior(value); localStorage.setItem('tv_alert_behavior', value) }} style={{ padding: '10px 12px', marginBottom: '6px', border: `1px solid ${tvAlertBehavior === value ? T.goldFaint9 : T.borderFaint}`, background: tvAlertBehavior === value ? T.goldFaint2 : 'transparent', cursor: 'pointer', transition: 'all 0.15s' }}>
-                                  <div style={{ fontSize: '13px', fontWeight: 600, color: tvAlertBehavior === value ? T.gold : T.text, marginBottom: '2px' }}>{label}</div>
-                                  <div style={{ fontSize: '11px', color: T.text5 }}>{desc}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
