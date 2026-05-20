@@ -368,6 +368,13 @@ export function normalizeTTS(text: string, options: NormalizeTTSOptions = {}): s
     s = s.replace(re, spoken)
   }
 
+  // 3b. Percentage ranges: 3.50%–3.75% → three point five zero percent to three point seven five percent
+  s = s.replace(
+    /([+\-±]?)(\d[\d,]*\.?\d*)\s*%\s*[-–—]\s*([+\-±]?)(\d[\d,]*\.?\d*)\s*%/g,
+    (_match, sign1, num1, sign2, num2) =>
+      `${expandPercent('', sign1, num1)} to ${expandPercent('', sign2, num2)}`
+  )
+
   // 4. Percentages
   s = s.replace(/([+\-±]?)(\d[\d,]*\.?\d*)%/g, (match, sign, num) =>
     expandPercent(match, sign, num)

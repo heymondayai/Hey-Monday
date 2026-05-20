@@ -834,7 +834,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [summaryTab, setSummaryTab] = useState<'scheduled' | 'past'>('scheduled')
   const [selectedPastSummary, setSelectedPastSummary] = useState<PastBriefing | null>(null)
   const [summaryName, setSummaryName] = useState('')
-  const [summaryDate, setSummaryDate] = useState(initialDateTime.date)
+  const [summaryDate, setSummaryDate] = useState('')
   const [summaryTime, setSummaryTime] = useState(initialDateTime.time)
   const [summaryPrompt, setSummaryPrompt] = useState('')
   const [summaryIcon, setSummaryIcon] = useState('')
@@ -852,7 +852,10 @@ function handleTouchEnd(e: React.TouchEvent) {
   )
   const addPresetRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => { if (!showSummaryEditor) setSelectedPreset(null) }, [showSummaryEditor])
+  useEffect(() => {
+    if (showSummaryEditor) { setSummaryDate('') }
+    else { setSelectedPreset(null) }
+  }, [showSummaryEditor])
 
   // Expire activeBriefing 30 min after it auto-played
   useEffect(() => {
@@ -1768,6 +1771,7 @@ function startThinkingChimes(): () => void {
 
   async function addCustomSummary() {
     if (!user || !summaryName.trim() || !summaryPrompt.trim()) return
+    if (!summaryDate) { alert('Please select a date.'); return }
     const runAtIso = buildRunAtIsoFromLocalInput(summaryDate, summaryTime)
     if (new Date(runAtIso).getTime() <= Date.now()) { alert('Please choose a future date and time.'); return }
     const scheduledJsDay = new Date(new Date(runAtIso).toLocaleString('en-US', { timeZone: 'America/New_York' })).getDay()
@@ -2425,7 +2429,7 @@ const visibleDaySummaries = useMemo(() => {
                                   setPresetTimes(prev => ({ ...prev, [preset.name]: t }))
                                   if (isSelected) setSummaryTime(t)
                                 }}
-                                style={{ background: 'transparent', border: `1px solid ${isSelected ? T.goldFaint8 : T.goldFaint5}`, color: isSelected ? T.gold : T.text5, fontSize: '11px', fontFamily: "'DM Mono', monospace", padding: '2px 5px', outline: 'none', width: '86px' }}
+                                style={{ background: 'transparent', border: `1px solid ${isSelected ? T.goldFaint8 : T.goldFaint5}`, color: isSelected ? T.gold : T.text5, fontSize: '11px', fontFamily: "'DM Mono', monospace", padding: '2px 5px', outline: 'none', width: '120px' }}
                               />
                               <span style={{ fontSize: '9px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>ET</span>
                             </div>
@@ -2439,11 +2443,11 @@ const visibleDaySummaries = useMemo(() => {
                       {selectedPreset && (
                         <div style={{ padding: '12px 14px', background: T.goldFaint2, border: `1px solid ${T.goldFaint8}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                           <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>
-                            {selectedPreset.name} · {formatPresetTime(presetTimes[selectedPreset.name])} ET
+                            {selectedPreset.name} · {formatPresetTime(presetTimes[selectedPreset.name])} ET · {summaryDate || '(select date)'}
                           </div>
                           <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                             <div onClick={() => setSelectedPreset(null)} style={{ padding: '6px 10px', border: `1px solid ${T.borderItem}`, color: T.text5, cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>✕</div>
-                            <div onClick={() => { const iso = buildRunAtIsoFromLocalInput(summaryDate, presetTimes[selectedPreset.name]); void addPresetSummary(selectedPreset, iso); setSelectedPreset(null) }} style={{ padding: '6px 14px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}>Add</div>
+                            <div onClick={() => { if (!summaryDate) { alert('Please select a date first.'); return }; const iso = buildRunAtIsoFromLocalInput(summaryDate, presetTimes[selectedPreset.name]); void addPresetSummary(selectedPreset, iso); setSelectedPreset(null) }} style={{ padding: '6px 14px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}>Add</div>
                           </div>
                         </div>
                       )}
@@ -3316,7 +3320,7 @@ const visibleDaySummaries = useMemo(() => {
                 setPresetTimes(prev => ({ ...prev, [preset.name]: t }))
                 if (isSelected) setSummaryTime(t)
               }}
-              style={{ background: 'transparent', border: `1px solid ${isSelected ? T.goldFaint8 : T.goldFaint5}`, color: isSelected ? T.gold : T.text5, fontSize: '11px', fontFamily: "'DM Mono', monospace", padding: '2px 5px', outline: 'none', cursor: 'text', width: '86px', borderRadius: '2px' }}
+              style={{ background: 'transparent', border: `1px solid ${isSelected ? T.goldFaint8 : T.goldFaint5}`, color: isSelected ? T.gold : T.text5, fontSize: '11px', fontFamily: "'DM Mono', monospace", padding: '2px 5px', outline: 'none', cursor: 'text', width: '120px', borderRadius: '2px' }}
             />
             <span style={{ fontSize: '9px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>ET</span>
           </div>
@@ -3389,12 +3393,12 @@ const visibleDaySummaries = useMemo(() => {
                         <div>
                           <div style={{ fontSize: '13px', color: T.text, fontWeight: 600, marginBottom: '4px' }}>{selectedPreset.name}</div>
                           <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>
-                            {formatPresetTime(presetTimes[selectedPreset.name])} ET · {summaryDate} · {summaryRecurrence === 'none' ? 'Once' : summaryRecurrence.charAt(0).toUpperCase() + summaryRecurrence.slice(1)}
+                            {formatPresetTime(presetTimes[selectedPreset.name])} ET · {summaryDate || '(select date)'} · {summaryRecurrence === 'none' ? 'Once' : summaryRecurrence.charAt(0).toUpperCase() + summaryRecurrence.slice(1)}
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
                           <div onClick={() => setSelectedPreset(null)} style={{ padding: '8px 14px', border: `1px solid ${T.borderItem}`, color: T.text5, cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}>Cancel</div>
-                          <div onClick={() => { const iso = buildRunAtIsoFromLocalInput(summaryDate, presetTimes[selectedPreset.name]); void addPresetSummary(selectedPreset, iso); setSelectedPreset(null) }} style={{ padding: '8px 16px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}>Add Summary</div>
+                          <div onClick={() => { if (!summaryDate) { alert('Please select a date first.'); return }; const iso = buildRunAtIsoFromLocalInput(summaryDate, presetTimes[selectedPreset.name]); void addPresetSummary(selectedPreset, iso); setSelectedPreset(null) }} style={{ padding: '8px 16px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}>Add Summary</div>
                         </div>
                       </div>
                     )}
