@@ -883,6 +883,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [webhookKey, setWebhookKey] = useState<string | null>(null)
   const [webhookKeyLoading, setWebhookKeyLoading] = useState(false)
   const [tvAlertTab, setTvAlertTab] = useState<'feed' | 'setup'>('feed')
+  const [showTvFormatGuide, setShowTvFormatGuide] = useState(false)
 
   const [showWakeSchedule, setShowWakeSchedule] = useState(false)
 const wakeOverrideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -3300,9 +3301,16 @@ const visibleDaySummaries = useMemo(() => {
                           )}
                         </div>
                         <div>
-                          <div style={{ fontSize: '11px', letterSpacing: '0.16em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: '10px' }}>Alert Message Format</div>
-                          <div style={{ fontSize: '12px', color: T.text5, marginBottom: '10px', lineHeight: 1.6 }}>In TradingView, set your alert's Message field to JSON using these dynamic variables:</div>
-                          <div style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, padding: '12px', fontFamily: "'DM Mono', monospace", fontSize: '11px', color: T.text4, lineHeight: 1.8, whiteSpace: 'pre' }}>{`{\n  "ticker": "{{ticker}}",\n  "price": "{{close}}",\n  "message": "Your alert text here",\n  "interval": "{{interval}}",\n  "exchange": "{{exchange}}"\n}`}</div>
+                          <div onClick={() => setShowTvFormatGuide(v => !v)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
+                            <div style={{ fontSize: '11px', letterSpacing: '0.16em', textTransform: 'uppercase', color: T.gold, fontWeight: 600 }}>Alert Message Format</div>
+                            <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>{showTvFormatGuide ? '▲ hide' : '▼ show'}</div>
+                          </div>
+                          {showTvFormatGuide && (
+                            <div style={{ marginTop: '10px' }}>
+                              <div style={{ fontSize: '12px', color: T.text5, marginBottom: '10px', lineHeight: 1.6 }}>In TradingView, set your alert's Message field to JSON using these dynamic variables:</div>
+                              <div style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, padding: '12px', fontFamily: "'DM Mono', monospace", fontSize: '11px', color: T.text4, lineHeight: 1.8, whiteSpace: 'pre' }}>{`{\n  "ticker": "{{ticker}}",\n  "price": "{{close}}",\n  "message": "Your alert text here",\n  "interval": "{{interval}}",\n  "exchange": "{{exchange}}"\n}`}</div>
+                            </div>
+                          )}
                         </div>
                         <div>
                           <div style={{ fontSize: '11px', letterSpacing: '0.16em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: '10px' }}>When an Alert Fires</div>
