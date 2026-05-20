@@ -794,12 +794,15 @@ const fullContextBlocks = [
     const lengthRules = mode === 'summary'
       ? `
 SUMMARY RESPONSE RULES (HARD LIMITS):
-- Maximum 3 short sentences. No exceptions. If you reach 3, stop.
-- Write like a trader talking to another trader — casual, direct, plain English. No formal tone.
-- Sentence 1: The one thing that matters most right now, with a number.
-- Sentence 2: One supporting fact — a mover, a catalyst, or a macro point — only if it changes the picture.
-- Sentence 3: One thing to watch. Skip it if nothing stands out.
-- Forbidden: intraday ranges, volume, multiple catalysts, analyst commentary, news headlines, filler phrases like "overall" or "keep in mind", sign-offs.
+- Tone: casual and direct, like a trader texting another trader. Plain English only. No formal language.
+- Each sentence must be short — one idea, one number, done. Never combine two thoughts into one sentence.
+- Cover these in order, one sentence each. Skip a section only if there is genuinely nothing to say:
+  1. Top mover or dominant theme with its exact number.
+  2. Second notable mover, catalyst, or macro point driving the action.
+  3. Key risk or the one thing to watch right now.
+  4. One forward-looking note (upcoming event, level to watch) — only include if it is concrete and actionable.
+- Hard stop after 4 sentences. Never write a 5th.
+- Forbidden in every sentence: intraday ranges, volume, analyst commentary, multiple news items, filler words ("overall", "keep in mind", "it's worth noting"), sign-offs or greetings.
 `
       : intent.isCasualConversation
         ? `
@@ -906,11 +909,11 @@ ${lengthRules}`
 
     // Token limits — kept tight to enforce brevity
     const maxTokens = useLiveSearch
-      ? mode === 'summary' ? 200 : 140
+      ? mode === 'summary' ? 350 : 140
       : useHaikuSearch
-        ? mode === 'summary' ? 200 : 160
+        ? mode === 'summary' ? 350 : 160
         : mode === 'summary'
-        ? 200
+        ? 350
         : intent.isCasualConversation ? 50
         : intent.requestType === 'simple' ? 60
         : intent.isOpenEndedWhyQuestion ? 120
