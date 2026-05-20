@@ -373,6 +373,13 @@ export function normalizeTTS(text: string, options: NormalizeTTSOptions = {}): s
     expandPercent(match, sign, num)
   )
 
+  // 4b. Dollar amounts with spelled-out multipliers: $80 billion → eighty billion dollars
+  s = s.replace(
+    /\$(\d[\d,]*\.?\d*)\s+(trillion|billion|million|thousand)\b/gi,
+    (_match, numRaw, multiplier) =>
+      `${expandDecimal(numRaw)} ${multiplier.toLowerCase()} dollars`
+  )
+
   // 5. Suffixed numbers
   s = s.replace(/(\$?)(\d[\d,]*\.?\d*)([TBMK])\b/gi, (match, dollar, num, suffix) =>
     expandMoney(match, dollar, num, suffix)
