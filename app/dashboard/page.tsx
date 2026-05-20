@@ -288,7 +288,7 @@ type ScheduledSummary = {
 
 type PastBriefing = {
   id: string; user_id: string; title: string; content: string;
-  audio_url?: string | null; briefing_date: string;
+  audio_url?: string | null; briefing_date: string; created_at?: string;
 }
 
 const SUMMARY_PRESETS = [
@@ -1834,7 +1834,7 @@ function startThinkingChimes(): () => void {
 
   async function loadPastBriefingsFromSupabase(userId: string) {
     const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
-    const { data } = await supabase.from('briefings').select('id, user_id, title, content, audio_url, briefing_date').eq('user_id', userId).gte('briefing_date', cutoff).order('briefing_date', { ascending: false })
+    const { data } = await supabase.from('briefings').select('id, user_id, title, content, audio_url, briefing_date, created_at').eq('user_id', userId).gte('briefing_date', cutoff).order('briefing_date', { ascending: false })
     setPastBriefings((data as PastBriefing[]) ?? [])
   }
 
@@ -2282,7 +2282,7 @@ const visibleDaySummaries = useMemo(() => {
                       {pastBriefings.slice(0, 5).map(item => (
                         <div key={item.id} onClick={() => setSelectedPastSummary(item)} style={{ padding: '12px', borderBottom: `1px solid ${T.borderFaint3}`, cursor: 'pointer' }}>
                           <div style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '3px' }}>{item.title}</div>
-                          <div style={{ fontSize: '10px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '4px' }}>{formatSummaryRunAt(item.briefing_date)}</div>
+                          <div style={{ fontSize: '10px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '4px' }}>{formatSummaryRunAt(item.created_at || item.briefing_date)}</div>
                           <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.5, maxHeight: '36px', overflow: 'hidden' }}>{item.content}</div>
                         </div>
                       ))}
@@ -2665,7 +2665,7 @@ const visibleDaySummaries = useMemo(() => {
                 <div style={{ padding: '18px 20px 14px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'space-between' }}>
                   <div>
                     <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '17px', fontStyle: 'italic', color: T.text }}>{selectedPastSummary.title}</div>
-                    <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginTop: '4px' }}>{formatSummaryRunAt(selectedPastSummary.briefing_date)}</div>
+                    <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginTop: '4px' }}>{formatSummaryRunAt(selectedPastSummary.created_at || selectedPastSummary.briefing_date)}</div>
                   </div>
                   <div onClick={() => setSelectedPastSummary(null)} style={{ fontSize: '18px', color: T.text6, cursor: 'pointer', padding: '4px' }}>✕</div>
                 </div>
@@ -3219,7 +3219,7 @@ const visibleDaySummaries = useMemo(() => {
                             onMouseEnter={(e) => (e.currentTarget.style.background = T.pastHover)}
                             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                             <div style={{ fontSize: '14px', fontWeight: 600, color: T.text, marginBottom: '4px' }}>{item.title}</div>
-                            <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '6px' }}>{formatSummaryRunAt(item.briefing_date)}</div>
+                            <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '6px' }}>{formatSummaryRunAt(item.created_at || item.briefing_date)}</div>
                             <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.55, maxHeight: '38px', overflow: 'hidden' }}>{item.content}</div>
                           </div>
                         ))}
@@ -3233,7 +3233,7 @@ const visibleDaySummaries = useMemo(() => {
                             onMouseEnter={(e) => (e.currentTarget.style.background = T.pastHover)}
                             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                             <div style={{ fontSize: '14px', fontWeight: 600, color: T.text, marginBottom: '4px' }}>{item.title}</div>
-                            <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '6px' }}>{formatSummaryRunAt(item.briefing_date)}</div>
+                            <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '6px' }}>{formatSummaryRunAt(item.created_at || item.briefing_date)}</div>
                             <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.55, maxHeight: '38px', overflow: 'hidden' }}>{item.content}</div>
                           </div>
                         ))}
@@ -3750,7 +3750,7 @@ const visibleDaySummaries = useMemo(() => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '20px', fontStyle: 'italic', color: T.text }}>{selectedPastSummary.title}</div>
-                    <div style={{ fontSize: '12px', color: T.text5, marginTop: '5px', fontFamily: "'DM Mono', monospace" }}>{formatSummaryRunAt(selectedPastSummary.briefing_date)}</div>
+                    <div style={{ fontSize: '12px', color: T.text5, marginTop: '5px', fontFamily: "'DM Mono', monospace" }}>{formatSummaryRunAt(selectedPastSummary.created_at || selectedPastSummary.briefing_date)}</div>
                   </div>
                   <div onClick={() => setSelectedPastSummary(null)} style={{ fontSize: '18px', color: T.text6, cursor: 'pointer', padding: '4px' }}>✕</div>
                 </div>
@@ -3765,7 +3765,7 @@ const visibleDaySummaries = useMemo(() => {
                     <div style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, marginBottom: '12px', fontWeight: 600 }}>Previous Summary</div>
                     <div onClick={() => setSelectedPastSummary(previousPastSummary)} style={{ padding: '14px', background: T.inputBg, border: `1px solid ${T.borderFaint}`, cursor: 'pointer' }}>
                       <div style={{ color: T.text, fontWeight: 600, marginBottom: '4px' }}>{previousPastSummary.title}</div>
-                      <div style={{ fontSize: '12px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '8px' }}>{formatSummaryRunAt(previousPastSummary.briefing_date)}</div>
+                      <div style={{ fontSize: '12px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '8px' }}>{formatSummaryRunAt(previousPastSummary.created_at || previousPastSummary.briefing_date)}</div>
                       <div style={{ fontSize: '13px', color: T.text4, lineHeight: 1.6, maxHeight: '62px', overflow: 'hidden' }}>{previousPastSummary.content}</div>
                     </div>
                   </div>
