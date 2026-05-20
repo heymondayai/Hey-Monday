@@ -1423,6 +1423,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; audioRef.current = null }
     if (ttsSourceNodeRef.current) { try { ttsSourceNodeRef.current.stop() } catch {} ttsSourceNodeRef.current = null }
     setIsSpeaking(false)
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none'
   }
 
   function playChime(type: 'alert' | 'tick') {
@@ -1514,15 +1515,23 @@ function startThinkingChimes(): () => void {
         ttsSpeechStartRef.current = Date.now()
         ttsSpeechDurationRef.current = audioBuffer.duration
         setIsSpeaking(true)
-        source.onended = () => { ttsSourceNodeRef.current = null; setIsSpeaking(false); onEnded?.() }
+        if ('mediaSession' in navigator) {
+          navigator.mediaSession.metadata = new MediaMetadata({ title: 'Monday', artist: 'Hey Monday' })
+          navigator.mediaSession.playbackState = 'playing'
+        }
+        source.onended = () => { ttsSourceNodeRef.current = null; setIsSpeaking(false); if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none'; onEnded?.() }
         source.start(0)
       } else {
         // Fallback: HTMLAudioElement (requires recent user gesture)
         const url = URL.createObjectURL(blob)
         const audio = new Audio(url)
         audioRef.current = audio
-        audio.onended = () => { URL.revokeObjectURL(url); setIsSpeaking(false); if (audioRef.current === audio) audioRef.current = null; onEnded?.() }
-        audio.onerror = () => { URL.revokeObjectURL(url); setIsSpeaking(false); if (audioRef.current === audio) audioRef.current = null }
+        audio.onended = () => { URL.revokeObjectURL(url); setIsSpeaking(false); if (audioRef.current === audio) audioRef.current = null; if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none'; onEnded?.() }
+        audio.onerror = () => { URL.revokeObjectURL(url); setIsSpeaking(false); if (audioRef.current === audio) audioRef.current = null; if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none' }
+        if ('mediaSession' in navigator) {
+          navigator.mediaSession.metadata = new MediaMetadata({ title: 'Monday', artist: 'Hey Monday' })
+          navigator.mediaSession.playbackState = 'playing'
+        }
         await audio.play()
         ttsSpeechStartRef.current = Date.now()
         ttsSpeechDurationRef.current = audio.duration ?? 0
