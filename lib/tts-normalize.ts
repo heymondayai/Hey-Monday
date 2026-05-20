@@ -322,18 +322,24 @@ export function normalizeTTS(text: string, options: NormalizeTTSOptions = {}): s
   let s = text
   const TICKER_MAP = buildMergedTickerMap(options.tickerMap)
 
-  // 1. Numeric ranges first
+  // 1. Numeric ranges — handles plain (100-200), dollar ($100-$200), and mixed
+  // Use lookbehind/lookahead instead of \b so $-prefixed ranges are caught too.
   s = s.replace(
-    /\b(\$?\d[\d,]*\.?\d*[TBMK]?)\s*[-–—]\s*(\$?\d[\d,]*\.?\d*[TBMK]?)\b/g,
+    /(?<![a-zA-Z\d])(\$?\d[\d,]*\.?\d*[TBMK]?)\s*[-–—]\s*(\$?\d[\d,]*\.?\d*[TBMK]?)(?![a-zA-Z\d])/g,
     (_match, left, right) => {
-      const expandSide = (value: string) => {
-        const m = value.match(/^(\$?)(\d[\d,]*\.?\d*)([TBMK]?)$/i)
-        if (!m) return value
-        const [, dollar, numRaw, suffix] = m
-        return expandMoney(value, dollar, numRaw, suffix)
+      const hasDollar = left.startsWith('$') || right.startsWith('$')
+      const SUFFIX_MAP: Record<string, string> = { T: 'trillion', B: 'billion', M: 'million', K: 'thousand' }
+
+      const expandRaw = (value: string) => {
+        const m = value.replace(/^\$/, '').match(/^(\d[\d,]*\.?\d*)([TBMK]?)$/i)
+        if (!m) return value.replace(/^\$/, '')
+        const [, numRaw, suffix] = m
+        const spoken = expandDecimal(numRaw)
+        return suffix ? `${spoken} ${SUFFIX_MAP[suffix.toUpperCase()] ?? suffix}` : spoken
       }
 
-      return `${expandSide(left)} to ${expandSide(right)}`
+      const result = `${expandRaw(left)} to ${expandRaw(right)}`
+      return hasDollar ? `${result} dollars` : result
     }
   )
 
