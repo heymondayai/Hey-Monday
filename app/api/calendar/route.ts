@@ -312,10 +312,22 @@ async function fetchBenzingaEconomicCalendarForDay(day: string, fresh = false): 
   }
 }
 
+function offsetDate(date: string, days: number): string {
+  const d = new Date(`${date}T12:00:00`)
+  d.setDate(d.getDate() + days)
+  return d.toISOString().split('T')[0]
+}
+
 async function getMacroCalendarEvents(from: string, to: string, fresh = false): Promise<CalendarEvent[]> {
-  const days = enumerateDates(from, to)
+  // Fetch ±1 day beyond the requested range so cross-date dedup can see
+  // both copies of an event that Benzinga listed on two adjacent dates.
+  const expandedFrom = offsetDate(from, -1)
+  const expandedTo = offsetDate(to, 1)
+  const days = enumerateDates(expandedFrom, expandedTo)
   const results = await Promise.all(days.map((day) => fetchBenzingaEconomicCalendarForDay(day, fresh)))
-  return results.flat()
+  const deduped = dedupeByNameAcrossDays(results.flat())
+  // Filter back to the originally requested range after dedup
+  return deduped.filter((e) => e.date >= from && e.date <= to)
 }
 
 function applyDashboardFilters(events: CalendarEvent[], today: string): CalendarEvent[] {
@@ -392,7 +404,7 @@ export async function GET(req: NextRequest) {
       return parseInt(match[1]) * 60 + parseInt(match[2])
     }
 
-    let allEvents = dedupeEvents([...dedupeByNameAcrossDays(macroEvents), ...earningsCalendarEvents]).sort((a, b) => {
+    let allEvents = dedupeEvents([...macroEvents, ...earningsCalendarEvents]).sort((a, b) => {
       const dateCmp = a.date.localeCompare(b.date)
       if (dateCmp !== 0) return dateCmp
       return timeToMinutes(a.time) - timeToMinutes(b.time)
