@@ -199,6 +199,38 @@ function mapImportanceToImpact(value: number | string | undefined): CalendarEven
   return 'LOW'
 }
 
+// Benzinga under-rates Fed events — force HIGH for anything clearly FOMC/Fed-critical
+function overrideFedImpact(name: string, impact: CalendarEvent['impact']): CalendarEvent['impact'] {
+  if (/fomc|federal open market|rate decision|powell|fed chair|beige book/i.test(name)) return 'HIGH'
+  return impact
+}
+
+// If the same event name appears on two dates ≤2 days apart, keep the later date.
+// Handles Benzinga duplicating events across a "tentative" and "actual" date.
+function dedupeByNameAcrossDays(events: CalendarEvent[]): CalendarEvent[] {
+  const byName = new Map<string, CalendarEvent[]>()
+  for (const e of events) {
+    const key = e.name.toLowerCase().trim()
+    if (!byName.has(key)) byName.set(key, [])
+    byName.get(key)!.push(e)
+  }
+
+  const toRemove = new Set<string>()
+  for (const [, group] of byName) {
+    if (group.length < 2) continue
+    const sorted = [...group].sort((a, b) => a.date.localeCompare(b.date))
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const earlier = sorted[i]
+      const later = sorted[i + 1]
+      const daysDiff =
+        (new Date(later.date).getTime() - new Date(earlier.date).getTime()) / 86_400_000
+      if (daysDiff <= 2) toRemove.add(earlier.id)
+    }
+  }
+
+  return events.filter((e) => !toRemove.has(e.id))
+}
+
 function normalizeCountry(country?: string): string {
   if (!country) return 'US'
   const v = country.trim().toUpperCase()
@@ -265,7 +297,7 @@ async function fetchBenzingaEconomicCalendarForDay(day: string, fresh = false): 
           timeET: time === '--' ? '--' : formatTimeET(time),
           name,
           country: normalizeCountry(e.country),
-          impact: mapImportanceToImpact(e.importance),
+          impact: overrideFedImpact(name, mapImportanceToImpact(e.importance)),
           category: categorize(name),
           actual: normalizeValueForUnit(normalizeValue(e.actual), unit),
           forecast: normalizeValueForUnit(normalizeValue(e.consensus ?? e.forecast), unit),
@@ -360,7 +392,7 @@ export async function GET(req: NextRequest) {
       return parseInt(match[1]) * 60 + parseInt(match[2])
     }
 
-    let allEvents = dedupeEvents([...macroEvents, ...earningsCalendarEvents]).sort((a, b) => {
+    let allEvents = dedupeEvents([...dedupeByNameAcrossDays(macroEvents), ...earningsCalendarEvents]).sort((a, b) => {
       const dateCmp = a.date.localeCompare(b.date)
       if (dateCmp !== 0) return dateCmp
       return timeToMinutes(a.time) - timeToMinutes(b.time)
