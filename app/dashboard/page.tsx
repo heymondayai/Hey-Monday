@@ -2971,7 +2971,8 @@ const visibleDaySummaries = useMemo(() => {
                         ? 'Summary complete · Moving to past summaries'
                         : 'Auto-played · Tap ▶ once to replay within window'
                       : nextSummary
-                        ? `${formatSummaryRunAt(nextSummary.run_at)} · ${nextSummary.type === 'custom' ? 'Custom summary' : 'Scheduled summary'} · Your watchlist`
+                        ? <><TimeHover iso={nextSummary.run_at} label={formatSummaryRunAt(nextSummary.run_at)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /> · {nextSummary.type === 'custom' ? 'Custom summary' : 'Scheduled summary'} · Your watchlist</>
+
                         : 'Create a scheduled summary below to populate this section'}
                   </div>
                   <div style={{ height: '2px', background: T.goldFaint3, borderRadius: '1px', position: 'relative' }}>
