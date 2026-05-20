@@ -294,6 +294,7 @@ type PastBriefing = {
 const SUMMARY_PRESETS = [
   {
     name: 'Pre-Market',
+    defaultTime: '09:00',
     prompt: 'Give me a pre-market briefing for today focused on my watchlist, biggest catalysts, and macro risks.',
     top_color: '#e8b84b',
     type: 'preset' as const,
@@ -303,6 +304,7 @@ const SUMMARY_PRESETS = [
   },
   {
     name: 'Open Pulse',
+    defaultTime: '10:00',
     prompt: 'Give me a market open pulse with the strongest and weakest names on my watchlist plus the biggest early driver.',
     top_color: '#4ade80',
     type: 'preset' as const,
@@ -312,6 +314,7 @@ const SUMMARY_PRESETS = [
   },
   {
     name: 'Midday',
+    defaultTime: '12:00',
     prompt: 'Give me a midday summary of my watchlist, sector rotation, and what matters most into the afternoon.',
     top_color: '#7ab8e8',
     type: 'preset' as const,
@@ -321,6 +324,7 @@ const SUMMARY_PRESETS = [
   },
   {
     name: 'Power Hour',
+    defaultTime: '15:00',
     prompt: 'Give me a power hour summary with strongest movers, closing themes, and any setups into the close.',
     top_color: '#e8b84b',
     type: 'preset' as const,
@@ -330,6 +334,7 @@ const SUMMARY_PRESETS = [
   },
   {
     name: 'End of Day',
+    defaultTime: '16:00',
     prompt: 'Give me an end of day recap focused on my watchlist, major catalysts, and what matters for tomorrow.',
     top_color: '#c084fc',
     type: 'preset' as const,
@@ -338,6 +343,13 @@ const SUMMARY_PRESETS = [
     hoverCopy: 'Covers the biggest moves, key catalysts, how your watchlist finished, and what matters most for the next session.',
   },
 ]
+
+function formatPresetTime(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  const period = h >= 12 ? 'PM' : 'AM'
+  const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h
+  return `${h12}:${m.toString().padStart(2, '0')} ${period}`
+}
 
 function formatCountdown(ms: number) {
   if (ms <= 0) return 'Ready'
@@ -825,6 +837,13 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [countdownTick, setCountdownTick] = useState(Date.now())
   const processedSummaryRunsRef = useRef<Set<string>>(new Set())
   const [hoveredPreset, setHoveredPreset] = useState<string | null>(null)
+  const [selectedPreset, setSelectedPreset] = useState<(typeof SUMMARY_PRESETS)[number] | null>(null)
+  const [presetTimes, setPresetTimes] = useState<Record<string, string>>(() =>
+    Object.fromEntries(SUMMARY_PRESETS.map(p => [p.name, p.defaultTime]))
+  )
+  const addPresetRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => { if (!showSummaryEditor) setSelectedPreset(null) }, [showSummaryEditor])
 
   // Expire activeBriefing 30 min after it auto-played
   useEffect(() => {
@@ -2381,11 +2400,53 @@ const visibleDaySummaries = useMemo(() => {
                   <div>
                     <div style={{ fontSize: '11px', letterSpacing: '0.15em', textTransform: 'uppercase', color: T.gold, marginBottom: '10px', fontWeight: 600 }}>Quick Presets</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {SUMMARY_PRESETS.map((preset, i) => (
-                        <div key={i} onClick={() => { const iso = buildRunAtIsoFromLocalInput(summaryDate, summaryTime); void addPresetSummary(preset, iso) }} style={{ padding: '12px', border: `1px solid ${T.borderFaint}`, background: T.inputBg, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span style={{ fontSize: '14px', color: T.text, fontWeight: 600 }}>{preset.name}</span>
+                      {SUMMARY_PRESETS.map((preset, i) => {
+                        const isSelected = selectedPreset?.name === preset.name
+                        return (
+                          <div
+                            key={i}
+                            onClick={() => {
+                              setSelectedPreset(preset)
+                              setSummaryTime(presetTimes[preset.name])
+                              setTimeout(() => addPresetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 60)
+                            }}
+                            style={{ padding: '12px', border: `1px solid ${isSelected ? T.goldFaint9 : T.borderFaint}`, background: isSelected ? T.goldFaint3 : T.inputBg, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', transition: 'all 160ms ease' }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '14px', color: T.text, fontWeight: 600 }}>{preset.name}</span>
+                              {isSelected && <span style={{ fontSize: '9px', color: T.gold, background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '1px 5px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Selected</span>}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }} onClick={e => e.stopPropagation()}>
+                              <input
+                                type="time"
+                                value={presetTimes[preset.name]}
+                                onChange={e => {
+                                  const t = e.target.value
+                                  setPresetTimes(prev => ({ ...prev, [preset.name]: t }))
+                                  if (isSelected) setSummaryTime(t)
+                                }}
+                                style={{ background: 'transparent', border: `1px solid ${isSelected ? T.goldFaint8 : T.goldFaint5}`, color: isSelected ? T.gold : T.text5, fontSize: '11px', fontFamily: "'DM Mono', monospace", padding: '2px 5px', outline: 'none', width: '86px' }}
+                              />
+                              <span style={{ fontSize: '9px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>ET</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Add preset button for small modal */}
+                    <div style={{ marginTop: selectedPreset ? '10px' : '0', overflow: 'hidden', maxHeight: selectedPreset ? '100px' : '0px', transition: 'all 200ms ease', opacity: selectedPreset ? 1 : 0 }}>
+                      {selectedPreset && (
+                        <div style={{ padding: '12px 14px', background: T.goldFaint2, border: `1px solid ${T.goldFaint8}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                          <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>
+                            {selectedPreset.name} · {formatPresetTime(presetTimes[selectedPreset.name])} ET
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                            <div onClick={() => setSelectedPreset(null)} style={{ padding: '6px 10px', border: `1px solid ${T.borderItem}`, color: T.text5, cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>✕</div>
+                            <div onClick={() => { const iso = buildRunAtIsoFromLocalInput(summaryDate, presetTimes[selectedPreset.name]); void addPresetSummary(selectedPreset, iso); setSelectedPreset(null) }} style={{ padding: '6px 14px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}>Add</div>
+                          </div>
                         </div>
-                      ))}
+                      )}
                     </div>
                   </div>
                   {scheduledSummaries.length > 0 && (
@@ -3219,6 +3280,7 @@ const visibleDaySummaries = useMemo(() => {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '10px' }}>
                     {SUMMARY_PRESETS.map((preset, i) => {
   const isHovered = hoveredPreset === preset.name
+  const isSelected = selectedPreset?.name === preset.name
 
   return (
     <div
@@ -3226,31 +3288,45 @@ const visibleDaySummaries = useMemo(() => {
       onMouseEnter={() => setHoveredPreset(preset.name)}
       onMouseLeave={() => setHoveredPreset(null)}
       onClick={() => {
-        const runAtIso = buildRunAtIsoFromLocalInput(summaryDate, summaryTime)
-        void addPresetSummary(preset, runAtIso)
+        setSelectedPreset(preset)
+        setSummaryTime(presetTimes[preset.name])
+        setTimeout(() => addPresetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 60)
       }}
       style={{
         position: 'relative',
         padding: '14px 14px 12px',
-        border: `1px solid ${isHovered ? T.goldFaint8 : T.borderFaint}`,
-        background: isHovered ? T.goldFaint : T.inputBg,
+        border: `1px solid ${isSelected ? T.goldFaint9 : isHovered ? T.goldFaint8 : T.borderFaint}`,
+        background: isSelected ? T.goldFaint3 : isHovered ? T.goldFaint : T.inputBg,
         cursor: 'pointer',
         transition: 'all 160ms ease',
-        boxShadow: isHovered ? `0 0 0 1px ${T.goldFaint4} inset` : 'none',
+        boxShadow: isSelected ? `0 0 0 1px ${T.goldFaint6} inset` : isHovered ? `0 0 0 1px ${T.goldFaint4} inset` : 'none',
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <div style={{ fontSize: '14px', color: T.text, fontWeight: 600 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-          {preset.name}
-          {isHovered ? <span style={{ fontSize: '10px', color: T.goldText4, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Preview</span> : null}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+          <div style={{ fontSize: '14px', color: T.text, fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {preset.name}
+            {isSelected && <span style={{ fontSize: '9px', color: T.gold, background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '1px 6px', letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 700 }}>Selected</span>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+            <input
+              type="time"
+              value={presetTimes[preset.name]}
+              onChange={e => {
+                const t = e.target.value
+                setPresetTimes(prev => ({ ...prev, [preset.name]: t }))
+                if (isSelected) setSummaryTime(t)
+              }}
+              style={{ background: 'transparent', border: `1px solid ${isSelected ? T.goldFaint8 : T.goldFaint5}`, color: isSelected ? T.gold : T.text5, fontSize: '11px', fontFamily: "'DM Mono', monospace", padding: '2px 5px', outline: 'none', cursor: 'text', width: '86px', borderRadius: '2px' }}
+            />
+            <span style={{ fontSize: '9px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>ET</span>
+          </div>
         </div>
 
         <div
           style={{
             fontSize: '11px',
-            color: isHovered ? T.goldText4 : T.text5,
+            color: isHovered || isSelected ? T.goldText4 : T.text5,
             fontFamily: "'DM Mono', monospace",
             letterSpacing: '0.04em',
             transition: 'color 160ms ease',
@@ -3263,9 +3339,9 @@ const visibleDaySummaries = useMemo(() => {
           style={{
             marginTop: '4px',
             overflow: 'hidden',
-            maxHeight: isHovered ? '90px' : '0px',
-            opacity: isHovered ? 1 : 0,
-            transform: isHovered ? 'translateY(0)' : 'translateY(-4px)',
+            maxHeight: isHovered && !isSelected ? '90px' : '0px',
+            opacity: isHovered && !isSelected ? 1 : 0,
+            transform: isHovered && !isSelected ? 'translateY(0)' : 'translateY(-4px)',
             transition: 'all 180ms ease',
             pointerEvents: 'none',
           }}
@@ -3305,6 +3381,24 @@ const visibleDaySummaries = useMemo(() => {
     </div>
   )
 })}
+                  </div>
+
+                  {/* Add preset summary button — appears after selecting a preset */}
+                  <div ref={addPresetRef} style={{ marginTop: selectedPreset ? '14px' : '0', overflow: 'hidden', maxHeight: selectedPreset ? '120px' : '0px', transition: 'all 200ms ease', opacity: selectedPreset ? 1 : 0 }}>
+                    {selectedPreset && (
+                      <div style={{ padding: '14px 16px', background: T.goldFaint2, border: `1px solid ${T.goldFaint8}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                        <div>
+                          <div style={{ fontSize: '13px', color: T.text, fontWeight: 600, marginBottom: '4px' }}>{selectedPreset.name}</div>
+                          <div style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>
+                            {formatPresetTime(presetTimes[selectedPreset.name])} ET · {summaryDate} · {summaryRecurrence === 'none' ? 'Once' : summaryRecurrence.charAt(0).toUpperCase() + summaryRecurrence.slice(1)}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                          <div onClick={() => setSelectedPreset(null)} style={{ padding: '8px 14px', border: `1px solid ${T.borderItem}`, color: T.text5, cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}>Cancel</div>
+                          <div onClick={() => { const iso = buildRunAtIsoFromLocalInput(summaryDate, presetTimes[selectedPreset.name]); void addPresetSummary(selectedPreset, iso); setSelectedPreset(null) }} style={{ padding: '8px 16px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}>Add Summary</div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div>
