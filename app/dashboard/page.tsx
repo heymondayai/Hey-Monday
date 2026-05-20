@@ -463,6 +463,13 @@ function getEtDateKeyFromIso(iso: string) {
   return `${year}-${month}-${day}`
 }
 
+function getEtTimeHHMMFromIso(iso: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(iso))
+  const h = parts.find((p) => p.type === 'hour')?.value ?? '09'
+  const m = parts.find((p) => p.type === 'minute')?.value ?? '00'
+  return `${h}:${m}`
+}
+
 function buildRunAtIsoFromLocalInput(dateValue: string, timeValue: string) {
   const [year, month, day] = dateValue.split('-').map(Number)
   const [hour, minute] = timeValue.split(':').map(Number)
@@ -837,6 +844,8 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [countdownTick, setCountdownTick] = useState(Date.now())
   const processedSummaryRunsRef = useRef<Set<string>>(new Set())
   const [hoveredPreset, setHoveredPreset] = useState<string | null>(null)
+  const [editingSummaryId, setEditingSummaryId] = useState<string | null>(null)
+  const [editingSummaryTime, setEditingSummaryTime] = useState('')
   const [selectedPreset, setSelectedPreset] = useState<(typeof SUMMARY_PRESETS)[number] | null>(null)
   const [presetTimes, setPresetTimes] = useState<Record<string, string>>(() =>
     Object.fromEntries(SUMMARY_PRESETS.map(p => [p.name, p.defaultTime]))
@@ -1779,6 +1788,16 @@ function startThinkingChimes(): () => void {
   updated_at: new Date().toISOString(),
 })
     setSummaryName(''); const rd = getDateTimeInputDefaults(); setSummaryDate(rd.date); setSummaryTime(rd.time); setSummaryPrompt(''); setSummaryIcon(''); setSummaryTopColor('#e8b84b'); setSummaryRecurrence('none'); setSummaryRecurrenceEnd(''); setShowSummaryEditor(false)
+    await loadScheduledSummariesFromSupabase(user.id)
+  }
+
+  async function updateScheduledSummaryTime(id: string, etDate: string, newTimeHHMM: string) {
+    if (!user || !newTimeHHMM) return
+    const newRunAt = buildRunAtIsoFromLocalInput(etDate, newTimeHHMM)
+    if (new Date(newRunAt).getTime() <= Date.now()) { alert('Please choose a future time.'); return }
+    await supabase.from('scheduled_summaries').update({ run_at: newRunAt, updated_at: new Date().toISOString() }).eq('id', id).eq('user_id', user.id)
+    setEditingSummaryId(null)
+    setEditingSummaryTime('')
     await loadScheduledSummariesFromSupabase(user.id)
   }
 
@@ -3428,11 +3447,21 @@ const visibleDaySummaries = useMemo(() => {
                             <div style={{ width: '3px', alignSelf: 'stretch', background: item.top_color, borderRadius: '2px', flexShrink: 0 }} />
                             <div style={{ fontSize: '18px', flexShrink: 0 }}>{item.icon}</div>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '3px' }}>{item.name}</div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>{formatSummaryRunAt(item.run_at)}</span>
-                                {rec !== 'none' && <span style={{ fontSize: '10px', color: T.gold, background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '1px 6px', letterSpacing: '0.08em', textTransform: 'uppercase' }}>↻ {rec}{item.recurrence_end ? ` until ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(item.recurrence_end))}` : ''}</span>}
-                              </div>
+                              <div style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '4px' }}>{item.name}</div>
+                              {editingSummaryId === item.id ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                  <input type="time" value={editingSummaryTime} onChange={e => setEditingSummaryTime(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint8}`, color: T.gold, fontSize: '11px', fontFamily: "'DM Mono', monospace", padding: '3px 6px', outline: 'none', width: '96px' }} />
+                                  <span style={{ fontSize: '9px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>ET</span>
+                                  <div onClick={() => void updateScheduledSummaryTime(item.id, getEtDateKeyFromIso(item.run_at), editingSummaryTime)} style={{ fontSize: '11px', color: T.gold, cursor: 'pointer', padding: '2px 10px', border: `1px solid ${T.goldFaint8}`, fontWeight: 700 }}>Save</div>
+                                  <div onClick={() => { setEditingSummaryId(null); setEditingSummaryTime('') }} style={{ fontSize: '11px', color: T.text5, cursor: 'pointer', padding: '2px 6px' }}>✕</div>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>{formatSummaryRunAt(item.run_at)}</span>
+                                  <span onClick={() => { setEditingSummaryId(item.id); setEditingSummaryTime(getEtTimeHHMMFromIso(item.run_at)) }} style={{ fontSize: '10px', color: T.goldText4, cursor: 'pointer', letterSpacing: '0.05em', textDecoration: 'underline' }}>Edit time</span>
+                                  {rec !== 'none' && <span style={{ fontSize: '10px', color: T.gold, background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '1px 6px', letterSpacing: '0.08em', textTransform: 'uppercase' }}>↻ {rec}{item.recurrence_end ? ` until ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(item.recurrence_end))}` : ''}</span>}
+                                </div>
+                              )}
                             </div>
                             <div style={{ textAlign: 'right', flexShrink: 0 }}>
                               <div style={{ fontSize: '11px', color: msUntil <= 0 ? T.green : T.gold, fontFamily: "'DM Mono', monospace", fontWeight: 600, marginBottom: '6px' }}>{msUntil <= 0 ? 'READY' : formatCountdown(msUntil)}</div>
