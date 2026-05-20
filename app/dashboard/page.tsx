@@ -3219,6 +3219,13 @@ const visibleDaySummaries = useMemo(() => {
                           )
                         ) : (
                           <div style={{ padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto' }}>
+                            {/* Pro plan notice */}
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 14px', background: isDark ? 'rgba(234,179,8,0.07)' : 'rgba(180,120,0,0.06)', border: `1px solid ${T.goldFaint7}`, borderLeft: `3px solid ${T.gold}` }}>
+                              <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.6 }}>
+                                <span style={{ fontWeight: 700, color: T.gold }}>TradingView Pro required.</span> Webhooks are only available on TradingView Pro, Pro+, or Premium plans. The "Webhook URL" field won't appear when creating alerts on a free account.
+                              </div>
+                            </div>
+
                             {/* Webhook URL */}
                             <div>
                               <div style={{ fontSize: '11px', letterSpacing: '0.16em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: '10px' }}>Webhook URL</div>
