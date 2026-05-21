@@ -2849,65 +2849,7 @@ const visibleDaySummaries = useMemo(() => {
   </svg>
   Hey <span style={{ color: T.gold }}>Monday</span>
 </div>
-              <div
-  onClick={() => {
-  const turningOn = !wakeOn
-  wakePreferredOnRef.current = turningOn
-  setWakeOn(turningOn)
-  void persistWakeOn(turningOn)
 
-  if (turningOn) {
-    void persistSpeechOn(true)
-  } else {
-    if (speechOn && isSpeaking) stopCurrentAudio()
-    void persistSpeechOn(false)
-  }
-
-  if (turningOn && scheduledOff) {
-    setWakeManualOverride(true)
-  } else {
-    setWakeManualOverride(false)
-    if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
-  }
-}}
-  style={{
-    display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px',
-    padding: '6px 10px 6px 8px',
-    background: wakeOn ? T.greenFaint3 : T.inputBg,
-    border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`,
-    cursor: 'pointer', transition: 'all 0.25s', width: 'fit-content',
-  }}
->
-  {/* Toggle track */}
-  <div style={{
-    width: '28px', height: '16px', borderRadius: '8px',
-    background: wakeOn ? T.green : T.text7,
-    position: 'relative', flexShrink: 0, transition: 'background 0.25s',
-  }}>
-    <div style={{
-      position: 'absolute', top: '2px',
-      left: wakeOn ? '14px' : '2px',
-      width: '12px', height: '12px', borderRadius: '50%',
-      background: '#fff', transition: 'left 0.25s',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-    }} />
-  </div>
-  {/* Status dot */}
-  <div style={{
-    width: '5px', height: '5px', borderRadius: '50%',
-    background: wakeOn ? T.green : T.text6,
-    boxShadow: wakeOn ? `0 0 6px ${T.greenGlow2}` : 'none',
-    flexShrink: 0, transition: 'all 0.25s',
-    animation: wakeOn ? 'pulse 2s ease infinite' : 'none',
-  }} />
-  <span style={{
-    fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase',
-    color: wakeOn ? T.green : T.text6, fontWeight: 600, transition: 'color 0.25s',
-    fontFamily: "'DM Mono', monospace",
-  }}>
-    {wakeOn ? 'Hey Monday' : 'Wake Word Off'}
-  </span>
-</div>
 
 <div onClick={() => setShowWakeSchedule(true)} style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px 4px 8px', cursor: 'pointer', border: `1px solid ${T.borderItem}`, background: 'transparent', width: 'fit-content' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = T.goldFaint7 }}
