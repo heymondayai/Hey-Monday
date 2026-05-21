@@ -479,6 +479,38 @@ function formatSummaryRunAtLocal(iso: string) {
   return new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(iso))
 }
 
+function tvAlertTimeET(iso: string): string {
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(iso)) + ' ET'
+}
+
+function tvAlertSession(iso: string): 'pre-market' | 'market' | 'after-hours' {
+  const d = new Date(iso)
+  const h = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }).format(d))
+  const m = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false }).split(':').map(Number)
+  const mins = m[0] * 60 + m[1]
+  if (mins < 9 * 60 + 30) return 'pre-market'
+  if (mins < 16 * 60) return 'market'
+  return 'after-hours'
+}
+
+function isTodayET(iso: string): boolean {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+  const alertDay = new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+  return today === alertDay
+}
+
+function groupTvAlertsBySession<T extends { created_at: string }>(alerts: T[]): { label: string; alerts: T[] }[] {
+  const today = alerts.filter(a => isTodayET(a.created_at))
+  const groups: { key: 'pre-market' | 'market' | 'after-hours'; label: string }[] = [
+    { key: 'pre-market', label: 'Pre-Market' },
+    { key: 'market', label: 'Market Hours' },
+    { key: 'after-hours', label: 'After Hours' },
+  ]
+  return groups
+    .map(({ key, label }) => ({ label, alerts: today.filter(a => tvAlertSession(a.created_at) === key) }))
+    .filter(g => g.alerts.length > 0)
+}
+
 function getEtDateKeyFromIso(iso: string) {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(iso))
   const year = parts.find((p) => p.type === 'year')?.value ?? '0000'
@@ -2335,35 +2367,49 @@ const visibleDaySummaries = useMemo(() => {
                 <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', gap: '16px', flexShrink: 0 }}>
                   {(['feed', 'setup'] as const).map((t) => (
                     <div key={t} onClick={() => { setTvAlertTab(t); if (t === 'setup' && !webhookKey) void fetchWebhookKey() }} style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: 'pointer', color: tvAlertTab === t ? T.gold : T.text6, borderBottom: `2px solid ${tvAlertTab === t ? T.gold : 'transparent'}`, paddingBottom: '4px' }}>
-                      {t === 'feed' ? `Feed${tvAlerts.length ? ` (${tvAlerts.length})` : ''}` : 'Setup'}
+                      {t === 'feed' ? `Feed${tvAlerts.filter(a => isTodayET(a.created_at)).length ? ` (${tvAlerts.filter(a => isTodayET(a.created_at)).length})` : ''}` : 'Setup'}
                     </div>
                   ))}
                 </div>
                 {tvAlertTab === 'feed' ? (
                   <div style={{ flex: 1, overflowY: 'auto', padding: '0', display: 'flex', flexDirection: 'column' }}>
-                    {tvAlerts.length === 0 ? (
-                      <div style={{ padding: '24px 16px', color: T.text6, fontStyle: 'italic', fontSize: '13px' }}>No alerts yet. Go to Setup to configure your webhook.</div>
-                    ) : tvAlerts.map(alert => {
-                      const tvAction = typeof alert.raw_payload?.action === 'string' ? alert.raw_payload.action.toUpperCase() : null
-                      const tvContracts = alert.raw_payload?.contracts != null ? parseFloat(String(alert.raw_payload.contracts)) : null
-                      const tvPosSize = alert.raw_payload?.position_size != null ? parseFloat(String(alert.raw_payload.position_size)) : null
-                      return (
-                      <div key={alert.id} style={{ padding: '12px 16px', borderBottom: `1px solid ${T.borderFaint3}`, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                          {alert.ticker && <span style={{ fontSize: '13px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>{alert.ticker}</span>}
-                          {tvAction && <span style={{ fontSize: '10px', fontWeight: 700, padding: '1px 6px', letterSpacing: '0.08em', fontFamily: "'DM Mono', monospace", color: tvAction === 'BUY' ? T.green : tvAction === 'SELL' ? T.red : T.text5, background: tvAction === 'BUY' ? T.greenFaint3 : tvAction === 'SELL' ? T.redFaint3 : T.inputBg, border: `1px solid ${tvAction === 'BUY' ? T.greenBorder2 : tvAction === 'SELL' ? T.redBorder2 : T.borderFaint}` }}>{tvAction}</span>}
-                          {alert.interval && <span style={{ fontSize: '10px', color: T.text6, background: T.goldFaint2, border: `1px solid ${T.goldFaint5}`, padding: '1px 5px', fontFamily: "'DM Mono', monospace" }}>{alert.interval}</span>}
-                        </div>
-                        <div style={{ fontSize: '13px', color: T.text, lineHeight: 1.5 }}>{alert.message}</div>
-                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                          {alert.price != null && <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>${Number(alert.price).toFixed(2)}</span>}
-                          {tvContracts && isFinite(tvContracts) && <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>{tvContracts} contracts</span>}
-                          {tvPosSize && isFinite(tvPosSize) && <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>pos {tvPosSize}</span>}
-                          <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}><TimeHover iso={alert.created_at} label={formatSummaryRunAt(alert.created_at)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></span>
-                        </div>
-                      </div>
+                    {(() => {
+                      const groups = groupTvAlertsBySession(tvAlerts)
+                      if (groups.length === 0) return (
+                        <div style={{ padding: '24px 16px', color: T.text6, fontStyle: 'italic', fontSize: '13px' }}>{tvAlerts.length === 0 ? 'No alerts yet. Go to Setup to configure your webhook.' : 'No alerts today.'}</div>
                       )
-                    })}
+                      return groups.map(({ label, alerts: groupAlerts }) => (
+                        <div key={label}>
+                          <div style={{ padding: '6px 16px', background: T.inputBg, borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.text5, fontFamily: "'DM Mono', monospace" }}>{label}</span>
+                            <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>{groupAlerts.length}</span>
+                          </div>
+                          {groupAlerts.map(alert => {
+                            const tvAction = typeof alert.raw_payload?.action === 'string' ? alert.raw_payload.action.toUpperCase() : null
+                            const tvContracts = alert.raw_payload?.contracts != null ? parseFloat(String(alert.raw_payload.contracts)) : null
+                            const tvPosSize = alert.raw_payload?.position_size != null ? parseFloat(String(alert.raw_payload.position_size)) : null
+                            return (
+                              <div key={alert.id} style={{ padding: '10px 16px', borderBottom: `1px solid ${T.borderFaint3}`, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                  {alert.ticker && <span style={{ fontSize: '13px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>{alert.ticker}</span>}
+                                  {tvAction && <span style={{ fontSize: '10px', fontWeight: 700, padding: '1px 6px', letterSpacing: '0.08em', fontFamily: "'DM Mono', monospace", color: tvAction === 'BUY' ? T.green : tvAction === 'SELL' ? T.red : T.text5, background: tvAction === 'BUY' ? T.greenFaint3 : tvAction === 'SELL' ? T.redFaint3 : T.inputBg, border: `1px solid ${tvAction === 'BUY' ? T.greenBorder2 : tvAction === 'SELL' ? T.redBorder2 : T.borderFaint}` }}>{tvAction}</span>}
+                                  {alert.interval && <span style={{ fontSize: '10px', color: T.text6, background: T.goldFaint2, border: `1px solid ${T.goldFaint5}`, padding: '1px 5px', fontFamily: "'DM Mono', monospace" }}>{alert.interval}</span>}
+                                  <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace", marginLeft: 'auto' }}>{tvAlertTimeET(alert.created_at)}</span>
+                                </div>
+                                <div style={{ fontSize: '12px', color: T.text, lineHeight: 1.5 }}>{alert.message}</div>
+                                {(alert.price != null || (tvContracts && isFinite(tvContracts)) || (tvPosSize && isFinite(tvPosSize))) && (
+                                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    {alert.price != null && <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>${Number(alert.price).toFixed(2)}</span>}
+                                    {tvContracts && isFinite(tvContracts) && <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>{tvContracts} contracts</span>}
+                                    {tvPosSize && isFinite(tvPosSize) && <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>pos {tvPosSize}</span>}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ))
+                    })()}
                   </div>
                 ) : (
                   <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -3295,40 +3341,52 @@ const visibleDaySummaries = useMemo(() => {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                         {(['feed', 'setup'] as const).map((t) => (
                           <div key={t} onClick={() => { setTvAlertTab(t); if (t === 'setup' && !webhookKey) void fetchWebhookKey() }} style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: tvAlertTab === t ? T.gold : T.text6, display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600, cursor: 'pointer', paddingBottom: '4px', borderBottom: tvAlertTab === t ? `2px solid ${T.gold}` : '2px solid transparent' }}>
-                            {t === 'feed' ? `Feed${tvAlerts.length ? ` (${tvAlerts.length})` : ''}` : 'Setup'}
+                            {t === 'feed' ? `Feed${tvAlerts.filter(a => isTodayET(a.created_at)).length ? ` (${tvAlerts.filter(a => isTodayET(a.created_at)).length})` : ''}` : 'Setup'}
                           </div>
                         ))}
                       </div>
                     </div>
                     {tvAlertTab === 'feed' ? (
-                      tvAlerts.length === 0 ? (
-                        <div style={{ padding: '30px', color: T.text6, fontStyle: 'italic', fontSize: '13px' }}>No alerts yet. Go to Setup to configure your webhook.</div>
-                      ) : (
-                        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-                          {tvAlerts.map((alert) => {
-                            const tvAction = typeof alert.raw_payload?.action === 'string' ? alert.raw_payload.action.toUpperCase() : null
-                            const tvContracts = alert.raw_payload?.contracts != null ? parseFloat(String(alert.raw_payload.contracts)) : null
-                            const tvPosSize = alert.raw_payload?.position_size != null ? parseFloat(String(alert.raw_payload.position_size)) : null
-                            return (
-                            <div key={alert.id} style={{ padding: '12px 18px', borderBottom: `1px solid ${T.borderFaint3}`, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                {alert.ticker && <span style={{ fontSize: '13px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>{alert.ticker}</span>}
-                                {tvAction && <span style={{ fontSize: '10px', fontWeight: 700, padding: '1px 6px', letterSpacing: '0.08em', fontFamily: "'DM Mono', monospace", color: tvAction === 'BUY' ? T.green : tvAction === 'SELL' ? T.red : T.text5, background: tvAction === 'BUY' ? T.greenFaint3 : tvAction === 'SELL' ? T.redFaint3 : T.inputBg, border: `1px solid ${tvAction === 'BUY' ? T.greenBorder2 : tvAction === 'SELL' ? T.redBorder2 : T.borderFaint}` }}>{tvAction}</span>}
-                                {alert.interval && <span style={{ fontSize: '10px', color: T.text6, background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '1px 6px', fontFamily: "'DM Mono', monospace", letterSpacing: '0.06em' }}>{alert.interval}</span>}
-                                {alert.exchange && <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>{alert.exchange}</span>}
+                      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                        {(() => {
+                          const groups = groupTvAlertsBySession(tvAlerts)
+                          if (groups.length === 0) return (
+                            <div style={{ padding: '30px', color: T.text6, fontStyle: 'italic', fontSize: '13px' }}>{tvAlerts.length === 0 ? 'No alerts yet. Go to Setup to configure your webhook.' : 'No alerts today.'}</div>
+                          )
+                          return groups.map(({ label, alerts: groupAlerts }) => (
+                            <div key={label}>
+                              <div style={{ padding: '6px 18px', background: T.inputBg, borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: T.text5, fontFamily: "'DM Mono', monospace" }}>{label}</span>
+                                <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>{groupAlerts.length}</span>
                               </div>
-                              <div style={{ fontSize: '13px', color: T.text, lineHeight: 1.5 }}>{alert.message}</div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                                {alert.price != null && <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>${Number(alert.price).toFixed(2)}</span>}
-                                {tvContracts && isFinite(tvContracts) && <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>{tvContracts} contracts</span>}
-                                {tvPosSize && isFinite(tvPosSize) && <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>pos {tvPosSize}</span>}
-                                <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}><TimeHover iso={alert.created_at} label={formatSummaryRunAt(alert.created_at)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /></span>
-                              </div>
+                              {groupAlerts.map((alert) => {
+                                const tvAction = typeof alert.raw_payload?.action === 'string' ? alert.raw_payload.action.toUpperCase() : null
+                                const tvContracts = alert.raw_payload?.contracts != null ? parseFloat(String(alert.raw_payload.contracts)) : null
+                                const tvPosSize = alert.raw_payload?.position_size != null ? parseFloat(String(alert.raw_payload.position_size)) : null
+                                return (
+                                  <div key={alert.id} style={{ padding: '11px 18px', borderBottom: `1px solid ${T.borderFaint3}`, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                      {alert.ticker && <span style={{ fontSize: '13px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>{alert.ticker}</span>}
+                                      {tvAction && <span style={{ fontSize: '10px', fontWeight: 700, padding: '1px 6px', letterSpacing: '0.08em', fontFamily: "'DM Mono', monospace", color: tvAction === 'BUY' ? T.green : tvAction === 'SELL' ? T.red : T.text5, background: tvAction === 'BUY' ? T.greenFaint3 : tvAction === 'SELL' ? T.redFaint3 : T.inputBg, border: `1px solid ${tvAction === 'BUY' ? T.greenBorder2 : tvAction === 'SELL' ? T.redBorder2 : T.borderFaint}` }}>{tvAction}</span>}
+                                      {alert.interval && <span style={{ fontSize: '10px', color: T.text6, background: T.goldFaint2, border: `1px solid ${T.goldFaint6}`, padding: '1px 6px', fontFamily: "'DM Mono', monospace", letterSpacing: '0.06em' }}>{alert.interval}</span>}
+                                      {alert.exchange && <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace" }}>{alert.exchange}</span>}
+                                      <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace", marginLeft: 'auto' }}>{tvAlertTimeET(alert.created_at)}</span>
+                                    </div>
+                                    <div style={{ fontSize: '13px', color: T.text, lineHeight: 1.5 }}>{alert.message}</div>
+                                    {(alert.price != null || (tvContracts && isFinite(tvContracts)) || (tvPosSize && isFinite(tvPosSize))) && (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                                        {alert.price != null && <span style={{ fontSize: '11px', color: T.text5, fontFamily: "'DM Mono', monospace" }}>${Number(alert.price).toFixed(2)}</span>}
+                                        {tvContracts && isFinite(tvContracts) && <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>{tvContracts} contracts</span>}
+                                        {tvPosSize && isFinite(tvPosSize) && <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace" }}>pos {tvPosSize}</span>}
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
                             </div>
-                            )
-                          })}
-                        </div>
-                      )
+                          ))
+                        })()}
+                      </div>
                     ) : (
                       <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 14px', background: isDark ? 'rgba(234,179,8,0.07)' : 'rgba(180,120,0,0.06)', border: `1px solid ${T.goldFaint7}`, borderLeft: `3px solid ${T.gold}` }}>
