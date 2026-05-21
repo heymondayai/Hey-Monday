@@ -1771,8 +1771,8 @@ function startThinkingChimes(): () => void {
       if (user) await supabase.from('conversations').insert({ user_id: user.id, role: 'assistant', content: reply })
       const replyIso = new Date().toISOString()
       setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(replyIso), iso: replyIso, text: reply }])
-      if (isVoice && speechOn) {
-        const endsWithQuestion = /\?\s*$/.test(reply.replace(/\[\/?(gold|green|red)\]/g, '').trim())
+      if (speechOn) {
+        const endsWithQuestion = isVoice && /\?\s*$/.test(reply.replace(/\[\/?(gold|green|red)\]/g, '').trim())
         setSpeakingContext('chat')
         void speakText(reply, endsWithQuestion ? () => startVoiceRecording() : undefined)
       }
@@ -1780,7 +1780,7 @@ function startThinkingChimes(): () => void {
       const errorReply = 'Connection error. Please try again.'
       const errIso = new Date().toISOString()
       setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(errIso), iso: errIso, text: errorReply }])
-      if (isVoice && speechOn) { setSpeakingContext('chat'); void speakText(errorReply) }
+      if (speechOn) { setSpeakingContext('chat'); void speakText(errorReply) }
     } finally {
   stopThinkingChimesRef.current?.()
   stopThinkingChimesRef.current = null
