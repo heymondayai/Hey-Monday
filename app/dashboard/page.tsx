@@ -381,7 +381,7 @@ function TimeHover({ iso, label, cardBg, borderFaint, text5 }: { iso: string; la
   const local = isoToLocal(iso)
   if (!local || local === label.replace(' ET', '')) return <>{label}</>
   return (
-    <span style={{ position: 'relative' }} onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+    <span style={{ position: 'relative', cursor: 'default', userSelect: 'none' }} onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
       {label}
       {show && (
         <span style={{ position: 'absolute', top: '100%', left: 0, zIndex: 200, marginTop: '3px', background: cardBg, border: `1px solid ${borderFaint}`, padding: '2px 7px', fontSize: '9px', color: text5, whiteSpace: 'nowrap', letterSpacing: '0.04em', fontFamily: "'DM Mono', monospace" }}>
