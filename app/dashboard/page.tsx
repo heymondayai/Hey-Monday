@@ -3558,6 +3558,12 @@ const visibleDaySummaries = useMemo(() => {
               </div>
             </div>
 
+            {isSpeaking && speakingContext === 'chat' && (
+              <div onClick={() => stopCurrentAudio()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: T.goldFaint2, borderBottom: `1px solid ${T.goldFaint9}`, cursor: 'pointer', flexShrink: 0 }}>
+                <div style={{ fontSize: '11px', color: T.gold, fontFamily: "'DM Mono', monospace", letterSpacing: '0.06em' }}>Monday is speaking…</div>
+                <div style={{ fontSize: '13px', color: T.gold }}>⏸ Stop</div>
+              </div>
+            )}
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
               {showSuggestions ? (
                 <div style={{ padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
