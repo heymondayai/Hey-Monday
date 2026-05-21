@@ -1429,14 +1429,17 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
 
   useEffect(() => {
     if (!user) return
+    console.log('[tv-poll] starting interval for user', user.id)
     const interval = setInterval(async () => {
       const since = lastTvAlertTimestampRef.current
-      const { data } = await supabase
+      console.log('[tv-poll] polling since', since)
+      const { data, error } = await supabase
         .from('tradingview_alerts')
         .select('id, ticker, price, message, interval, exchange, created_at, raw_payload')
         .eq('user_id', user.id)
         .gt('created_at', since)
         .order('created_at', { ascending: true })
+      console.log('[tv-poll] result', { count: data?.length, error })
       if (data && data.length > 0) {
         lastTvAlertTimestampRef.current = data[data.length - 1].created_at
         const newest = [...data].reverse()
