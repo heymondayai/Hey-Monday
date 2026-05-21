@@ -960,6 +960,7 @@ function handleTouchEnd(e: React.TouchEvent) {
 const wakeOverrideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 const lastWakeDetectionRef = useRef<number>(0)
 const wakePreferredOnRef = useRef(true)
+const speechPreferredOnRef = useRef(true)
 
   const supabase = createClient()
   const router = useRouter()
@@ -1010,17 +1011,19 @@ useEffect(() => {
   scheduleEffectReadyRef.current = true
 
   if (scheduledOff) {
-    if (!wakeManualOverride && wakeOn) {
-      setWakeOn(false)
+    if (!wakeManualOverride) {
+      if (wakeOn) setWakeOn(false)
+      if (speechOn) { stopCurrentAudio(); setSpeechOn(false) }
     }
     return
   }
 
-  // Schedule ended: restore to the user's preferred wake setting
-  if (!wakeManualOverride && wakeOn !== wakePreferredOnRef.current) {
-    setWakeOn(wakePreferredOnRef.current)
+  // Schedule ended: restore both settings to the user's preferences
+  if (!wakeManualOverride) {
+    if (wakeOn !== wakePreferredOnRef.current) setWakeOn(wakePreferredOnRef.current)
+    if (speechOn !== speechPreferredOnRef.current) setSpeechOn(speechPreferredOnRef.current)
   }
-}, [scheduledOff, user, wakeManualOverride, wakeOn])
+}, [scheduledOff, user, wakeManualOverride, wakeOn, speechOn])
 
 useEffect(() => {
   if (!wakeManualOverride) return
@@ -1030,8 +1033,11 @@ useEffect(() => {
     setWakeManualOverride(false)
     if (scheduledOff) {
       setWakeOn(false)
+      setSpeechOn(false)
+      stopCurrentAudio()
     } else {
       setWakeOn(wakePreferredOnRef.current)
+      setSpeechOn(speechPreferredOnRef.current)
     }
   }, 30 * 60 * 1000)
 
@@ -1150,7 +1156,9 @@ useEffect(() => {
       const initialWakeOn = profile?.wake_word_enabled !== false
 setWakeOn(initialWakeOn)
 wakePreferredOnRef.current = initialWakeOn
-      setSpeechOn(profile?.voice_replies_enabled !== false)
+      const initialSpeechOn = profile?.voice_replies_enabled !== false
+      setSpeechOn(initialSpeechOn)
+      speechPreferredOnRef.current = initialSpeechOn
       setPrefsLoaded(true)
       const { data: wlRows } = await supabase.from('watchlist').select('ticker, company_name, added_at').eq('user_id', user.id).order('added_at', { ascending: true })
       let resolvedWl: typeof watchlist
@@ -2458,7 +2466,7 @@ const visibleDaySummaries = useMemo(() => {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '6px' }}>
-                    <div onClick={() => { const next = !speechOn; if (speechOn && isSpeaking) stopCurrentAudio(); setSpeechOn(next); void persistSpeechOn(next) }} style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.08em', color: speechOn ? T.green : T.text6, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, background: speechOn ? T.greenFaint3 : 'transparent', padding: '4px 8px', cursor: 'pointer', transition: 'all 0.15s' }}>
+                    <div onClick={() => { const next = !speechOn; speechPreferredOnRef.current = next; if (speechOn && isSpeaking) stopCurrentAudio(); setSpeechOn(next); void persistSpeechOn(next) }} style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.08em', color: speechOn ? T.green : T.text6, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, background: speechOn ? T.greenFaint3 : 'transparent', padding: '4px 8px', cursor: 'pointer', transition: 'all 0.15s' }}>
                       {speechOn ? '🔊 Voice' : '🔇 Voice'}
                     </div>
                     <div onClick={() => {
@@ -3473,7 +3481,7 @@ const visibleDaySummaries = useMemo(() => {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {/* Voice Replies toggle */}
-                <div onClick={() => { if (speechOn && isSpeaking) stopCurrentAudio(); const next = !speechOn; setSpeechOn(next); void persistSpeechOn(next) }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: speechOn ? T.greenFaint2 : T.inputBg, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, padding: '8px 12px', cursor: 'pointer', transition: 'all 0.2s' }}>
+                <div onClick={() => { const next = !speechOn; speechPreferredOnRef.current = next; if (speechOn && isSpeaking) stopCurrentAudio(); setSpeechOn(next); void persistSpeechOn(next) }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: speechOn ? T.greenFaint2 : T.inputBg, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, padding: '8px 12px', cursor: 'pointer', transition: 'all 0.2s' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                     <div style={{ fontSize: '10px', fontWeight: 600, color: speechOn ? T.green : T.text5, letterSpacing: '0.05em' }}>Voice Replies</div>
                     <div style={{ fontSize: '9px', color: T.text7 }}>Alerts, summaries &amp; chat</div>
