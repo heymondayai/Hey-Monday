@@ -377,14 +377,19 @@ function isoToLocal(iso: string): string {
 }
 
 function TimeHover({ iso, label, cardBg, borderFaint, text5 }: { iso: string; label: string; cardBg: string; borderFaint: string; text5: string }) {
-  const [show, setShow] = React.useState(false)
+  const [mousePos, setMousePos] = React.useState<{ x: number; y: number } | null>(null)
   const local = isoToLocal(iso)
   if (!local || local === label.replace(' ET', '')) return <>{label}</>
   return (
-    <span style={{ position: 'relative', cursor: 'default', userSelect: 'none' }} onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+    <span
+      style={{ cursor: 'default', userSelect: 'none' }}
+      onMouseEnter={(e) => setMousePos({ x: e.clientX, y: e.clientY })}
+      onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setMousePos(null)}
+    >
       {label}
-      {show && (
-        <span style={{ position: 'absolute', top: '100%', left: 0, zIndex: 200, marginTop: '3px', background: cardBg, border: `1px solid ${borderFaint}`, padding: '2px 7px', fontSize: '9px', color: text5, whiteSpace: 'nowrap', letterSpacing: '0.04em', fontFamily: "'DM Mono', monospace" }}>
+      {mousePos && (
+        <span style={{ position: 'fixed', left: mousePos.x + 10, top: mousePos.y + 16, zIndex: 9999, background: cardBg, border: `1px solid ${borderFaint}`, padding: '2px 7px', fontSize: '9px', color: text5, whiteSpace: 'nowrap', letterSpacing: '0.04em', fontFamily: "'DM Mono', monospace", pointerEvents: 'none' }}>
           {local} local
         </span>
       )}
@@ -1003,6 +1008,8 @@ const speechPreferredOnRef = useRef(true)
 
  // ── Schedule-aware wake word state ──
 const [wakeManualOverride, setWakeManualOverride] = useState(false)
+const [speechManualOverride, setSpeechManualOverride] = useState(false)
+const [micReady, setMicReady] = useState(false)
 const scheduleEffectReadyRef = useRef(false)
 
 useEffect(() => {
@@ -1011,19 +1018,15 @@ useEffect(() => {
   scheduleEffectReadyRef.current = true
 
   if (scheduledOff) {
-    if (!wakeManualOverride) {
-      if (wakeOn) setWakeOn(false)
-      if (speechOn) { stopCurrentAudio(); setSpeechOn(false) }
-    }
+    if (!wakeManualOverride && wakeOn) setWakeOn(false)
+    if (!speechManualOverride && speechOn) { stopCurrentAudio(); setSpeechOn(false) }
     return
   }
 
   // Schedule ended: restore both settings to the user's preferences
-  if (!wakeManualOverride) {
-    if (wakeOn !== wakePreferredOnRef.current) setWakeOn(wakePreferredOnRef.current)
-    if (speechOn !== speechPreferredOnRef.current) setSpeechOn(speechPreferredOnRef.current)
-  }
-}, [scheduledOff, user, wakeManualOverride, wakeOn, speechOn])
+  if (!wakeManualOverride && wakeOn !== wakePreferredOnRef.current) setWakeOn(wakePreferredOnRef.current)
+  if (!speechManualOverride && speechOn !== speechPreferredOnRef.current) setSpeechOn(speechPreferredOnRef.current)
+}, [scheduledOff, user, wakeManualOverride, speechManualOverride, wakeOn, speechOn])
 
 useEffect(() => {
   if (!wakeManualOverride) return
@@ -1046,6 +1049,25 @@ useEffect(() => {
   }
 }, [wakeManualOverride, scheduledOff])
 
+// Speech manual override: 30-minute revert when user turns voice on during scheduled-off
+const speechOverrideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+useEffect(() => {
+  if (!speechManualOverride) return
+  if (speechOverrideTimerRef.current) clearTimeout(speechOverrideTimerRef.current)
+  speechOverrideTimerRef.current = setTimeout(() => {
+    setSpeechManualOverride(false)
+    if (scheduledOff) { setSpeechOn(false); stopCurrentAudio() }
+    else setSpeechOn(speechPreferredOnRef.current)
+  }, 30 * 60 * 1000)
+  return () => { if (speechOverrideTimerRef.current) clearTimeout(speechOverrideTimerRef.current) }
+}, [speechManualOverride, scheduledOff])
+
+// Delay enabling the mic 1 second after prefs load so the browser has settled
+useEffect(() => {
+  if (!prefsLoaded) return
+  const t = setTimeout(() => setMicReady(true), 1000)
+  return () => clearTimeout(t)
+}, [prefsLoaded])
 
   useEffect(() => {
   if (!user || !scheduledSummaries.length) return
@@ -2167,7 +2189,7 @@ const visibleDaySummaries = useMemo(() => {
         </div>
       )}
       <WakeWordListener
-        enabled={prefsLoaded && wakeOn}
+        enabled={micReady && wakeOn}
         onDetected={() => {
           if (!isRecordingVoice && !isThinking) {
             lastWakeDetectionRef.current = Date.now()
@@ -2466,7 +2488,7 @@ const visibleDaySummaries = useMemo(() => {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '6px' }}>
-                    <div onClick={() => { const next = !speechOn; speechPreferredOnRef.current = next; if (speechOn && isSpeaking) stopCurrentAudio(); setSpeechOn(next); void persistSpeechOn(next) }} style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.08em', color: speechOn ? T.green : T.text6, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, background: speechOn ? T.greenFaint3 : 'transparent', padding: '4px 8px', cursor: 'pointer', transition: 'all 0.15s' }}>
+                    <div onClick={() => { const next = !speechOn; if (!scheduledOff) speechPreferredOnRef.current = next; if (scheduledOff && next) setSpeechManualOverride(true); else if (!next) setSpeechManualOverride(false); if (speechOn && isSpeaking) stopCurrentAudio(); setSpeechOn(next); void persistSpeechOn(next) }} style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.08em', color: speechOn ? T.green : T.text6, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, background: speechOn ? T.greenFaint3 : 'transparent', padding: '4px 8px', cursor: 'pointer', transition: 'all 0.15s' }}>
                       {speechOn ? '🔊 Voice' : '🔇 Voice'}
                     </div>
                     <div onClick={() => {
@@ -3481,7 +3503,7 @@ const visibleDaySummaries = useMemo(() => {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {/* Voice Replies toggle */}
-                <div onClick={() => { const next = !speechOn; speechPreferredOnRef.current = next; if (speechOn && isSpeaking) stopCurrentAudio(); setSpeechOn(next); void persistSpeechOn(next) }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: speechOn ? T.greenFaint2 : T.inputBg, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, padding: '8px 12px', cursor: 'pointer', transition: 'all 0.2s' }}>
+                <div onClick={() => { const next = !speechOn; if (!scheduledOff) speechPreferredOnRef.current = next; if (scheduledOff && next) setSpeechManualOverride(true); else if (!next) setSpeechManualOverride(false); if (speechOn && isSpeaking) stopCurrentAudio(); setSpeechOn(next); void persistSpeechOn(next) }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: speechOn ? T.greenFaint2 : T.inputBg, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, padding: '8px 12px', cursor: 'pointer', transition: 'all 0.2s' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                     <div style={{ fontSize: '10px', fontWeight: 600, color: speechOn ? T.green : T.text5, letterSpacing: '0.05em' }}>Voice Replies</div>
                     <div style={{ fontSize: '9px', color: T.text7 }}>Alerts, summaries &amp; chat</div>
