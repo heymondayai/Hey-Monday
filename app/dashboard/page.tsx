@@ -927,6 +927,7 @@ const wakePreferredOnRef = useRef(true)
   const eventAlertPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const resultWindowUntilRef = useRef<number>(0)
   const lastAlertCheckRef = useRef<number>(Date.now())
+  const lastTvAlertTimestampRef = useRef<string>(new Date().toISOString())
   const pageVisibleSinceRef = useRef<number>(Date.now())
   const [eventAlertToast, setEventAlertToast] = useState<string | null>(null)
   const eventAlertToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1428,15 +1429,24 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
 
   useEffect(() => {
     if (!user) return
-    const channel = supabase
-      .channel(`tv-alert-${user.id}`)
-      .on('broadcast', { event: 'new-alert' }, (payload) => {
-        const alert = payload.payload as TvAlert
-        setTvAlerts((prev) => [alert, ...prev.slice(0, 49)])
-        handleNewTvAlert(alert)
-      })
-      .subscribe()
-    return () => { void supabase.removeChannel(channel) }
+    const interval = setInterval(async () => {
+      const since = lastTvAlertTimestampRef.current
+      const { data } = await supabase
+        .from('tradingview_alerts')
+        .select('id, ticker, price, message, interval, exchange, created_at, raw_payload')
+        .eq('user_id', user.id)
+        .gt('created_at', since)
+        .order('created_at', { ascending: true })
+      if (data && data.length > 0) {
+        lastTvAlertTimestampRef.current = data[data.length - 1].created_at
+        const newest = [...data].reverse()
+        setTvAlerts((prev) => [...newest, ...prev].slice(0, 50))
+        for (const alert of data) {
+          handleNewTvAlert(alert as TvAlert)
+        }
+      }
+    }, 3000)
+    return () => clearInterval(interval)
   }, [user?.id])
 
   async function doFetchPrices(wl: typeof watchlist, type?: string, triggerPulse = false) {
@@ -1783,7 +1793,13 @@ function startThinkingChimes(): () => void {
       .gte('created_at', cutoff)
       .order('created_at', { ascending: false })
       .limit(50)
-    if (data) setTvAlerts(data)
+    if (data) {
+      setTvAlerts(data)
+      // Seed the poll cursor to the most recent alert so polling only picks up new ones
+      if (data.length > 0 && data[0].created_at) {
+        lastTvAlertTimestampRef.current = data[0].created_at
+      }
+    }
   }
 
   async function fetchWebhookKey() {
