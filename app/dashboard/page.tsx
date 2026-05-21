@@ -377,19 +377,19 @@ function isoToLocal(iso: string): string {
   } catch { return '' }
 }
 
-// Single global tooltip driven by document-level listeners — no React state or effects
+// Single global tooltip element
 let _globalTip: HTMLElement | null = null
 function ensureGlobalTip() {
   if (_globalTip || typeof document === 'undefined') return
   const el = document.createElement('div')
-  el.id = '__timehover_tip'
   el.style.cssText = 'position:fixed;z-index:99999;display:none;pointer-events:none;padding:2px 7px;font-size:9px;white-space:nowrap;letter-spacing:0.04em;font-family:DM Mono,monospace'
   document.body.appendChild(el)
   _globalTip = el
   document.addEventListener('mousemove', (e) => {
-    if (!_globalTip || _globalTip.style.display === 'none') return
-    _globalTip.style.left = `${e.clientX + 14}px`
-    _globalTip.style.top = `${e.clientY + 18}px`
+    if (_globalTip && _globalTip.style.display !== 'none') {
+      _globalTip.style.left = `${e.clientX + 14}px`
+      _globalTip.style.top = `${e.clientY + 18}px`
+    }
   })
 }
 
@@ -398,31 +398,29 @@ function TimeHover({ iso, label, cardBg, borderFaint, text5 }: { iso: string; la
   const d = new Date(iso)
   const localTimeOnly = isNaN(d.getTime()) ? '' : new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).format(d)
   const hasTooltip = !!localTimeOnly && localTimeOnly !== label.replace(' ET', '')
+  const spanRef = React.useRef<HTMLSpanElement>(null)
 
-  React.useEffect(() => { ensureGlobalTip() }, [])
-
-  function showTip(e: React.MouseEvent) {
+  React.useEffect(() => {
+    const span = spanRef.current
+    if (!span || !hasTooltip) return
     ensureGlobalTip()
-    if (!_globalTip) return
-    _globalTip.textContent = `${local} local`
-    _globalTip.style.background = cardBg
-    _globalTip.style.border = `1px solid ${borderFaint}`
-    _globalTip.style.color = text5
-    _globalTip.style.left = `${e.clientX + 14}px`
-    _globalTip.style.top = `${e.clientY + 18}px`
-    _globalTip.style.display = 'block'
-  }
-  function hideTip() { if (_globalTip) _globalTip.style.display = 'none' }
+    const show = (e: MouseEvent) => {
+      if (!_globalTip) return
+      _globalTip.textContent = `${local} local`
+      _globalTip.style.background = cardBg
+      _globalTip.style.border = `1px solid ${borderFaint}`
+      _globalTip.style.color = text5
+      _globalTip.style.left = `${e.clientX + 14}px`
+      _globalTip.style.top = `${e.clientY + 18}px`
+      _globalTip.style.display = 'block'
+    }
+    const hide = () => { if (_globalTip) _globalTip.style.display = 'none' }
+    span.addEventListener('mouseenter', show)
+    span.addEventListener('mouseleave', hide)
+    return () => { span.removeEventListener('mouseenter', show); span.removeEventListener('mouseleave', hide) }
+  }, [hasTooltip, local, cardBg, borderFaint, text5])
 
-  return (
-    <span
-      style={{ cursor: 'default', userSelect: 'none' }}
-      onMouseEnter={hasTooltip ? showTip : undefined}
-      onMouseLeave={hasTooltip ? hideTip : undefined}
-    >
-      {label}
-    </span>
-  )
+  return <span ref={spanRef} style={{ cursor: 'default', userSelect: 'none' }}>{label}</span>
 }
 
 const SUGGESTED_QUESTIONS = [
