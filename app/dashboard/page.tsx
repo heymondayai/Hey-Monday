@@ -3578,8 +3578,8 @@ const visibleDaySummaries = useMemo(() => {
                       <div style={{ maxWidth: '92%', padding: '10px 13px', fontSize: '12px', lineHeight: 1.75, background: m.role === 'monday' ? T.chatAiBg : T.chatUserBg, border: `1px solid ${m.role === 'monday' ? T.chatAiBorder : T.chatUserBorder}`, color: m.role === 'monday' ? T.text2 : T.text }}>
                         <MondayText text={m.text} />
                       </div>
-                      <div style={{ fontSize: '9px', color: T.text8, display: 'flex', alignItems: 'center', gap: '7px', fontFamily: "'DM Mono', monospace" }}>
-                        {m.role === 'monday' ? 'Monday' : 'You'} · {m.time}
+                      <div style={{ fontSize: '9px', color: T.text8, display: 'flex', alignItems: 'center', gap: '7px', fontFamily: "'DM Mono', monospace", cursor: 'default', userSelect: 'none' }}>
+                        {m.role === 'monday' ? 'Monday' : 'You'} · <TimeHover iso={m.iso} label={m.time} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} />
                       </div>
                     </div>
                   ))}
