@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     const interval = typeof payload.interval === 'string' ? payload.interval : null
     const exchange = typeof payload.exchange === 'string' ? payload.exchange : null
 
-    await supabase.from('tradingview_alerts').insert({
+    const { data: inserted } = await supabase.from('tradingview_alerts').insert({
       user_id: keyRow.user_id,
       ticker,
       price,
@@ -37,7 +37,28 @@ export async function POST(req: NextRequest) {
       interval,
       exchange,
       raw_payload: payload,
-    })
+    }).select().single()
+
+    // Broadcast to the user's realtime channel so the dashboard gets instant delivery
+    if (inserted) {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+      await fetch(`${supabaseUrl}/realtime/v1/api/broadcast`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serviceKey}`,
+          'apikey': serviceKey,
+        },
+        body: JSON.stringify({
+          messages: [{
+            topic: `realtime:tv-alert-${keyRow.user_id}`,
+            event: 'new-alert',
+            payload: inserted,
+          }],
+        }),
+      }).catch(() => {/* non-fatal */})
+    }
 
     return NextResponse.json({ ok: true })
   } catch (err: any) {

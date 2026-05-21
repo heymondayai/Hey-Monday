@@ -1429,16 +1429,12 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
   useEffect(() => {
     if (!user) return
     const channel = supabase
-      .channel(`tv-alerts-${user.id}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'tradingview_alerts', filter: `user_id=eq.${user.id}` },
-        (payload) => {
-          const alert = payload.new as TvAlert
-          setTvAlerts((prev) => [alert, ...prev.slice(0, 49)])
-          handleNewTvAlert(alert)
-        }
-      )
+      .channel(`tv-alert-${user.id}`)
+      .on('broadcast', { event: 'new-alert' }, (payload) => {
+        const alert = payload.payload as TvAlert
+        setTvAlerts((prev) => [alert, ...prev.slice(0, 49)])
+        handleNewTvAlert(alert)
+      })
       .subscribe()
     return () => { void supabase.removeChannel(channel) }
   }, [user?.id])
