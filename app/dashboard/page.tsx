@@ -377,29 +377,48 @@ function isoToLocal(iso: string): string {
   } catch { return '' }
 }
 
+// Single global tooltip driven by document-level listeners — no React state or effects
+let _globalTip: HTMLElement | null = null
+function ensureGlobalTip() {
+  if (_globalTip || typeof document === 'undefined') return
+  const el = document.createElement('div')
+  el.id = '__timehover_tip'
+  el.style.cssText = 'position:fixed;z-index:99999;display:none;pointer-events:none;padding:2px 7px;font-size:9px;white-space:nowrap;letter-spacing:0.04em;font-family:DM Mono,monospace'
+  document.body.appendChild(el)
+  _globalTip = el
+  document.addEventListener('mousemove', (e) => {
+    if (!_globalTip || _globalTip.style.display === 'none') return
+    _globalTip.style.left = `${e.clientX + 14}px`
+    _globalTip.style.top = `${e.clientY + 18}px`
+  })
+}
+
 function TimeHover({ iso, label, cardBg, borderFaint, text5 }: { iso: string; label: string; cardBg: string; borderFaint: string; text5: string }) {
   const local = isoToLocal(iso)
   const d = new Date(iso)
   const localTimeOnly = isNaN(d.getTime()) ? '' : new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).format(d)
   const hasTooltip = !!localTimeOnly && localTimeOnly !== label.replace(' ET', '')
-  const tipRef = React.useRef<HTMLSpanElement | null>(null)
 
-  React.useEffect(() => {
-    if (!hasTooltip || typeof document === 'undefined') return
-    const el = document.createElement('span')
-    el.style.cssText = `position:fixed;z-index:9999;display:none;pointer-events:none;background:${cardBg};border:1px solid ${borderFaint};padding:2px 7px;font-size:9px;color:${text5};white-space:nowrap;letter-spacing:0.04em;font-family:'DM Mono',monospace`
-    el.textContent = `${local} local`
-    document.body.appendChild(el)
-    tipRef.current = el
-    return () => { el.remove(); tipRef.current = null }
-  }, [hasTooltip, local, cardBg, borderFaint, text5])
+  React.useEffect(() => { ensureGlobalTip() }, [])
+
+  function showTip(e: React.MouseEvent) {
+    ensureGlobalTip()
+    if (!_globalTip) return
+    _globalTip.textContent = `${local} local`
+    _globalTip.style.background = cardBg
+    _globalTip.style.border = `1px solid ${borderFaint}`
+    _globalTip.style.color = text5
+    _globalTip.style.left = `${e.clientX + 14}px`
+    _globalTip.style.top = `${e.clientY + 18}px`
+    _globalTip.style.display = 'block'
+  }
+  function hideTip() { if (_globalTip) _globalTip.style.display = 'none' }
 
   return (
     <span
       style={{ cursor: 'default', userSelect: 'none' }}
-      onMouseEnter={hasTooltip ? (e) => { if (tipRef.current) { tipRef.current.style.left = `${e.clientX + 12}px`; tipRef.current.style.top = `${e.clientY + 16}px`; tipRef.current.style.display = 'inline-block' } } : undefined}
-      onMouseMove={hasTooltip ? (e) => { if (tipRef.current) { tipRef.current.style.left = `${e.clientX + 12}px`; tipRef.current.style.top = `${e.clientY + 16}px` } } : undefined}
-      onMouseLeave={hasTooltip ? () => { if (tipRef.current) tipRef.current.style.display = 'none' } : undefined}
+      onMouseEnter={hasTooltip ? showTip : undefined}
+      onMouseLeave={hasTooltip ? hideTip : undefined}
     >
       {label}
     </span>
