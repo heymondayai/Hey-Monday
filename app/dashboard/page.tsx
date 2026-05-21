@@ -860,7 +860,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [showSettings, setShowSettings] = useState(false)
   const [settingsType, setSettingsType] = useState<string>('swing')
   const [savingType, setSavingType] = useState(false)
-  const [messages, setMessages] = useState<{ role: string; time: string; text: string; dbId?: string }[]>([])
+  const [messages, setMessages] = useState<{ role: string; time: string; iso: string; text: string; dbId?: string }[]>([])
   const [isThinking, setIsThinking] = useState(false)
   const [watchlistNews, setWatchlistNews] = useState<any[]>([])
   const [generalNews, setGeneralNews] = useState<any[]>([])
@@ -1167,7 +1167,7 @@ wakePreferredOnRef.current = initialWakeOn
       if (alertRows) setAlerts(alertRows)
       const midnightUTC = getStartOfTodayETUtcIso()
       const { data: convos } = await supabase.from('conversations').select('id, role, content, created_at').eq('user_id', user.id).gte('created_at', midnightUTC).order('created_at', { ascending: true })
-      setMessages((convos ?? []).map((c) => ({ role: c.role === 'assistant' ? 'monday' : 'user', time: new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(c.created_at)), text: c.content, dbId: c.id })))
+      setMessages((convos ?? []).map((c) => ({ role: c.role === 'assistant' ? 'monday' : 'user', time: formatSummaryTimeOnly(c.created_at), iso: c.created_at, text: c.content, dbId: c.id })))
       await doFetchPrices(resolvedWl, profile?.trader_type ?? traderType, true)
       fetchBothNews(resolvedWl.map((w) => w.ticker))
       await loadScheduledSummariesFromSupabase(user.id)
@@ -1402,8 +1402,8 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
             const impact = anyHigh ? 'high' : 'medium'
             text = `${intro} — ${names.join(', ')} and ${last} are all coming up ${timeStr} and have a ${impact} impact on the general market.`
           }
-          const alertTimeStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date())
-          setMessages((prev) => [...prev, { role: 'monday', time: alertTimeStr, text }])
+          const alertNow = new Date().toISOString()
+          setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(alertNow), iso: alertNow, text }])
           if (user) void supabase.from('conversations').insert({ user_id: user.id, role: 'assistant', content: text })
           showToast(text)
           if (speechOn) void speakText(text)
@@ -1441,8 +1441,8 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
               const last = parts.pop()!
               text = `Results are in — ${parts.join(', ')}, and ${last}.`
             }
-            const resultTimeStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date())
-            setMessages((prev) => [...prev, { role: 'monday', time: resultTimeStr, text }])
+            const resultNow = new Date().toISOString()
+            setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(resultNow), iso: resultNow, text }])
             if (user) void supabase.from('conversations').insert({ user_id: user.id, role: 'assistant', content: text })
             showToast(text)
             if (speechOn) void speakText(text)
@@ -1709,10 +1709,10 @@ function startThinkingChimes(): () => void {
   async function handleSendWithText(text: string, isVoice = false) {
     if (!text.trim() || isThinking) return
     setChatInput(''); const textarea = document.querySelector('textarea'); if (textarea) textarea.style.height = 'auto'
-    const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).formatToParts(new Date())
-    const timeStr = `${p.find((x) => x.type === 'hour')?.value}:${p.find((x) => x.type === 'minute')?.value} ${p.find((x) => x.type === 'dayPeriod')?.value}`
+    const nowIso = new Date().toISOString()
+    const timeStr = formatSummaryTimeOnly(nowIso)
     if (user) await supabase.from('conversations').insert({ user_id: user.id, role: 'user', content: text })
-    setMessages((prev) => [...prev, { role: 'user', time: timeStr, text }])
+    setMessages((prev) => [...prev, { role: 'user', time: timeStr, iso: nowIso, text }])
     setIsThinking(true)
     stopThinkingChimesRef.current = startThinkingChimes()
     const history = messages.map((m) => ({ role: m.role === 'monday' ? 'assistant' : 'user', content: m.text }))
@@ -1735,7 +1735,8 @@ function startThinkingChimes(): () => void {
 })
       const data = await res.json(); const reply = data.reply || 'Sorry, I could not get a response.'
       if (user) await supabase.from('conversations').insert({ user_id: user.id, role: 'assistant', content: reply })
-      setMessages((prev) => [...prev, { role: 'monday', time: timeStr, text: reply }])
+      const replyIso = new Date().toISOString()
+      setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(replyIso), iso: replyIso, text: reply }])
       if (isVoice && speechOn) {
         const endsWithQuestion = /\?\s*$/.test(reply.replace(/\[\/?(gold|green|red)\]/g, '').trim())
         setSpeakingContext('chat')
@@ -1743,7 +1744,8 @@ function startThinkingChimes(): () => void {
       }
     } catch {
       const errorReply = 'Connection error. Please try again.'
-      setMessages((prev) => [...prev, { role: 'monday', time: timeStr, text: errorReply }])
+      const errIso = new Date().toISOString()
+      setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(errIso), iso: errIso, text: errorReply }])
       if (isVoice && speechOn) { setSpeakingContext('chat'); void speakText(errorReply) }
     } finally {
   stopThinkingChimesRef.current?.()
@@ -2040,8 +2042,8 @@ if (rec !== 'none') {
     .eq('id', summary.id)
     .eq('user_id', user.id)
 }
-      const timeStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date())
-      setMessages((prev) => [...prev, { role: 'monday', time: timeStr, text: reply }])
+      const briefingIso = new Date().toISOString()
+      setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(briefingIso), iso: briefingIso, text: reply }])
       // Auto-play the briefing
       await speakText(reply)
       // Set activeBriefing: stays on top bar for 30 min, one manual replay allowed
@@ -2490,7 +2492,7 @@ const visibleDaySummaries = useMemo(() => {
                             <MondayText text={m.text} />
                           </div>
                           <div style={{ fontSize: '9px', color: T.text8, fontFamily: "'DM Mono', monospace" }}>
-                            {m.role === 'monday' ? 'Monday' : 'You'} · {m.time}
+                            {m.role === 'monday' ? 'Monday' : 'You'} · <TimeHover iso={m.iso} label={m.time} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} />
                           </div>
                         </div>
                       ))}
