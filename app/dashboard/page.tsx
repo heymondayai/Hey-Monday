@@ -379,9 +379,13 @@ function isoToLocal(iso: string): string {
 function TimeHover({ iso, label, cardBg, borderFaint, text5 }: { iso: string; label: string; cardBg: string; borderFaint: string; text5: string }) {
   const [mousePos, setMousePos] = React.useState<{ x: number; y: number } | null>(null)
   const local = isoToLocal(iso)
-  const hasTooltip = !!local && local !== label.replace(' ET', '')
+  // Compare time-only so ET users (local time === ET time) get no tooltip
+  const d = new Date(iso)
+  const localTimeOnly = isNaN(d.getTime()) ? '' : new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).format(d)
+  const hasTooltip = !!localTimeOnly && localTimeOnly !== label.replace(' ET', '')
   return (
     <span
+      title={hasTooltip ? `${local} local` : undefined}
       style={{ cursor: 'default', userSelect: 'none' }}
       onMouseEnter={hasTooltip ? (e) => setMousePos({ x: e.clientX, y: e.clientY }) : undefined}
       onMouseMove={hasTooltip ? (e) => setMousePos({ x: e.clientX, y: e.clientY }) : undefined}
@@ -2521,7 +2525,7 @@ const visibleDaySummaries = useMemo(() => {
                           <div style={{ maxWidth: '88%', padding: '9px 12px', fontSize: '13px', lineHeight: 1.7, background: m.role === 'monday' ? T.chatAiBg : T.chatUserBg, border: `1px solid ${m.role === 'monday' ? T.chatAiBorder : T.chatUserBorder}`, color: T.text }}>
                             <MondayText text={m.text} />
                           </div>
-                          <div style={{ fontSize: '9px', color: T.text8, fontFamily: "'DM Mono', monospace" }}>
+                          <div style={{ fontSize: '9px', color: T.text8, fontFamily: "'DM Mono', monospace", cursor: 'default', userSelect: 'none' }}>
                             {m.role === 'monday' ? 'Monday' : 'You'} · <TimeHover iso={m.iso} label={m.time} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} />
                           </div>
                         </div>
