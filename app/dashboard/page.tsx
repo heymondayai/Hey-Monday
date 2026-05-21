@@ -3365,18 +3365,18 @@ const visibleDaySummaries = useMemo(() => {
                               <div style={{ fontSize: '12px', color: T.text5, lineHeight: 1.6 }}>Copy one of these into your TradingView alert's <strong>Message</strong> field. TradingView fills in the <code style={{ fontSize: '11px', background: T.inputBg, padding: '0 3px' }}>{'{{variables}}'}</code> automatically when the alert fires.</div>
                               {([
                                 {
-                                  title: 'Price Alert',
-                                  desc: 'Basic alert with ticker, price, and bar info.',
+                                  title: 'Standard Alert',
+                                  desc: 'Use this for most alerts — price levels, indicator crosses, VWAP touches, etc.',
                                   json: `{\n  "ticker": "{{ticker}}",\n  "price": {{close}},\n  "message": "{{ticker}} alert on {{interval}} at {{close}}",\n  "interval": "{{interval}}",\n  "exchange": "{{exchange}}"\n}`,
                                 },
                                 {
-                                  title: 'Strategy Signal',
-                                  desc: 'For Pine Script strategies — includes buy/sell action, contracts, and position size.',
+                                  title: 'Buy / Sell Signal',
+                                  desc: 'Use this when your Pine Script strategy fires an entry or exit order.',
                                   json: `{\n  "ticker": "{{ticker}}",\n  "price": {{close}},\n  "action": "{{strategy.order.action}}",\n  "contracts": {{strategy.order.contracts}},\n  "position_size": {{strategy.position_size}},\n  "message": "{{strategy.order.action}} {{ticker}} at {{close}}",\n  "interval": "{{interval}}",\n  "exchange": "{{exchange}}"\n}`,
                                 },
                                 {
                                   title: 'Full Bar Data',
-                                  desc: 'Includes complete OHLCV bar data for indicator-based alerts.',
+                                  desc: 'Use this when you want the full candle (open, high, low, close, volume) sent with the alert.',
                                   json: `{\n  "ticker": "{{ticker}}",\n  "price": {{close}},\n  "open": {{open}},\n  "high": {{high}},\n  "low": {{low}},\n  "volume": {{volume}},\n  "message": "{{ticker}} {{interval}} close: {{close}}",\n  "interval": "{{interval}}",\n  "exchange": "{{exchange}}"\n}`,
                                 },
                               ]).map(({ title, desc, json }) => (
