@@ -420,7 +420,7 @@ function TimeHover({ iso, label, cardBg, borderFaint, text5 }: { iso: string; la
     return () => { span.removeEventListener('mouseenter', show); span.removeEventListener('mouseleave', hide) }
   }, [hasTooltip, local, cardBg, borderFaint, text5])
 
-  return <span ref={spanRef} style={{ cursor: 'default', userSelect: 'none' }}>{label}</span>
+  return <span ref={spanRef} data-th={hasTooltip ? local : ''} style={{ cursor: 'default', userSelect: 'none' }}>{label}</span>
 }
 
 const SUGGESTED_QUESTIONS = [
