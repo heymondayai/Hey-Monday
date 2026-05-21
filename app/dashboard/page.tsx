@@ -908,6 +908,12 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [webhookKeyLoading, setWebhookKeyLoading] = useState(false)
   const [tvAlertTab, setTvAlertTab] = useState<'feed' | 'setup'>('feed')
   const [showTvFormatGuide, setShowTvFormatGuide] = useState(false)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  function copyWithConfirm(id: string, text: string) {
+    void navigator.clipboard.writeText(text)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 1500)
+  }
 
   const [showWakeSchedule, setShowWakeSchedule] = useState(false)
 const wakeOverrideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -2369,7 +2375,7 @@ const visibleDaySummaries = useMemo(() => {
                       {webhookKeyLoading ? <div style={{ fontSize: '12px', color: T.text6, fontStyle: 'italic' }}>Loading...</div> : webhookKey ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                           <div style={{ background: T.inputBg, border: `1px solid ${T.goldFaint7}`, padding: '8px 10px', fontFamily: "'DM Mono', monospace", fontSize: '10px', color: T.text4, wordBreak: 'break-all', lineHeight: 1.6 }}>{`https://heymonday.store/api/webhooks/tradingview?key=${webhookKey}`}</div>
-                          <div onClick={() => void navigator.clipboard.writeText(`https://heymonday.store/api/webhooks/tradingview?key=${webhookKey}`)} style={{ padding: '7px 14px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 600, display: 'inline-block' }}>Copy URL</div>
+                          <div onClick={() => copyWithConfirm('url-mobile', `https://heymonday.store/api/webhooks/tradingview?key=${webhookKey}`)} style={{ padding: '7px 14px', background: copiedId === 'url-mobile' ? 'rgba(34,197,94,0.12)' : T.goldFaint3, border: `1px solid ${copiedId === 'url-mobile' ? 'rgba(34,197,94,0.4)' : T.goldFaint9}`, color: copiedId === 'url-mobile' ? '#22c55e' : T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 600, display: 'inline-block', transition: 'all 0.15s' }}>{copiedId === 'url-mobile' ? '✓ Copied' : 'Copy URL'}</div>
                         </div>
                       ) : <div onClick={() => void fetchWebhookKey()} style={{ padding: '7px 14px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 600, display: 'inline-block' }}>Generate Webhook URL</div>}
                     </div>
@@ -3341,7 +3347,7 @@ const visibleDaySummaries = useMemo(() => {
                                 {`https://heymonday.store/api/webhooks/tradingview?key=${webhookKey}`}
                               </div>
                               <div style={{ display: 'flex', gap: '8px' }}>
-                                <div onClick={() => void navigator.clipboard.writeText(`https://heymonday.store/api/webhooks/tradingview?key=${webhookKey}`)} style={{ padding: '7px 14px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}>Copy URL</div>
+                                <div onClick={() => copyWithConfirm('url-desktop', `https://heymonday.store/api/webhooks/tradingview?key=${webhookKey}`)} style={{ padding: '7px 14px', background: copiedId === 'url-desktop' ? 'rgba(34,197,94,0.12)' : T.goldFaint3, border: `1px solid ${copiedId === 'url-desktop' ? 'rgba(34,197,94,0.4)' : T.goldFaint9}`, color: copiedId === 'url-desktop' ? '#22c55e' : T.gold, cursor: 'pointer', fontSize: '12px', fontWeight: 600, transition: 'all 0.15s' }}>{copiedId === 'url-desktop' ? '✓ Copied' : 'Copy URL'}</div>
                                 <div onClick={() => void regenerateWebhookKey()} style={{ padding: '7px 14px', border: `1px solid ${T.borderItem}`, color: T.text5, cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}>Regenerate</div>
                               </div>
                             </div>
@@ -3380,7 +3386,7 @@ const visibleDaySummaries = useMemo(() => {
                                       <div style={{ fontSize: '12px', fontWeight: 600, color: T.text }}>{title}</div>
                                       <div style={{ fontSize: '11px', color: T.text5, marginTop: '1px' }}>{desc}</div>
                                     </div>
-                                    <div onClick={() => void navigator.clipboard.writeText(json)} style={{ padding: '4px 10px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, cursor: 'pointer', fontSize: '11px', fontWeight: 600, flexShrink: 0, marginLeft: '10px' }}>Copy</div>
+                                    <div onClick={() => copyWithConfirm(title, json)} style={{ padding: '4px 10px', background: copiedId === title ? 'rgba(34,197,94,0.12)' : T.goldFaint3, border: `1px solid ${copiedId === title ? 'rgba(34,197,94,0.4)' : T.goldFaint9}`, color: copiedId === title ? '#22c55e' : T.gold, cursor: 'pointer', fontSize: '11px', fontWeight: 600, flexShrink: 0, marginLeft: '10px', transition: 'all 0.15s', minWidth: '58px', textAlign: 'center' }}>{copiedId === title ? '✓ Copied' : 'Copy'}</div>
                                   </div>
                                   <div style={{ padding: '10px 12px', fontFamily: "'DM Mono', monospace", fontSize: '10px', color: T.text4, lineHeight: 1.8, whiteSpace: 'pre', overflowX: 'auto' }}>{json}</div>
                                 </div>
