@@ -1462,7 +1462,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
           setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(alertNow), iso: alertNow, text }])
           if (user) void supabase.from('conversations').insert({ user_id: user.id, role: 'assistant', content: text })
           showToast(text)
-          if (speechOn) void speakText(text)
+          if (speechOn) void speakText(text, undefined, 'alert')
         }
 
         // ── Result alerts: group by time slot, one announcement per slot ─────
@@ -1501,7 +1501,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
             setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(resultNow), iso: resultNow, text }])
             if (user) void supabase.from('conversations').insert({ user_id: user.id, role: 'assistant', content: text })
             showToast(text)
-            if (speechOn) void speakText(text)
+            if (speechOn) void speakText(text, undefined, 'alert')
           }
         }
       } catch {}
@@ -1642,9 +1642,10 @@ function startThinkingChimes(): () => void {
   return () => { cancelled = true }
 }
   
-  async function speakText(text: string, onEnded?: () => void) {
+  async function speakText(text: string, onEnded?: () => void, context?: 'chat' | 'briefing' | 'alert') {
     try {
       stopCurrentAudio()
+      if (context) setSpeakingContext(context)
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1795,14 +1796,13 @@ function startThinkingChimes(): () => void {
       setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(replyIso), iso: replyIso, text: reply }])
       if (speechOn) {
         const endsWithQuestion = isVoice && /\?\s*$/.test(reply.replace(/\[\/?(gold|green|red)\]/g, '').trim())
-        setSpeakingContext('chat')
-        void speakText(reply, endsWithQuestion ? () => startVoiceRecording() : undefined)
+        void speakText(reply, endsWithQuestion ? () => startVoiceRecording() : undefined, 'chat')
       }
     } catch {
       const errorReply = 'Connection error. Please try again.'
       const errIso = new Date().toISOString()
       setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(errIso), iso: errIso, text: errorReply }])
-      if (speechOn) { setSpeakingContext('chat'); void speakText(errorReply) }
+      if (speechOn) { void speakText(errorReply, undefined, 'chat') }
     } finally {
   stopThinkingChimesRef.current?.()
   stopThinkingChimesRef.current = null
@@ -1943,7 +1943,7 @@ function startThinkingChimes(): () => void {
         parts.push(alert.message)
         if (alert.price) parts.push(`Price: ${alert.price}.`)
       }
-      void speakText(parts.join(' '))
+      void speakText(parts.join(' '), undefined, 'alert')
     }
 
     if (tvAlertBehaviorRef.current === 'speak_and_brief') {
@@ -2101,7 +2101,7 @@ if (rec !== 'none') {
       const briefingIso = new Date().toISOString()
       setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(briefingIso), iso: briefingIso, text: reply }])
       // Auto-play the briefing
-      await speakText(reply)
+      await speakText(reply, undefined, 'briefing')
       // Set activeBriefing: stays on top bar for 30 min, one manual replay allowed
       setActiveBriefing({ id: summary.id, name: summary.name, content: reply, expiresAt: Date.now() + 30 * 60 * 1000, manualPlayUsed: false })
       await loadScheduledSummariesFromSupabase(user.id); await loadPastBriefingsFromSupabase(user.id)
@@ -3040,8 +3040,7 @@ const visibleDaySummaries = useMemo(() => {
                       if (isSpeaking) { stopCurrentAudio(); return }
                       if (activeBriefing.manualPlayUsed) return
                       setActiveBriefing((prev) => prev ? { ...prev, manualPlayUsed: true } : null)
-                      setSpeakingContext('briefing')
-                      speakText(activeBriefing.content).then(() => setActiveBriefing(null))
+                      speakText(activeBriefing.content, undefined, 'briefing').then(() => setActiveBriefing(null))
                     }}
                     title={activeBriefing.manualPlayUsed ? 'Already replayed' : 'Replay once'}
                     style={{ width: '50px', height: '50px', borderRadius: '50%', border: `1px solid ${isSpeaking || !activeBriefing.manualPlayUsed ? T.goldFaint9 : T.borderFaint}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isSpeaking || !activeBriefing.manualPlayUsed ? 'pointer' : 'default', fontSize: '18px', color: isSpeaking || !activeBriefing.manualPlayUsed ? T.gold : T.text7, flexShrink: 0, background: isSpeaking || !activeBriefing.manualPlayUsed ? T.goldFaint2 : T.inputBg, opacity: activeBriefing.manualPlayUsed && !isSpeaking ? 0.4 : 1, transition: 'all 0.2s' }}>
