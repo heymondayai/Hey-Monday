@@ -379,16 +379,16 @@ function isoToLocal(iso: string): string {
 function TimeHover({ iso, label, cardBg, borderFaint, text5 }: { iso: string; label: string; cardBg: string; borderFaint: string; text5: string }) {
   const [mousePos, setMousePos] = React.useState<{ x: number; y: number } | null>(null)
   const local = isoToLocal(iso)
-  if (!local || local === label.replace(' ET', '')) return <>{label}</>
+  const hasTooltip = !!local && local !== label.replace(' ET', '')
   return (
     <span
       style={{ cursor: 'default', userSelect: 'none' }}
-      onMouseEnter={(e) => setMousePos({ x: e.clientX, y: e.clientY })}
-      onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}
-      onMouseLeave={() => setMousePos(null)}
+      onMouseEnter={hasTooltip ? (e) => setMousePos({ x: e.clientX, y: e.clientY }) : undefined}
+      onMouseMove={hasTooltip ? (e) => setMousePos({ x: e.clientX, y: e.clientY }) : undefined}
+      onMouseLeave={hasTooltip ? () => setMousePos(null) : undefined}
     >
       {label}
-      {mousePos && (
+      {hasTooltip && mousePos && (
         <span style={{ position: 'fixed', left: mousePos.x + 10, top: mousePos.y + 16, zIndex: 9999, background: cardBg, border: `1px solid ${borderFaint}`, padding: '2px 7px', fontSize: '9px', color: text5, whiteSpace: 'nowrap', letterSpacing: '0.04em', fontFamily: "'DM Mono', monospace", pointerEvents: 'none' }}>
           {local} local
         </span>
