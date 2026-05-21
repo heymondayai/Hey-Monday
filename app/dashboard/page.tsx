@@ -1040,19 +1040,6 @@ useEffect(() => {
   }
 }, [wakeManualOverride, scheduledOff])
 
-useEffect(() => {
-  if (!user) return
-
-  if (!wakeOn && speechOn) {
-    if (isSpeaking) stopCurrentAudio()
-    void persistSpeechOn(false)
-    return
-  }
-
-  if (wakeOn && !speechOn) {
-    void persistSpeechOn(true)
-  }
-}, [wakeOn, user])
 
   useEffect(() => {
   if (!user || !scheduledSummaries.length) return
@@ -2468,8 +2455,19 @@ const visibleDaySummaries = useMemo(() => {
                       <div style={{ fontSize: '9px', color: T.green, letterSpacing: '0.1em', textTransform: 'uppercase' }}>AI Market Intelligence</div>
                     </div>
                   </div>
-                  <div onClick={() => { const next = !speechOn; if (speechOn && isSpeaking) stopCurrentAudio(); setSpeechOn(next); void persistSpeechOn(next) }} style={{ fontSize: '11px', color: speechOn ? T.green : T.text6, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, padding: '5px 10px', cursor: 'pointer' }}>
-                    {speechOn ? (isSpeaking ? '🔊 Speaking' : '🔊 Voice On') : '🔇 Voice Off'}
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <div onClick={() => { const next = !speechOn; if (speechOn && isSpeaking) stopCurrentAudio(); setSpeechOn(next); void persistSpeechOn(next) }} style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.08em', color: speechOn ? T.green : T.text6, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, background: speechOn ? T.greenFaint3 : 'transparent', padding: '4px 8px', cursor: 'pointer', transition: 'all 0.15s' }}>
+                      {speechOn ? '🔊 Voice' : '🔇 Voice'}
+                    </div>
+                    <div onClick={() => {
+                      const turningOn = !wakeOn
+                      setWakeOn(turningOn); wakePreferredOnRef.current = turningOn
+                      void supabase.from('profiles').update({ wake_word_enabled: turningOn }).eq('id', user!.id)
+                      if (turningOn && scheduledOff) setWakeManualOverride(true)
+                      else { setWakeManualOverride(false); if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current) }
+                    }} style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.08em', color: wakeOn ? T.green : T.text6, border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`, background: wakeOn ? T.greenFaint3 : 'transparent', padding: '4px 8px', cursor: 'pointer', transition: 'all 0.15s' }}>
+                      {wakeOn ? '🎙 Wake' : '🎙 Wake'}
+                    </div>
                   </div>
                 </div>
                 {/* Messages */}
@@ -3529,47 +3527,34 @@ const visibleDaySummaries = useMemo(() => {
                   <div style={{ fontSize: '9px', color: activeTrader.color, marginTop: '1px', letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>{activeTrader.label} Mode</div>
                 </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: T.goldFaint, border: `1px solid ${T.goldFaint6}`, padding: '8px 12px' }}>
-                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: wakeOn ? T.green : T.text6, boxShadow: wakeOn ? `0 0 8px ${T.greenGlow2}` : 'none', flexShrink: 0, transition: 'all 0.3s' }} />
-                  <div style={{ fontSize: '10px', color: T.text5, flex: 1 }}>Listening for</div>
-                  <div style={{ fontSize: '10px', color: T.gold, background: T.goldFaint2, padding: '2px 8px', border: `1px solid ${T.goldFaint7}`, letterSpacing: '0.1em', fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>Hey Monday</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {/* Voice Replies toggle */}
+                <div onClick={() => { if (speechOn && isSpeaking) stopCurrentAudio(); const next = !speechOn; setSpeechOn(next); void persistSpeechOn(next) }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: speechOn ? T.greenFaint2 : T.inputBg, border: `1px solid ${speechOn ? T.greenBorder : T.borderItem}`, padding: '8px 12px', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 600, color: speechOn ? T.green : T.text5, letterSpacing: '0.05em' }}>Voice Replies</div>
+                    <div style={{ fontSize: '9px', color: T.text7 }}>Alerts, summaries &amp; chat</div>
+                  </div>
+                  <div style={{ width: '28px', height: '16px', borderRadius: '8px', background: speechOn ? T.green : T.text7, position: 'relative', flexShrink: 0, transition: 'background 0.25s' }}>
+                    <div style={{ position: 'absolute', top: '2px', left: speechOn ? '14px' : '2px', width: '12px', height: '12px', borderRadius: '50%', background: '#fff', transition: 'left 0.25s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+                  </div>
                 </div>
-                <div
-  onClick={() => {
-    if (!wakeOn) return
-    if (speechOn && isSpeaking) stopCurrentAudio()
-    void persistSpeechOn(!speechOn)
-  }}
-  style={{
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '10px',
-    background: !wakeOn ? T.inputBg : speechOn ? T.greenFaint2 : T.inputBg,
-    border: `1px solid ${!wakeOn ? T.borderItem : speechOn ? T.greenBorder : T.borderItem}`,
-    padding: '8px 12px',
-    cursor: wakeOn ? 'pointer' : 'not-allowed',
-    opacity: wakeOn ? 1 : 0.55,
-  }}
->
-  <div style={{ fontSize: '10px', color: !wakeOn ? T.text6 : T.text5 }}>
-    Monday voice replies
-  </div>
-  <div
-    style={{
-      fontSize: '10px',
-      color: !wakeOn ? T.text6 : speechOn ? T.green : T.text6,
-      fontFamily: "'DM Mono', monospace",
-      letterSpacing: '0.1em',
-      textTransform: 'uppercase',
-      fontWeight: 600,
-    }}
-  >
-    {!wakeOn ? 'Off' : speechOn ? (isSpeaking ? 'On · Speaking' : 'On') : 'Off'}
-  </div>
-</div>
-
+                {/* Wake Word toggle */}
+                <div onClick={() => {
+                  const turningOn = !wakeOn
+                  setWakeOn(turningOn)
+                  wakePreferredOnRef.current = turningOn
+                  void supabase.from('profiles').update({ wake_word_enabled: turningOn }).eq('id', user!.id)
+                  if (turningOn && scheduledOff) setWakeManualOverride(true)
+                  else { setWakeManualOverride(false); if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current) }
+                }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: wakeOn ? T.greenFaint2 : T.inputBg, border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`, padding: '8px 12px', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 600, color: wakeOn ? T.green : T.text5, letterSpacing: '0.05em' }}>Wake Word</div>
+                    <div style={{ fontSize: '9px', color: T.text7 }}>Say "Hey Monday"</div>
+                  </div>
+                  <div style={{ width: '28px', height: '16px', borderRadius: '8px', background: wakeOn ? T.green : T.text7, position: 'relative', flexShrink: 0, transition: 'background 0.25s' }}>
+                    <div style={{ position: 'absolute', top: '2px', left: wakeOn ? '14px' : '2px', width: '12px', height: '12px', borderRadius: '50%', background: '#fff', transition: 'left 0.25s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+                  </div>
+                </div>
               </div>
             </div>
 
