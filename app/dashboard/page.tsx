@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import ReactDOM from 'react-dom'
 import { EventsPanel, CalendarModal } from '@/components/EventsCalendar'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -379,25 +380,29 @@ function isoToLocal(iso: string): string {
 function TimeHover({ iso, label, cardBg, borderFaint, text5 }: { iso: string; label: string; cardBg: string; borderFaint: string; text5: string }) {
   const [mousePos, setMousePos] = React.useState<{ x: number; y: number } | null>(null)
   const local = isoToLocal(iso)
-  // Compare time-only so ET users (local time === ET time) get no tooltip
   const d = new Date(iso)
   const localTimeOnly = isNaN(d.getTime()) ? '' : new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).format(d)
   const hasTooltip = !!localTimeOnly && localTimeOnly !== label.replace(' ET', '')
-  return (
-    <span
-      title={hasTooltip ? `${local} local` : undefined}
-      style={{ cursor: 'default', userSelect: 'none' }}
-      onMouseEnter={hasTooltip ? (e) => setMousePos({ x: e.clientX, y: e.clientY }) : undefined}
-      onMouseMove={hasTooltip ? (e) => setMousePos({ x: e.clientX, y: e.clientY }) : undefined}
-      onMouseLeave={hasTooltip ? () => setMousePos(null) : undefined}
-    >
-      {label}
-      {hasTooltip && mousePos && (
+  const tooltipEl = hasTooltip && mousePos && typeof document !== 'undefined'
+    ? ReactDOM.createPortal(
         <span style={{ position: 'fixed', left: mousePos.x + 10, top: mousePos.y + 16, zIndex: 9999, background: cardBg, border: `1px solid ${borderFaint}`, padding: '2px 7px', fontSize: '9px', color: text5, whiteSpace: 'nowrap', letterSpacing: '0.04em', fontFamily: "'DM Mono', monospace", pointerEvents: 'none' }}>
           {local} local
-        </span>
-      )}
-    </span>
+        </span>,
+        document.body
+      )
+    : null
+  return (
+    <>
+      <span
+        style={{ cursor: 'default', userSelect: 'none' }}
+        onMouseEnter={hasTooltip ? (e) => setMousePos({ x: e.clientX, y: e.clientY }) : undefined}
+        onMouseMove={hasTooltip ? (e) => setMousePos({ x: e.clientX, y: e.clientY }) : undefined}
+        onMouseLeave={hasTooltip ? () => setMousePos(null) : undefined}
+      >
+        {label}
+      </span>
+      {tooltipEl}
+    </>
   )
 }
 
