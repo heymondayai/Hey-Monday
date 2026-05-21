@@ -499,6 +499,13 @@ function isTodayET(iso: string): boolean {
   return today === alertDay
 }
 
+function classifyTvAlert(alert: { raw_payload?: Record<string, unknown> | null; interval?: string | null }): 'signal' | 'indicator' | 'price' {
+  const action = typeof alert.raw_payload?.action === 'string' ? alert.raw_payload.action.toLowerCase() : null
+  if (action === 'buy' || action === 'sell' || action === 'close') return 'signal'
+  if (alert.interval) return 'indicator'
+  return 'price'
+}
+
 function groupTvAlertsBySession<T extends { created_at: string }>(alerts: T[]): { label: string; alerts: T[] }[] {
   const today = alerts.filter(a => isTodayET(a.created_at))
   const groups: { key: 'pre-market' | 'market' | 'after-hours'; label: string }[] = [
@@ -739,6 +746,7 @@ export default function DashboardPage() {
   const [speechOn, setSpeechOn] = useState(false)
   const [prefsLoaded, setPrefsLoaded] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
+  const [speakingContext, setSpeakingContext] = useState<'briefing' | 'chat' | 'alert' | null>(null)
   const [isRecordingVoice, setIsRecordingVoice] = useState(false)
   const [isDark, setIsDark] = useState<boolean>(() => {
   if (typeof window === 'undefined') return true
@@ -939,6 +947,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [webhookKey, setWebhookKey] = useState<string | null>(null)
   const [webhookKeyLoading, setWebhookKeyLoading] = useState(false)
   const [tvAlertTab, setTvAlertTab] = useState<'feed' | 'setup'>('feed')
+  const [tvAlertFilter, setTvAlertFilter] = useState<'all' | 'signal' | 'indicator' | 'price'>('all')
   const [showTvFormatGuide, setShowTvFormatGuide] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   function copyWithConfirm(id: string, text: string) {
@@ -1525,6 +1534,7 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; audioRef.current = null }
     if (ttsSourceNodeRef.current) { try { ttsSourceNodeRef.current.stop() } catch {} ttsSourceNodeRef.current = null }
     setIsSpeaking(false)
+    setSpeakingContext(null)
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none'
   }
 
@@ -1622,8 +1632,8 @@ function startThinkingChimes(): () => void {
         navigator.mediaSession.metadata = new MediaMetadata({ title: 'Monday', artist: 'Hey Monday' })
         navigator.mediaSession.playbackState = 'playing'
       }
-      audio.onended = () => { URL.revokeObjectURL(url); ttsSourceNodeRef.current = null; setIsSpeaking(false); if (audioRef.current === audio) audioRef.current = null; if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none'; onEnded?.() }
-      audio.onerror = () => { URL.revokeObjectURL(url); setIsSpeaking(false); if (audioRef.current === audio) audioRef.current = null; if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none' }
+      audio.onended = () => { URL.revokeObjectURL(url); ttsSourceNodeRef.current = null; setIsSpeaking(false); setSpeakingContext(null); if (audioRef.current === audio) audioRef.current = null; if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none'; onEnded?.() }
+      audio.onerror = () => { URL.revokeObjectURL(url); setIsSpeaking(false); setSpeakingContext(null); if (audioRef.current === audio) audioRef.current = null; if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none' }
       await audio.play()
       ttsSpeechDurationRef.current = audio.duration ?? 0
     } catch { setIsSpeaking(false) }
@@ -1741,12 +1751,13 @@ function startThinkingChimes(): () => void {
       setMessages((prev) => [...prev, { role: 'monday', time: timeStr, text: reply }])
       if (isVoice && speechOn) {
         const endsWithQuestion = /\?\s*$/.test(reply.replace(/\[\/?(gold|green|red)\]/g, '').trim())
+        setSpeakingContext('chat')
         void speakText(reply, endsWithQuestion ? () => startVoiceRecording() : undefined)
       }
     } catch {
       const errorReply = 'Connection error. Please try again.'
       setMessages((prev) => [...prev, { role: 'monday', time: timeStr, text: errorReply }])
-      if (isVoice && speechOn) void speakText(errorReply)
+      if (isVoice && speechOn) { setSpeakingContext('chat'); void speakText(errorReply) }
     } finally {
   stopThinkingChimesRef.current?.()
   stopThinkingChimesRef.current = null
@@ -2372,9 +2383,16 @@ const visibleDaySummaries = useMemo(() => {
                   ))}
                 </div>
                 {tvAlertTab === 'feed' ? (
-                  <div style={{ flex: 1, overflowY: 'auto', padding: '0', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', gap: '6px', padding: '8px 16px', borderBottom: `1px solid ${T.borderFaint}`, flexShrink: 0 }}>
+                      {([['all', 'All'], ['signal', 'Signals'], ['indicator', 'Indicators'], ['price', 'Price']] as const).map(([val, lbl]) => (
+                        <div key={val} onClick={() => setTvAlertFilter(val)} style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', padding: '3px 8px', cursor: 'pointer', border: `1px solid ${tvAlertFilter === val ? T.goldFaint9 : T.borderFaint}`, background: tvAlertFilter === val ? T.goldFaint3 : 'transparent', color: tvAlertFilter === val ? T.gold : T.text6, transition: 'all 0.15s' }}>{lbl}</div>
+                      ))}
+                    </div>
+                  <div style={{ flex: 1, overflowY: 'auto' }}>
                     {(() => {
-                      const groups = groupTvAlertsBySession(tvAlerts)
+                      const filtered = tvAlertFilter === 'all' ? tvAlerts : tvAlerts.filter(a => classifyTvAlert(a) === tvAlertFilter)
+                      const groups = groupTvAlertsBySession(filtered)
                       if (groups.length === 0) return (
                         <div style={{ padding: '24px 16px', color: T.text6, fontStyle: 'italic', fontSize: '13px' }}>{tvAlerts.length === 0 ? 'No alerts yet. Go to Setup to configure your webhook.' : 'No alerts today.'}</div>
                       )
@@ -2410,6 +2428,7 @@ const visibleDaySummaries = useMemo(() => {
                         </div>
                       ))
                     })()}
+                  </div>
                   </div>
                 ) : (
                   <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -3009,13 +3028,21 @@ const visibleDaySummaries = useMemo(() => {
             {/* Now playing / next summary bar */}
             <div style={{ background: T.pulseHero, borderBottom: `1px solid ${T.border}`, padding: '18px 24px', flexShrink: 0 }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
-                {/* Play button: locked for future summaries; replay-once for activeBriefing */}
-                {activeBriefing ? (
+                {/* Play button */}
+                {speakingContext === 'chat' ? (
+                  <div
+                    onClick={() => stopCurrentAudio()}
+                    title="Stop Monday"
+                    style={{ width: '50px', height: '50px', borderRadius: '50%', border: `1px solid ${T.goldFaint9}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '18px', color: T.gold, flexShrink: 0, background: T.goldFaint2, transition: 'all 0.2s' }}>
+                    ⏸
+                  </div>
+                ) : activeBriefing ? (
                   <div
                     onClick={() => {
                       if (isSpeaking) { stopCurrentAudio(); return }
                       if (activeBriefing.manualPlayUsed) return
                       setActiveBriefing((prev) => prev ? { ...prev, manualPlayUsed: true } : null)
+                      setSpeakingContext('briefing')
                       speakText(activeBriefing.content).then(() => setActiveBriefing(null))
                     }}
                     title={activeBriefing.manualPlayUsed ? 'Already replayed' : 'Replay once'}
@@ -3032,29 +3059,33 @@ const visibleDaySummaries = useMemo(() => {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
                     <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '19px', fontWeight: 500, fontStyle: 'italic', color: T.text }}>
-                      {activeBriefing ? activeBriefing.name : nextSummary ? nextSummary.name : 'No Scheduled Summary'}
+                      {speakingContext === 'chat' ? 'Monday' : activeBriefing ? activeBriefing.name : nextSummary ? nextSummary.name : 'No Scheduled Summary'}
                     </div>
-                    {activeBriefing && !activeBriefing.manualPlayUsed && (
+                    {speakingContext === 'chat' && (
+                      <div style={{ fontSize: '11px', color: T.gold, background: T.goldFaint2, border: `1px solid ${T.goldFaint7}`, padding: '2px 8px', letterSpacing: '0.1em', fontWeight: 600 }}>SPEAKING</div>
+                    )}
+                    {speakingContext !== 'chat' && activeBriefing && !activeBriefing.manualPlayUsed && (
                       <div style={{ fontSize: '11px', color: T.green, background: T.greenFaint3, border: `1px solid ${T.greenBorder2}`, padding: '2px 8px', letterSpacing: '0.1em', fontWeight: 600 }}>
                         LIVE · {activeBriefingMinsLeft}m left
                       </div>
                     )}
-                    {activeBriefing && activeBriefing.manualPlayUsed && (
+                    {speakingContext !== 'chat' && activeBriefing && activeBriefing.manualPlayUsed && (
                       <div style={{ fontSize: '11px', color: T.text6, background: T.inputBg, border: `1px solid ${T.borderFaint}`, padding: '2px 8px', letterSpacing: '0.1em', fontWeight: 600 }}>PLAYED</div>
                     )}
-                    {!activeBriefing && nextSummary && (
+                    {speakingContext !== 'chat' && !activeBriefing && nextSummary && (
                       <div style={{ fontSize: '11px', color: T.gold, background: T.goldFaint2, border: `1px solid ${T.goldFaint7}`, padding: '2px 8px', letterSpacing: '0.1em', fontWeight: 600 }}>{nextSummaryCountdown}</div>
                     )}
                   </div>
                   <div style={{ fontSize: '12.5px', color: T.text5, fontFamily: "'DM Mono', monospace", marginBottom: '10px' }}>
-                    {activeBriefing
-                      ? activeBriefing.manualPlayUsed
-                        ? 'Summary complete · Moving to past summaries'
-                        : 'Auto-played · Tap ▶ once to replay within window'
-                      : nextSummary
-                        ? <><TimeHover iso={nextSummary.run_at} label={formatSummaryRunAt(nextSummary.run_at)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /> · {nextSummary.type === 'custom' ? 'Custom summary' : 'Scheduled summary'} · Your watchlist</>
-
-                        : 'Create a scheduled summary below to populate this section'}
+                    {speakingContext === 'chat'
+                      ? 'Chat · Tap ⏸ to stop'
+                      : activeBriefing
+                        ? activeBriefing.manualPlayUsed
+                          ? 'Summary complete · Moving to past summaries'
+                          : 'Auto-played · Tap ▶ once to replay within window'
+                        : nextSummary
+                          ? <><TimeHover iso={nextSummary.run_at} label={formatSummaryRunAt(nextSummary.run_at)} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} /> · {nextSummary.type === 'custom' ? 'Custom summary' : 'Scheduled summary'} · Your watchlist</>
+                          : 'Create a scheduled summary below to populate this section'}
                   </div>
                   <div style={{ height: '2px', background: T.goldFaint3, borderRadius: '1px', position: 'relative' }}>
                     <div ref={ttsBarRef} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '0%', background: T.gold, borderRadius: '1px' }} />
@@ -3347,9 +3378,16 @@ const visibleDaySummaries = useMemo(() => {
                       </div>
                     </div>
                     {tvAlertTab === 'feed' ? (
-                      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', gap: '6px', padding: '8px 18px', borderBottom: `1px solid ${T.borderFaint}`, flexShrink: 0 }}>
+                          {([['all', 'All'], ['signal', 'Signals'], ['indicator', 'Indicators'], ['price', 'Price']] as const).map(([val, lbl]) => (
+                            <div key={val} onClick={() => setTvAlertFilter(val)} style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', padding: '3px 8px', cursor: 'pointer', border: `1px solid ${tvAlertFilter === val ? T.goldFaint9 : T.borderFaint}`, background: tvAlertFilter === val ? T.goldFaint3 : 'transparent', color: tvAlertFilter === val ? T.gold : T.text6, transition: 'all 0.15s' }}>{lbl}</div>
+                          ))}
+                        </div>
+                        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                         {(() => {
-                          const groups = groupTvAlertsBySession(tvAlerts)
+                          const filtered = tvAlertFilter === 'all' ? tvAlerts : tvAlerts.filter(a => classifyTvAlert(a) === tvAlertFilter)
+                          const groups = groupTvAlertsBySession(filtered)
                           if (groups.length === 0) return (
                             <div style={{ padding: '30px', color: T.text6, fontStyle: 'italic', fontSize: '13px' }}>{tvAlerts.length === 0 ? 'No alerts yet. Go to Setup to configure your webhook.' : 'No alerts today.'}</div>
                           )
@@ -3386,6 +3424,7 @@ const visibleDaySummaries = useMemo(() => {
                             </div>
                           ))
                         })()}
+                        </div>
                       </div>
                     ) : (
                       <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
