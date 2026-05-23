@@ -977,8 +977,18 @@ function handleTouchEnd(e: React.TouchEvent) {
   })
   const [webhookKey, setWebhookKey] = useState<string | null>(null)
   const [webhookKeyLoading, setWebhookKeyLoading] = useState(false)
-  const [tvAlertTab, setTvAlertTab] = useState<'feed' | 'setup'>('feed')
+  const [tvAlertTab, setTvAlertTab] = useState<'feed' | 'rules' | 'setup'>('feed')
   const [tvAlertFilter, setTvAlertFilter] = useState<'all' | 'signal' | 'indicator' | 'price'>('all')
+
+  type AlertRuleRow = { id: string; ticker: string; rule_type: string; threshold: number; cooldown_minutes: number; enabled: boolean; last_triggered_at: string | null; created_at: string }
+  type AlertFiringRow = { id: string; ticker: string; rule_type: string; triggered_value: number; threshold: number; message: string; fired_at: string }
+  const [alertRules, setAlertRules] = useState<AlertRuleRow[]>([])
+  const [showRuleEditor, setShowRuleEditor] = useState(false)
+  const [ruleTicker, setRuleTicker] = useState('')
+  const [ruleType, setRuleType] = useState('price_above')
+  const [ruleThreshold, setRuleThreshold] = useState('')
+  const [ruleCooldown, setRuleCooldown] = useState(60)
+  const [ruleSaving, setRuleSaving] = useState(false)
   const [showTvFormatGuide, setShowTvFormatGuide] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   function copyWithConfirm(id: string, text: string) {
@@ -1007,6 +1017,7 @@ const speechPreferredOnRef = useRef(true)
   const resultWindowUntilRef = useRef<number>(0)
   const lastAlertCheckRef = useRef<number>(Date.now())
   const lastTvAlertTimestampRef = useRef<string>(new Date().toISOString())
+  const lastAlertFiringTimestampRef = useRef<string>(new Date().toISOString())
   const pageVisibleSinceRef = useRef<number>(Date.now())
   const [eventAlertToast, setEventAlertToast] = useState<string | null>(null)
   const eventAlertToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1221,6 +1232,7 @@ wakePreferredOnRef.current = initialWakeOn
       }
       const { data: alertRows } = await supabase.from('alerts').select('id, ticker, condition, target_price, triggered').eq('user_id', user.id).order('created_at', { ascending: true })
       if (alertRows) setAlerts(alertRows)
+      await loadAlertRules(user.id)
       const midnightUTC = getStartOfTodayETUtcIso()
       const { data: convos } = await supabase.from('conversations').select('id, role, content, created_at').eq('user_id', user.id).gte('created_at', midnightUTC).order('created_at', { ascending: true })
       setMessages((convos ?? []).map((c) => ({ role: c.role === 'assistant' ? 'monday' : 'user', time: formatSummaryTimeOnly(c.created_at), iso: c.created_at, text: c.content, dbId: c.id })))
@@ -1534,6 +1546,25 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
         for (const alert of data) {
           handleNewTvAlert(alert as TvAlert)
         }
+      }
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [user?.id])
+
+  // Poll for proactive alert firings every 3s
+  useEffect(() => {
+    if (!user) return
+    const interval = setInterval(async () => {
+      const since = lastAlertFiringTimestampRef.current
+      const { data } = await supabase
+        .from('alert_firings')
+        .select('id, ticker, rule_type, triggered_value, threshold, message, fired_at')
+        .eq('user_id', user.id)
+        .gt('fired_at', since)
+        .order('fired_at', { ascending: true })
+      if (data && data.length > 0) {
+        lastAlertFiringTimestampRef.current = data[data.length - 1].fired_at
+        for (const firing of data) handleNewAlertFiring(firing as AlertFiringRow)
       }
     }, 3000)
     return () => clearInterval(interval)
@@ -1951,6 +1982,54 @@ function startThinkingChimes(): () => void {
       const briefPrompt = `TradingView just fired an alert${alert.ticker ? ` on ${alert.ticker}` : ''}${action ? ` — ${action.toUpperCase()} signal` : ''}: "${alert.message}"${alert.price != null ? ` at price ${alert.price}` : ''}. Give a quick 2-3 sentence briefing on what this signal means and what to watch for right now.`
       void handleSendWithText(briefPrompt, false)
     }
+  }
+
+  async function loadAlertRules(userId: string) {
+    const { data } = await supabase.from('alert_rules').select('*').eq('user_id', userId).order('created_at', { ascending: true })
+    if (data) setAlertRules(data as AlertRuleRow[])
+  }
+
+  async function saveAlertRule() {
+    if (!user || !ruleTicker || !ruleThreshold || ruleSaving) return
+    const threshold = parseFloat(ruleThreshold)
+    if (isNaN(threshold) || threshold <= 0) return
+    setRuleSaving(true)
+    const { data } = await supabase.from('alert_rules').insert({
+      user_id: user.id, ticker: ruleTicker, rule_type: ruleType, threshold, cooldown_minutes: ruleCooldown,
+    }).select().single()
+    if (data) setAlertRules((prev) => [...prev, data as AlertRuleRow])
+    setRuleTicker(''); setRuleThreshold(''); setRuleSaving(false); setShowRuleEditor(false)
+  }
+
+  async function removeAlertRule(id: string) {
+    setAlertRules((prev) => prev.filter((r) => r.id !== id))
+    await supabase.from('alert_rules').delete().eq('id', id)
+  }
+
+  function handleNewAlertFiring(firing: AlertFiringRow) {
+    if (eventAlertToastTimerRef.current) clearTimeout(eventAlertToastTimerRef.current)
+    setEventAlertToast(`Alert: ${firing.message}`)
+    eventAlertToastTimerRef.current = setTimeout(() => setEventAlertToast(null), 12_000)
+    if (speechOnRef.current) void speakText(firing.message, undefined, 'alert')
+  }
+
+  function ruleTypeLabel(t: string): string {
+    switch (t) {
+      case 'price_above':      return '▲ above'
+      case 'price_below':      return '▼ below'
+      case 'vwap_cross_above': return '↑ VWAP'
+      case 'vwap_cross_below': return '↓ VWAP'
+      case 'volume_spike':     return 'vol ×'
+      case 'pct_move_up':      return '% up'
+      case 'pct_move_down':    return '% down'
+      default:                 return t
+    }
+  }
+
+  function formatRuleThreshold(type: string, threshold: number): string {
+    if (type === 'volume_spike') return `${threshold}× avg`
+    if (type.includes('pct')) return `${threshold}%`
+    return `$${threshold}`
   }
 
   async function loadScheduledSummariesFromSupabase(userId: string) {
@@ -2421,13 +2500,63 @@ const visibleDaySummaries = useMemo(() => {
             {mobilePanel === 'tradingview' && (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: T.panelBg }}>
                 <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', gap: '16px', flexShrink: 0 }}>
-                  {(['feed', 'setup'] as const).map((t) => (
+                  {(['feed', 'rules', 'setup'] as const).map((t) => (
                     <div key={t} onClick={() => { setTvAlertTab(t); if (t === 'setup' && !webhookKey) void fetchWebhookKey() }} style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: 'pointer', color: tvAlertTab === t ? T.gold : T.text6, borderBottom: `2px solid ${tvAlertTab === t ? T.gold : 'transparent'}`, paddingBottom: '4px' }}>
-                      {t === 'feed' ? `Feed${tvAlerts.filter(a => isTodayET(a.created_at)).length ? ` (${tvAlerts.filter(a => isTodayET(a.created_at)).length})` : ''}` : 'Setup'}
+                      {t === 'feed' ? `Feed${tvAlerts.filter(a => isTodayET(a.created_at)).length ? ` (${tvAlerts.filter(a => isTodayET(a.created_at)).length})` : ''}` : t === 'rules' ? `Rules${alertRules.length ? ` (${alertRules.length})` : ''}` : 'Setup'}
                     </div>
                   ))}
                 </div>
-                {tvAlertTab === 'feed' ? (
+                {tvAlertTab === 'rules' ? (
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ fontSize: '10px', letterSpacing: '0.2em', textTransform: 'uppercase', color: T.gold, fontWeight: 600 }}>Proactive Alerts</div>
+                      <div onClick={() => { setRuleTicker(watchlist[0]?.ticker || ''); setShowRuleEditor((v) => !v) }} style={{ fontSize: '20px', color: T.goldText, cursor: 'pointer', lineHeight: 1 }}>+</div>
+                    </div>
+                    {showRuleEditor && (
+                      <div style={{ padding: '10px', background: T.goldFaint, border: `1px solid ${T.goldFaint5}`, display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                        <select value={ruleTicker} onChange={(e) => setRuleTicker(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint6}`, color: T.gold, padding: '5px 8px', fontSize: '12px', fontFamily: "'DM Mono', monospace", outline: 'none', width: '100%' }}>
+                          <option value="">Select ticker...</option>
+                          {watchlist.map((w) => <option key={w.ticker} value={w.ticker}>{w.ticker}</option>)}
+                        </select>
+                        <select value={ruleType} onChange={(e) => setRuleType(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint6}`, color: T.text, padding: '5px 8px', fontSize: '12px', fontFamily: "'DM Mono', monospace", outline: 'none', width: '100%' }}>
+                          <option value="price_above">Price crosses above</option>
+                          <option value="price_below">Price crosses below</option>
+                          <option value="vwap_cross_above">Crosses above VWAP</option>
+                          <option value="vwap_cross_below">Crosses below VWAP</option>
+                          <option value="volume_spike">Volume spike (multiplier)</option>
+                          <option value="pct_move_up">% move up from open</option>
+                          <option value="pct_move_down">% move down from open</option>
+                        </select>
+                        <input value={ruleThreshold} onChange={(e) => setRuleThreshold(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void saveAlertRule() }} placeholder={ruleType === 'volume_spike' ? 'e.g. 3.0 (3× avg volume)' : ruleType.includes('pct') ? 'e.g. 2.5 (%)' : 'e.g. 185.50'} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint6}`, color: T.text, padding: '6px 8px', fontSize: '12px', fontFamily: "'DM Mono', monospace", outline: 'none', width: '100%', boxSizing: 'border-box' as const }} />
+                        <select value={ruleCooldown} onChange={(e) => setRuleCooldown(parseInt(e.target.value))} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint6}`, color: T.text, padding: '5px 8px', fontSize: '12px', fontFamily: "'DM Mono', monospace", outline: 'none', width: '100%' }}>
+                          <option value={15}>15 min cooldown</option>
+                          <option value={30}>30 min cooldown</option>
+                          <option value={60}>1 hour cooldown</option>
+                          <option value={120}>2 hour cooldown</option>
+                          <option value={240}>4 hour cooldown</option>
+                          <option value={1440}>Daily cooldown</option>
+                        </select>
+                        <div onClick={() => void saveAlertRule()} style={{ padding: '6px', textAlign: 'center', background: ruleTicker && ruleThreshold ? T.goldFaint3 : T.inputBg, border: `1px solid ${ruleTicker && ruleThreshold ? T.goldFaint9 : T.borderItem}`, color: ruleTicker && ruleThreshold ? T.gold : T.text6, fontSize: '12px', fontWeight: 600, cursor: 'pointer', letterSpacing: '0.08em' }}>
+                          {ruleSaving ? 'Saving...' : 'Save Rule'}
+                        </div>
+                      </div>
+                    )}
+                    {alertRules.length === 0 && !showRuleEditor && <div style={{ fontSize: '11px', color: T.text8, fontStyle: 'italic' }}>No rules yet. Tap + to add one.</div>}
+                    {alertRules.map((rule) => (
+                      <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                        onMouseEnter={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.rule-remove') as HTMLElement; if (rm) rm.style.opacity = '1' }}
+                        onMouseLeave={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.rule-remove') as HTMLElement; if (rm) rm.style.opacity = '0' }}>
+                        <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: T.gold, flexShrink: 0 }} />
+                        <span style={{ fontSize: '12px', fontFamily: "'DM Mono', monospace", color: T.text4, flex: 1 }}>
+                          <span style={{ color: T.gold, fontWeight: 600 }}>{rule.ticker}</span>{' '}
+                          <span style={{ color: T.text5 }}>{ruleTypeLabel(rule.rule_type)}</span>{' '}
+                          <span style={{ color: T.text3 }}>{formatRuleThreshold(rule.rule_type, rule.threshold)}</span>
+                        </span>
+                        <div className="rule-remove" onClick={() => void removeAlertRule(rule.id)} style={{ fontSize: '10px', color: T.red, cursor: 'pointer', padding: '1px 5px', border: `1px solid ${T.redBorder}`, opacity: 0, transition: 'opacity 0.15s', background: T.alertRemoveBg, flexShrink: 0 }}>✕</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : tvAlertTab === 'feed' ? (
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <div style={{ display: 'flex', gap: '6px', padding: '8px 16px', borderBottom: `1px solid ${T.borderFaint}`, flexShrink: 0 }}>
                       {([['all', 'All'], ['signal', 'Signals'], ['indicator', 'Indicators'], ['price', 'Price']] as const).map(([val, lbl]) => (
@@ -3367,14 +3496,64 @@ const visibleDaySummaries = useMemo(() => {
                     {selector}
                     <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                        {(['feed', 'setup'] as const).map((t) => (
+                        {(['feed', 'rules', 'setup'] as const).map((t) => (
                           <div key={t} onClick={() => { setTvAlertTab(t); if (t === 'setup' && !webhookKey) void fetchWebhookKey() }} style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: tvAlertTab === t ? T.gold : T.text6, display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600, cursor: 'pointer', paddingBottom: '4px', borderBottom: tvAlertTab === t ? `2px solid ${T.gold}` : '2px solid transparent' }}>
-                            {t === 'feed' ? `Feed${tvAlerts.filter(a => isTodayET(a.created_at)).length ? ` (${tvAlerts.filter(a => isTodayET(a.created_at)).length})` : ''}` : 'Setup'}
+                            {t === 'feed' ? `Feed${tvAlerts.filter(a => isTodayET(a.created_at)).length ? ` (${tvAlerts.filter(a => isTodayET(a.created_at)).length})` : ''}` : t === 'rules' ? `Rules${alertRules.length ? ` (${alertRules.length})` : ''}` : 'Setup'}
                           </div>
                         ))}
                       </div>
                     </div>
-                    {tvAlertTab === 'feed' ? (
+                    {tvAlertTab === 'rules' ? (
+                      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ fontSize: '10px', letterSpacing: '0.2em', textTransform: 'uppercase', color: T.gold, fontWeight: 600 }}>Proactive Alerts</div>
+                          <div onClick={() => { setRuleTicker(watchlist[0]?.ticker || ''); setShowRuleEditor((v) => !v) }} style={{ fontSize: '20px', color: T.goldText, cursor: 'pointer', lineHeight: 1 }}>+</div>
+                        </div>
+                        {showRuleEditor && (
+                          <div style={{ padding: '12px', background: T.goldFaint, border: `1px solid ${T.goldFaint5}`, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <select value={ruleTicker} onChange={(e) => setRuleTicker(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint6}`, color: T.gold, padding: '5px 8px', fontSize: '12px', fontFamily: "'DM Mono', monospace", outline: 'none', width: '100%' }}>
+                              <option value="">Select ticker...</option>
+                              {watchlist.map((w) => <option key={w.ticker} value={w.ticker}>{w.ticker}{w.price ? ` — ${w.price}` : ''}</option>)}
+                            </select>
+                            <select value={ruleType} onChange={(e) => setRuleType(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint6}`, color: T.text, padding: '5px 8px', fontSize: '12px', fontFamily: "'DM Mono', monospace", outline: 'none', width: '100%' }}>
+                              <option value="price_above">Price crosses above</option>
+                              <option value="price_below">Price crosses below</option>
+                              <option value="vwap_cross_above">Crosses above VWAP</option>
+                              <option value="vwap_cross_below">Crosses below VWAP</option>
+                              <option value="volume_spike">Volume spike (multiplier)</option>
+                              <option value="pct_move_up">% move up from open</option>
+                              <option value="pct_move_down">% move down from open</option>
+                            </select>
+                            <input value={ruleThreshold} onChange={(e) => setRuleThreshold(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void saveAlertRule() }} placeholder={ruleType === 'volume_spike' ? 'e.g. 3.0 (3× avg volume)' : ruleType.includes('pct') ? 'e.g. 2.5 (%)' : 'e.g. 185.50'} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint6}`, color: T.text, padding: '6px 8px', fontSize: '12px', fontFamily: "'DM Mono', monospace", outline: 'none', width: '100%', boxSizing: 'border-box' as const }} />
+                            <select value={ruleCooldown} onChange={(e) => setRuleCooldown(parseInt(e.target.value))} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint6}`, color: T.text, padding: '5px 8px', fontSize: '12px', fontFamily: "'DM Mono', monospace", outline: 'none', width: '100%' }}>
+                              <option value={15}>15 min cooldown</option>
+                              <option value={30}>30 min cooldown</option>
+                              <option value={60}>1 hour cooldown</option>
+                              <option value={120}>2 hour cooldown</option>
+                              <option value={240}>4 hour cooldown</option>
+                              <option value={1440}>Daily cooldown</option>
+                            </select>
+                            <div onClick={() => void saveAlertRule()} style={{ padding: '7px', textAlign: 'center', background: ruleTicker && ruleThreshold ? T.goldFaint3 : T.inputBg, border: `1px solid ${ruleTicker && ruleThreshold ? T.goldFaint9 : T.borderItem}`, color: ruleTicker && ruleThreshold ? T.gold : T.text6, fontSize: '12px', fontWeight: 600, cursor: 'pointer', letterSpacing: '0.08em' }}>
+                              {ruleSaving ? 'Saving...' : 'Save Rule'}
+                            </div>
+                          </div>
+                        )}
+                        {alertRules.length === 0 && !showRuleEditor && <div style={{ fontSize: '11px', color: T.text8, fontStyle: 'italic' }}>No rules yet. Click + to add one.</div>}
+                        {alertRules.map((rule) => (
+                          <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                            onMouseEnter={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.rule-remove') as HTMLElement; if (rm) rm.style.opacity = '1' }}
+                            onMouseLeave={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.rule-remove') as HTMLElement; if (rm) rm.style.opacity = '0' }}>
+                            <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: T.gold, flexShrink: 0 }} />
+                            <span style={{ fontSize: '12px', fontFamily: "'DM Mono', monospace", color: T.text4, flex: 1 }}>
+                              <span style={{ color: T.gold, fontWeight: 600 }}>{rule.ticker}</span>{' '}
+                              <span style={{ color: T.text5 }}>{ruleTypeLabel(rule.rule_type)}</span>{' '}
+                              <span style={{ color: T.text3 }}>{formatRuleThreshold(rule.rule_type, rule.threshold)}</span>
+                            </span>
+                            <div className="rule-remove" onClick={() => void removeAlertRule(rule.id)} style={{ fontSize: '10px', color: T.red, cursor: 'pointer', padding: '1px 5px', border: `1px solid ${T.redBorder}`, opacity: 0, transition: 'opacity 0.15s', background: T.alertRemoveBg, flexShrink: 0 }}>✕</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : tvAlertTab === 'feed' ? (
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
                         <div style={{ display: 'flex', gap: '6px', padding: '8px 18px', borderBottom: `1px solid ${T.borderFaint}`, flexShrink: 0 }}>
                           {([['all', 'All'], ['signal', 'Signals'], ['indicator', 'Indicators'], ['price', 'Price']] as const).map(([val, lbl]) => (
