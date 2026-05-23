@@ -1,12 +1,9 @@
 {
   "crons": [
-    {
-      "path": "/api/cron/ingest-candles",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/check-alerts",
-      "schedule": "* * * * *"
-    }
+    { "path": "/api/cron/ingest-candles", "schedule": "* * * * *"       },
+    { "path": "/api/cron/check-alerts",   "schedule": "* * * * *"       },
+    { "path": "/api/cron/ingest-realtime", "schedule": "* * * * *"      },
+    { "path": "/api/cron/ingest-daily",   "schedule": "30 14 * * 1-5"   },
+    { "path": "/api/cron/ingest-eod",     "schedule": "0 1 * * 2-6"     }
   ]
 }

@@ -23,6 +23,7 @@ import {
 } from '@/lib/market-data'
 import { buildMarketState, MarketStateSnapshot } from '@/lib/market-state'
 import { getNyseEquitiesStatus } from '@/lib/market-hours'
+import { buildHistoricalContext } from '@/lib/context-builder'
 
 // ── SONNET DAILY CAP ─────────────────────────────────────────────────────────
 const sonnetUsage = new Map<string, { count: number; dateET: string }>()
@@ -613,7 +614,7 @@ const calendarToDate = new Date(`${todayStr}T12:00:00`)
 calendarToDate.setDate(calendarToDate.getDate() + 45)
 const calendarTo = calendarToDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
-const [intradayResult, economicEvents, earningsEvents, macroData, sectorData] = await Promise.all([
+const [intradayResult, economicEvents, earningsEvents, macroData, sectorData, historicalContext] = await Promise.all([
   fetchIntraday(intradaySymbols, {
     interval: '5min',
     outputsize: intradayDateRequest.isHistorical ? 500 : 100,
@@ -624,6 +625,7 @@ const [intradayResult, economicEvents, earningsEvents, macroData, sectorData] = 
   fetchEarningsCalendar(intradaySymbols, todayStr, calendarTo),
   fetchMacroData(),
   fetchSectorPerformance(),
+  buildHistoricalContext(message, watchlistTickers, intent.focusSymbol),
 ])
 
 console.log('[chat intraday fetch result]', {
@@ -774,6 +776,7 @@ const fullContextBlocks = [
   insiderContext,
   analystContext,
   optionsContext,
+  historicalContext,
 ].filter(Boolean).join('\n\n')
 
     const researchContextBlocks = buildResearchContext({

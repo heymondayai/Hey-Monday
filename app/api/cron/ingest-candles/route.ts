@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase-admin'
-import { fetchIntraday } from '@/lib/market-data'
+import { fetchCandles as fetchIntraday } from '@/lib/providers/candles'
 import { upsertCandles, CandleRow } from '@/lib/candle-store'
 import { getNyseEquitiesStatus } from '@/lib/market-hours'
 

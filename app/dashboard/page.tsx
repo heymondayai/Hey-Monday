@@ -236,7 +236,7 @@ const LIGHT = {
   pricingToggle:'rgba(0,0,0,0.03)',
 }
 
-type PanelId = 'pulse' | 'events' | 'news' | 'summaries' | 'tradingview' | 'chat'
+type PanelId = 'pulse' | 'events' | 'news' | 'summaries' | 'alerts' | 'tradingview' | 'chat'
 type LayoutId = '2x2' | 'focus' | '2col' | '2row'
 const DASHBOARD_PREFS_KEY = 'heymonday_dashboard_prefs_v1'
 
@@ -812,7 +812,7 @@ const [slotPanels, setSlotPanels] = useState<PanelId[]>(() => {
     const raw = window.localStorage.getItem(DASHBOARD_PREFS_KEY)
     if (!raw) return ['pulse', 'events', 'news', 'summaries']
     const parsed = JSON.parse(raw) as Partial<DashboardPrefs>
-    const validPanels = ['pulse', 'events', 'news', 'summaries', 'tradingview']
+    const validPanels = ['pulse', 'events', 'news', 'summaries', 'alerts', 'tradingview']
     const arr = Array.isArray(parsed.slotPanels) ? parsed.slotPanels.filter((p): p is PanelId => validPanels.includes(p)) : []
     return arr.length === 4 ? arr : ['pulse', 'events', 'news', 'summaries']
   } catch {
@@ -841,13 +841,14 @@ const [newsTab, setNewsTab] = useState<'watchlist' | 'general'>(() => {
   const touchStartXRef = useRef<number>(0)
 const touchStartYRef = useRef<number>(0)
 
-const MOBILE_PANELS: PanelId[] = ['pulse', 'events', 'news', 'summaries', 'tradingview', 'chat']
+const MOBILE_PANELS: PanelId[] = ['pulse', 'events', 'news', 'summaries', 'alerts', 'tradingview', 'chat']
 const MOBILE_PANEL_LABELS: Record<PanelId, { label: string }> = {
   pulse:       { label: 'Pulse' },
   events:      { label: 'Events' },
   news:        { label: 'News' },
   summaries:   { label: 'Briefs' },
-  tradingview: { label: 'TV Alerts' },
+  alerts:      { label: 'Alerts' },
+  tradingview: { label: 'TradingView' },
   chat:        { label: 'Chat' },
 }
 
@@ -977,7 +978,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   })
   const [webhookKey, setWebhookKey] = useState<string | null>(null)
   const [webhookKeyLoading, setWebhookKeyLoading] = useState(false)
-  const [tvAlertTab, setTvAlertTab] = useState<'feed' | 'rules' | 'setup'>('feed')
+  const [tvAlertTab, setTvAlertTab] = useState<'feed' | 'setup'>('feed')
   const [tvAlertFilter, setTvAlertFilter] = useState<'all' | 'signal' | 'indicator' | 'price'>('all')
 
   type AlertRuleRow = { id: string; ticker: string; rule_type: string; threshold: number; cooldown_minutes: number; enabled: boolean; last_triggered_at: string | null; created_at: string }
@@ -989,6 +990,9 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [ruleThreshold, setRuleThreshold] = useState('')
   const [ruleCooldown, setRuleCooldown] = useState(60)
   const [ruleSaving, setRuleSaving] = useState(false)
+  const [alertFirings, setAlertFirings] = useState<AlertFiringRow[]>([])
+  const [alertFiringHistory, setAlertFiringHistory] = useState<AlertFiringRow[]>([])
+  const [alertsPanelTab, setAlertsPanelTab] = useState<'rules' | 'history'>('rules')
   const [showTvFormatGuide, setShowTvFormatGuide] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   function copyWithConfirm(id: string, text: string) {
@@ -1017,7 +1021,7 @@ const speechPreferredOnRef = useRef(true)
   const resultWindowUntilRef = useRef<number>(0)
   const lastAlertCheckRef = useRef<number>(Date.now())
   const lastTvAlertTimestampRef = useRef<string>(new Date().toISOString())
-  const lastAlertFiringTimestampRef = useRef<string>(new Date().toISOString())
+
   const pageVisibleSinceRef = useRef<number>(Date.now())
   const [eventAlertToast, setEventAlertToast] = useState<string | null>(null)
   const eventAlertToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1233,6 +1237,7 @@ wakePreferredOnRef.current = initialWakeOn
       const { data: alertRows } = await supabase.from('alerts').select('id, ticker, condition, target_price, triggered').eq('user_id', user.id).order('created_at', { ascending: true })
       if (alertRows) setAlerts(alertRows)
       await loadAlertRules(user.id)
+      await loadAlertFirings(user.id)
       const midnightUTC = getStartOfTodayETUtcIso()
       const { data: convos } = await supabase.from('conversations').select('id, role, content, created_at').eq('user_id', user.id).gte('created_at', midnightUTC).order('created_at', { ascending: true })
       setMessages((convos ?? []).map((c) => ({ role: c.role === 'assistant' ? 'monday' : 'user', time: formatSummaryTimeOnly(c.created_at), iso: c.created_at, text: c.content, dbId: c.id })))
@@ -1551,23 +1556,28 @@ return () => { clearInterval(timer); clearInterval(newsInterval); clearInterval(
     return () => clearInterval(interval)
   }, [user?.id])
 
-  // Poll for proactive alert firings every 3s
+  // Subscribe to Realtime broadcast for proactive alert firings
   useEffect(() => {
     if (!user) return
-    const interval = setInterval(async () => {
-      const since = lastAlertFiringTimestampRef.current
-      const { data } = await supabase
-        .from('alert_firings')
-        .select('id, ticker, rule_type, triggered_value, threshold, message, fired_at')
-        .eq('user_id', user.id)
-        .gt('fired_at', since)
-        .order('fired_at', { ascending: true })
-      if (data && data.length > 0) {
-        lastAlertFiringTimestampRef.current = data[data.length - 1].fired_at
-        for (const firing of data) handleNewAlertFiring(firing as AlertFiringRow)
-      }
-    }, 3000)
-    return () => clearInterval(interval)
+    const channel = supabase
+      .channel(`proactive-alert-${user.id}`)
+      .on('broadcast', { event: 'alert-fired' }, ({ payload }) => {
+        const firing = payload as { rule_id: string; ticker: string; rule_type: string; triggered_value: number; threshold: number; message: string }
+        const row: AlertFiringRow = {
+          id:              firing.rule_id,
+          ticker:          firing.ticker,
+          rule_type:       firing.rule_type,
+          triggered_value: firing.triggered_value,
+          threshold:       firing.threshold,
+          message:         firing.message,
+          fired_at:        new Date().toISOString(),
+        }
+        setAlertFirings((prev) => [row, ...prev].slice(0, 20))
+        setAlertFiringHistory((prev) => [row, ...prev].slice(0, 200))
+        handleNewAlertFiring(row)
+      })
+      .subscribe()
+    return () => { void supabase.removeChannel(channel) }
   }, [user?.id])
 
   async function doFetchPrices(wl: typeof watchlist, type?: string, triggerPulse = false) {
@@ -1982,6 +1992,27 @@ function startThinkingChimes(): () => void {
       const briefPrompt = `TradingView just fired an alert${alert.ticker ? ` on ${alert.ticker}` : ''}${action ? ` — ${action.toUpperCase()} signal` : ''}: "${alert.message}"${alert.price != null ? ` at price ${alert.price}` : ''}. Give a quick 2-3 sentence briefing on what this signal means and what to watch for right now.`
       void handleSendWithText(briefPrompt, false)
     }
+  }
+
+  async function loadAlertFirings(userId: string) {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const [{ data: recent }, { data: history }] = await Promise.all([
+      supabase
+        .from('alert_firings')
+        .select('id, ticker, rule_type, triggered_value, threshold, message, fired_at')
+        .eq('user_id', userId)
+        .gte('fired_at', cutoff)
+        .order('fired_at', { ascending: false })
+        .limit(20),
+      supabase
+        .from('alert_firings')
+        .select('id, ticker, rule_type, triggered_value, threshold, message, fired_at')
+        .eq('user_id', userId)
+        .order('fired_at', { ascending: false })
+        .limit(200),
+    ])
+    if (recent) setAlertFirings(recent as AlertFiringRow[])
+    if (history) setAlertFiringHistory(history as AlertFiringRow[])
   }
 
   async function loadAlertRules(userId: string) {
@@ -2497,26 +2528,27 @@ const visibleDaySummaries = useMemo(() => {
               </div>
             )}
 
-            {mobilePanel === 'tradingview' && (
+            {mobilePanel === 'alerts' && (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: T.panelBg }}>
-                <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', gap: '16px', flexShrink: 0 }}>
-                  {(['feed', 'rules', 'setup'] as const).map((t) => (
-                    <div key={t} onClick={() => { setTvAlertTab(t); if (t === 'setup' && !webhookKey) void fetchWebhookKey() }} style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: 'pointer', color: tvAlertTab === t ? T.gold : T.text6, borderBottom: `2px solid ${tvAlertTab === t ? T.gold : 'transparent'}`, paddingBottom: '4px' }}>
-                      {t === 'feed' ? `Feed${tvAlerts.filter(a => isTodayET(a.created_at)).length ? ` (${tvAlerts.filter(a => isTodayET(a.created_at)).length})` : ''}` : t === 'rules' ? `Rules${alertRules.length ? ` (${alertRules.length})` : ''}` : 'Setup'}
-                    </div>
-                  ))}
+                <div style={{ padding: '10px 14px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    {(['rules', 'history'] as const).map(t => (
+                      <div key={t} onClick={() => setAlertsPanelTab(t)} style={{ fontSize: '11px', letterSpacing: '0.14em', textTransform: 'uppercase', color: alertsPanelTab === t ? T.gold : T.text6, fontWeight: 600, cursor: 'pointer', paddingBottom: '3px', borderBottom: alertsPanelTab === t ? `2px solid ${T.gold}` : '2px solid transparent' }}>
+                        {t === 'rules' ? `Rules${alertRules.length ? ` (${alertRules.length})` : ''}` : `History${alertFiringHistory.length ? ` (${alertFiringHistory.length})` : ''}`}
+                      </div>
+                    ))}
+                  </div>
+                  {alertsPanelTab === 'rules' && (
+                    <div onClick={() => { setRuleTicker(watchlist[0]?.ticker || ''); setShowRuleEditor((v) => !v) }} style={{ fontSize: '20px', color: T.goldText, cursor: 'pointer', lineHeight: 1 }}>+</div>
+                  )}
                 </div>
-                {tvAlertTab === 'rules' ? (
+                {alertsPanelTab === 'rules' ? (
                   <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ fontSize: '10px', letterSpacing: '0.2em', textTransform: 'uppercase', color: T.gold, fontWeight: 600 }}>Proactive Alerts</div>
-                      <div onClick={() => { setRuleTicker(watchlist[0]?.ticker || ''); setShowRuleEditor((v) => !v) }} style={{ fontSize: '20px', color: T.goldText, cursor: 'pointer', lineHeight: 1 }}>+</div>
-                    </div>
                     {showRuleEditor && (
-                      <div style={{ padding: '10px', background: T.goldFaint, border: `1px solid ${T.goldFaint5}`, display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                      <div style={{ padding: '12px', background: T.goldFaint, border: `1px solid ${T.goldFaint5}`, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <select value={ruleTicker} onChange={(e) => setRuleTicker(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint6}`, color: T.gold, padding: '5px 8px', fontSize: '12px', fontFamily: "'DM Mono', monospace", outline: 'none', width: '100%' }}>
                           <option value="">Select ticker...</option>
-                          {watchlist.map((w) => <option key={w.ticker} value={w.ticker}>{w.ticker}</option>)}
+                          {watchlist.map((w) => <option key={w.ticker} value={w.ticker}>{w.ticker}{w.price ? ` — ${w.price}` : ''}</option>)}
                         </select>
                         <select value={ruleType} onChange={(e) => setRuleType(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint6}`, color: T.text, padding: '5px 8px', fontSize: '12px', fontFamily: "'DM Mono', monospace", outline: 'none', width: '100%' }}>
                           <option value="price_above">Price crosses above</option>
@@ -2536,27 +2568,73 @@ const visibleDaySummaries = useMemo(() => {
                           <option value={240}>4 hour cooldown</option>
                           <option value={1440}>Daily cooldown</option>
                         </select>
-                        <div onClick={() => void saveAlertRule()} style={{ padding: '6px', textAlign: 'center', background: ruleTicker && ruleThreshold ? T.goldFaint3 : T.inputBg, border: `1px solid ${ruleTicker && ruleThreshold ? T.goldFaint9 : T.borderItem}`, color: ruleTicker && ruleThreshold ? T.gold : T.text6, fontSize: '12px', fontWeight: 600, cursor: 'pointer', letterSpacing: '0.08em' }}>
+                        <div onClick={() => void saveAlertRule()} style={{ padding: '7px', textAlign: 'center', background: ruleTicker && ruleThreshold ? T.goldFaint3 : T.inputBg, border: `1px solid ${ruleTicker && ruleThreshold ? T.goldFaint9 : T.borderItem}`, color: ruleTicker && ruleThreshold ? T.gold : T.text6, fontSize: '12px', fontWeight: 600, cursor: 'pointer', letterSpacing: '0.08em' }}>
                           {ruleSaving ? 'Saving...' : 'Save Rule'}
                         </div>
                       </div>
                     )}
-                    {alertRules.length === 0 && !showRuleEditor && <div style={{ fontSize: '11px', color: T.text8, fontStyle: 'italic' }}>No rules yet. Tap + to add one.</div>}
+                    {alertRules.length === 0 && !showRuleEditor && (
+                      <div style={{ fontSize: '11px', color: T.text8, fontStyle: 'italic' }}>No rules yet. Tap + to add one.</div>
+                    )}
                     {alertRules.map((rule) => (
-                      <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                        onMouseEnter={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.rule-remove') as HTMLElement; if (rm) rm.style.opacity = '1' }}
-                        onMouseLeave={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.rule-remove') as HTMLElement; if (rm) rm.style.opacity = '0' }}>
+                      <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                        onMouseEnter={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.rule-remove-m') as HTMLElement; if (rm) rm.style.opacity = '1' }}
+                        onMouseLeave={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.rule-remove-m') as HTMLElement; if (rm) rm.style.opacity = '0' }}>
                         <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: T.gold, flexShrink: 0 }} />
-                        <span style={{ fontSize: '12px', fontFamily: "'DM Mono', monospace", color: T.text4, flex: 1 }}>
+                        <span style={{ fontSize: '13px', fontFamily: "'DM Mono', monospace", color: T.text4, flex: 1 }}>
                           <span style={{ color: T.gold, fontWeight: 600 }}>{rule.ticker}</span>{' '}
                           <span style={{ color: T.text5 }}>{ruleTypeLabel(rule.rule_type)}</span>{' '}
                           <span style={{ color: T.text3 }}>{formatRuleThreshold(rule.rule_type, rule.threshold)}</span>
                         </span>
-                        <div className="rule-remove" onClick={() => void removeAlertRule(rule.id)} style={{ fontSize: '10px', color: T.red, cursor: 'pointer', padding: '1px 5px', border: `1px solid ${T.redBorder}`, opacity: 0, transition: 'opacity 0.15s', background: T.alertRemoveBg, flexShrink: 0 }}>✕</div>
+                        <div className="rule-remove-m" onClick={() => void removeAlertRule(rule.id)} style={{ fontSize: '11px', color: T.red, cursor: 'pointer', padding: '2px 7px', border: `1px solid ${T.redBorder}`, opacity: 0, transition: 'opacity 0.15s', background: T.alertRemoveBg, flexShrink: 0 }}>✕</div>
+                      </div>
+                    ))}
+                    {alertFirings.length > 0 && (
+                      <>
+                        <div style={{ marginTop: '6px', paddingTop: '10px', borderTop: `1px solid ${T.borderFaint2}`, fontSize: '10px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.text6, fontWeight: 600 }}>Today&apos;s Firings</div>
+                        {alertFirings.map((f) => (
+                          <div key={f.id} style={{ padding: '9px 10px', background: T.goldFaint, border: `1px solid ${T.goldFaint5}`, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '13px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>{f.ticker}</span>
+                              <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace", marginLeft: 'auto' }}>{new Date(f.fired_at).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+                            </div>
+                            <div style={{ fontSize: '13px', color: T.text3, lineHeight: 1.4 }}>{f.message}</div>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ flex: 1, overflowY: 'auto' }}>
+                    {alertFiringHistory.length === 0 ? (
+                      <div style={{ padding: '20px 16px', fontSize: '13px', color: T.text8, fontStyle: 'italic' }}>No alert history yet.</div>
+                    ) : alertFiringHistory.map(f => (
+                      <div key={f.id} style={{ padding: '11px 16px', borderBottom: `1px solid ${T.borderFaint3}`, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>{f.ticker}</span>
+                          <span style={{ fontSize: '11px', color: T.text5 }}>{ruleTypeLabel(f.rule_type)}</span>
+                          <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace", marginLeft: 'auto' }}>
+                            {new Date(f.fired_at).toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' })} {new Date(f.fired_at).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true })}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '13px', color: T.text4, lineHeight: 1.4 }}>{f.message}</div>
                       </div>
                     ))}
                   </div>
-                ) : tvAlertTab === 'feed' ? (
+                )}
+              </div>
+            )}
+
+            {mobilePanel === 'tradingview' && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: T.panelBg }}>
+                <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', gap: '16px', flexShrink: 0 }}>
+                  {(['feed', 'setup'] as const).map((t) => (
+                    <div key={t} onClick={() => { setTvAlertTab(t); if (t === 'setup' && !webhookKey) void fetchWebhookKey() }} style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: 'pointer', color: tvAlertTab === t ? T.gold : T.text6, borderBottom: `2px solid ${tvAlertTab === t ? T.gold : 'transparent'}`, paddingBottom: '4px' }}>
+                      {t === 'feed' ? `Feed${tvAlerts.filter(a => isTodayET(a.created_at)).length ? ` (${tvAlerts.filter(a => isTodayET(a.created_at)).length})` : ''}` : 'Setup'}
+                    </div>
+                  ))}
+                </div>
+                {tvAlertTab === 'feed' ? (
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <div style={{ display: 'flex', gap: '6px', padding: '8px 16px', borderBottom: `1px solid ${T.borderFaint}`, flexShrink: 0 }}>
                       {([['all', 'All'], ['signal', 'Signals'], ['indicator', 'Indicators'], ['price', 'Price']] as const).map(([val, lbl]) => (
@@ -3079,50 +3157,51 @@ const visibleDaySummaries = useMemo(() => {
               {watchlist.length === 0 && <div onClick={() => setShowWlEditor(true)} style={{ padding: '14px 18px', fontSize: '12px', color: T.goldText3, cursor: 'pointer', fontStyle: 'italic' }}>+ Add your first symbol</div>}
             </div>
 
-            {/* Alerts */}
-            {false && (
-            <div style={{ borderTop: `1px solid ${T.border}`, padding: '10px 18px', flexShrink: 0, maxHeight: '260px', overflowY: 'auto' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <div style={{ fontSize: '10px', letterSpacing: '0.25em', textTransform: 'uppercase', color: T.goldText, fontWeight: 600 }}>Price Alerts</div>
-                {alerts.length < 10 && <div onClick={() => { setAlertTicker(watchlist[activeWl]?.ticker || ''); setAlertCondition('above'); setAlertPrice(''); setShowAlertEditor((v) => !v) }} style={{ fontSize: '18px', color: T.goldText, cursor: 'pointer', lineHeight: 1 }}>+</div>}
-              </div>
-
-              {showAlertEditor && (
-                <div style={{ marginBottom: '10px', padding: '10px', background: T.goldFaint, border: `1px solid ${T.goldFaint5}`, display: 'flex', flexDirection: 'column', gap: '7px' }}>
-                  <select value={alertTicker} onChange={(e) => setAlertTicker(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint6}`, color: T.gold, padding: '5px 8px', fontSize: '12px', fontFamily: "'DM Mono', monospace", outline: 'none', width: '100%' }}>
-                    <option value="">Select ticker...</option>
-                    {watchlist.map((w) => <option key={w.ticker} value={w.ticker}>{w.ticker}{w.price ? ` — ${w.price}` : ''}</option>)}
-                  </select>
-                  <div style={{ display: 'flex', gap: '5px' }}>
-                    {(['above', 'below'] as const).map((c) => (
-                      <div key={c} onClick={() => setAlertCondition(c)} style={{ flex: 1, textAlign: 'center', padding: '5px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.08em', border: `1px solid ${alertCondition === c ? T.goldFaint10 : T.borderItem}`, color: alertCondition === c ? T.gold : T.text6, background: alertCondition === c ? T.goldFaint3 : 'transparent', transition: 'all 0.15s' }}>
-                        {c === 'above' ? '▲ Above' : '▼ Below'}
+            {/* ── Live Alert Feed ── */}
+            {(() => {
+              type FeedItem = { id: string; ticker: string | null; label: string; time: string; source: 'rule' | 'tv' }
+              const ruleFeedItems: FeedItem[] = alertFirings.map(f => ({
+                id: `r-${f.id}`, ticker: f.ticker, label: f.message, time: f.fired_at, source: 'rule' as const,
+              }))
+              const tvFeedItems: FeedItem[] = tvAlerts.slice(0, 30).map((a: any) => ({
+                id: `tv-${a.id}`,
+                ticker: a.ticker ?? null,
+                label: a.message || (a.ticker ? `${a.ticker} alert` : 'Alert'),
+                time: a.created_at,
+                source: 'tv' as const,
+              }))
+              const feed = [...ruleFeedItems, ...tvFeedItems]
+                .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+                .slice(0, 15)
+              return (
+                <div style={{ borderTop: `1px solid ${T.border}`, flexShrink: 0, maxHeight: '200px', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ padding: '7px 18px 5px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                    <div style={{ fontSize: '10px', letterSpacing: '0.25em', textTransform: 'uppercase', color: T.goldText, fontWeight: 600 }}>
+                      Alert Feed{feed.length > 0 ? ` (${feed.length})` : ''}
+                    </div>
+                    {feed.length > 0 && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: T.gold, boxShadow: `0 0 5px ${T.gold}` }} />}
+                  </div>
+                  <div style={{ overflowY: 'auto', flex: 1 }}>
+                    {feed.length === 0 ? (
+                      <div style={{ padding: '4px 18px 10px', fontSize: '11px', color: T.text8, fontStyle: 'italic' }}>No alerts fired yet</div>
+                    ) : feed.map(item => (
+                      <div key={item.id} style={{ padding: '4px 18px', display: 'flex', alignItems: 'flex-start', gap: '7px', borderBottom: `1px solid ${T.borderFaint3}` }}>
+                        <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: item.source === 'tv' ? T.text4 : T.gold, flexShrink: 0, marginTop: '5px' }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            {item.ticker && <span style={{ fontSize: '11px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>{item.ticker}</span>}
+                            <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace", marginLeft: 'auto', flexShrink: 0 }}>
+                              {new Date(item.time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true })}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '11px', color: T.text5, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</div>
+                        </div>
                       </div>
                     ))}
                   </div>
-                  <input value={alertPrice} onChange={(e) => setAlertPrice(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addAlert() }} placeholder="Target price e.g. 950.00" style={{ background: T.inputBg, border: `1px solid ${T.goldFaint6}`, color: T.text, padding: '6px 8px', fontSize: '12px', fontFamily: "'DM Mono', monospace", outline: 'none', width: '100%', boxSizing: 'border-box' as const }} />
-                  <div onClick={addAlert} style={{ padding: '6px', textAlign: 'center', background: alertTicker && alertPrice ? T.goldFaint3 : T.inputBg, border: `1px solid ${alertTicker && alertPrice ? T.goldFaint9 : T.borderItem}`, color: alertTicker && alertPrice ? T.gold : T.text6, fontSize: '12px', fontWeight: 600, cursor: 'pointer', letterSpacing: '0.08em' }}>
-                    {alertSaving ? 'Saving...' : 'Set Alert'}
-                  </div>
                 </div>
-              )}
-
-              {alerts.length === 0 && !showAlertEditor && <div style={{ fontSize: '11px', color: T.text8, fontStyle: 'italic', marginBottom: '6px' }}>No alerts set</div>}
-              {alerts.map((a) => (
-                <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}
-                  onMouseEnter={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.alert-remove') as HTMLElement; if (rm) rm.style.opacity = '1' }}
-                  onMouseLeave={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.alert-remove') as HTMLElement; if (rm) rm.style.opacity = '0' }}>
-                  <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: a.triggered ? T.green : T.text6, flexShrink: 0, boxShadow: a.triggered ? `0 0 6px ${T.greenGlow}` : 'none' }} />
-                  <span style={{ fontSize: '12px', fontFamily: "'DM Mono', monospace", color: a.triggered ? T.text2 : T.text5, flex: 1 }}>
-                    <span style={{ color: a.triggered ? T.gold : T.text3, fontWeight: 600 }}>{a.ticker}</span> {a.condition} ${a.target_price.toLocaleString()}
-                  </span>
-                  {a.triggered && <span style={{ fontSize: '11px', color: T.green }}>✓</span>}
-                  <div className="alert-remove" onClick={() => removeAlert(a.id)} style={{ fontSize: '10px', color: T.red, cursor: 'pointer', padding: '1px 5px', border: `1px solid ${T.redBorder}`, opacity: 0, transition: 'opacity 0.15s', background: T.alertRemoveBg, flexShrink: 0 }}>✕</div>
-                </div>
-              ))}
-              {alerts.length >= 10 && <div style={{ fontSize: '10px', color: T.text8, fontStyle: 'italic', marginTop: '4px' }}>Max 10 alerts reached</div>}
-            </div>
-            )}
+              )
+            })()}
             <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div onClick={() => router.push('/dashboard/settings')} style={{ fontSize: '11px', color: T.goldText, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Settings</div>
               <div onClick={handleLogout} style={{ fontSize: '11px', color: T.text6, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Sign Out</div>
@@ -3249,8 +3328,8 @@ const visibleDaySummaries = useMemo(() => {
 
             {/* ── Dynamic panel grid ── */}
             {(() => {
-              const ALL_PANELS: PanelId[] = ['pulse', 'events', 'news', 'summaries', 'tradingview']
-              const PANEL_LABELS: Record<PanelId, string> = { pulse: 'Pulse', events: 'Events', news: 'News', summaries: 'Summaries', tradingview: 'TV Alerts', chat: 'Chat' }
+              const ALL_PANELS: PanelId[] = ['pulse', 'events', 'news', 'summaries', 'alerts', 'tradingview']
+              const PANEL_LABELS: Record<PanelId, string> = { pulse: 'Pulse', events: 'Events', news: 'News', summaries: 'Summaries', alerts: 'Alerts', tradingview: 'TV Alerts', chat: 'Chat' }
 
               const slotCount = layout === 'focus' ? 1 : layout === '2col' || layout === '2row' ? 2 : 4
 
@@ -3491,24 +3570,23 @@ const visibleDaySummaries = useMemo(() => {
                     )}
                   </div>
                 )
-                if (pid === 'tradingview') return (
+                if (pid === 'alerts') return (
                   <div key={`slot-${slotIdx}`} style={{ background: T.panelBg, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     {selector}
-                    <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                    <div style={{ padding: '10px 18px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                        {(['feed', 'rules', 'setup'] as const).map((t) => (
-                          <div key={t} onClick={() => { setTvAlertTab(t); if (t === 'setup' && !webhookKey) void fetchWebhookKey() }} style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: tvAlertTab === t ? T.gold : T.text6, display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600, cursor: 'pointer', paddingBottom: '4px', borderBottom: tvAlertTab === t ? `2px solid ${T.gold}` : '2px solid transparent' }}>
-                            {t === 'feed' ? `Feed${tvAlerts.filter(a => isTodayET(a.created_at)).length ? ` (${tvAlerts.filter(a => isTodayET(a.created_at)).length})` : ''}` : t === 'rules' ? `Rules${alertRules.length ? ` (${alertRules.length})` : ''}` : 'Setup'}
+                        {(['rules', 'history'] as const).map(t => (
+                          <div key={t} onClick={() => setAlertsPanelTab(t)} style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: alertsPanelTab === t ? T.gold : T.text6, fontWeight: 600, cursor: 'pointer', paddingBottom: '3px', borderBottom: alertsPanelTab === t ? `2px solid ${T.gold}` : '2px solid transparent' }}>
+                            {t === 'rules' ? `Rules${alertRules.length ? ` (${alertRules.length})` : ''}` : `History${alertFiringHistory.length ? ` (${alertFiringHistory.length})` : ''}`}
                           </div>
                         ))}
                       </div>
+                      {alertsPanelTab === 'rules' && (
+                        <div onClick={() => { setRuleTicker(watchlist[0]?.ticker || ''); setShowRuleEditor((v) => !v) }} style={{ fontSize: '20px', color: T.goldText, cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}>+</div>
+                      )}
                     </div>
-                    {tvAlertTab === 'rules' ? (
-                      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ fontSize: '10px', letterSpacing: '0.2em', textTransform: 'uppercase', color: T.gold, fontWeight: 600 }}>Proactive Alerts</div>
-                          <div onClick={() => { setRuleTicker(watchlist[0]?.ticker || ''); setShowRuleEditor((v) => !v) }} style={{ fontSize: '20px', color: T.goldText, cursor: 'pointer', lineHeight: 1 }}>+</div>
-                        </div>
+                    {alertsPanelTab === 'rules' ? (
+                      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {showRuleEditor && (
                           <div style={{ padding: '12px', background: T.goldFaint, border: `1px solid ${T.goldFaint5}`, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <select value={ruleTicker} onChange={(e) => setRuleTicker(e.target.value)} style={{ background: T.inputBg, border: `1px solid ${T.goldFaint6}`, color: T.gold, padding: '5px 8px', fontSize: '12px', fontFamily: "'DM Mono', monospace", outline: 'none', width: '100%' }}>
@@ -3538,7 +3616,9 @@ const visibleDaySummaries = useMemo(() => {
                             </div>
                           </div>
                         )}
-                        {alertRules.length === 0 && !showRuleEditor && <div style={{ fontSize: '11px', color: T.text8, fontStyle: 'italic' }}>No rules yet. Click + to add one.</div>}
+                        {alertRules.length === 0 && !showRuleEditor && (
+                          <div style={{ fontSize: '11px', color: T.text8, fontStyle: 'italic' }}>No rules yet. Click + to add one.</div>
+                        )}
                         {alertRules.map((rule) => (
                           <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
                             onMouseEnter={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.rule-remove') as HTMLElement; if (rm) rm.style.opacity = '1' }}
@@ -3552,8 +3632,71 @@ const visibleDaySummaries = useMemo(() => {
                             <div className="rule-remove" onClick={() => void removeAlertRule(rule.id)} style={{ fontSize: '10px', color: T.red, cursor: 'pointer', padding: '1px 5px', border: `1px solid ${T.redBorder}`, opacity: 0, transition: 'opacity 0.15s', background: T.alertRemoveBg, flexShrink: 0 }}>✕</div>
                           </div>
                         ))}
+                        {alertFirings.length > 0 && (
+                          <>
+                            <div style={{ marginTop: '6px', paddingTop: '10px', borderTop: `1px solid ${T.borderFaint2}`, fontSize: '10px', letterSpacing: '0.18em', textTransform: 'uppercase', color: T.text6, fontWeight: 600 }}>Today&apos;s Firings</div>
+                            {alertFirings.map((f) => (
+                              <div key={f.id} style={{ padding: '8px 10px', background: T.goldFaint, border: `1px solid ${T.goldFaint5}`, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ fontSize: '12px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>{f.ticker}</span>
+                                  <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace", marginLeft: 'auto' }}>{new Date(f.fired_at).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+                                </div>
+                                <div style={{ fontSize: '12px', color: T.text3, lineHeight: 1.4 }}>{f.message}</div>
+                              </div>
+                            ))}
+                          </>
+                        )}
                       </div>
-                    ) : tvAlertTab === 'feed' ? (
+                    ) : (
+                      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                        {alertFiringHistory.length === 0 ? (
+                          <div style={{ padding: '20px 18px', fontSize: '12px', color: T.text8, fontStyle: 'italic' }}>No alert history yet.</div>
+                        ) : (() => {
+                          const grouped: { label: string; items: typeof alertFiringHistory }[] = []
+                          const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+                          const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+                          const seen = new Map<string, typeof alertFiringHistory>()
+                          for (const f of alertFiringHistory) {
+                            const d = new Date(f.fired_at).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+                            const label = d === today ? 'Today' : d === yesterday ? 'Yesterday' : new Date(f.fired_at).toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' })
+                            if (!seen.has(label)) { seen.set(label, []); grouped.push({ label, items: seen.get(label)! }) }
+                            seen.get(label)!.push(f)
+                          }
+                          return grouped.map(({ label, items }) => (
+                            <div key={label}>
+                              <div style={{ padding: '6px 18px', background: T.inputBg, borderBottom: `1px solid ${T.borderFaint}`, fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.text5, fontFamily: "'DM Mono', monospace", display: 'flex', justifyContent: 'space-between' }}>
+                                <span>{label}</span><span style={{ color: T.text7 }}>{items.length}</span>
+                              </div>
+                              {items.map(f => (
+                                <div key={f.id} style={{ padding: '9px 18px', borderBottom: `1px solid ${T.borderFaint3}`, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '12px', fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>{f.ticker}</span>
+                                    <span style={{ fontSize: '11px', color: T.text5 }}>{ruleTypeLabel(f.rule_type)}</span>
+                                    <span style={{ fontSize: '10px', color: T.text7, fontFamily: "'DM Mono', monospace", marginLeft: 'auto' }}>{new Date(f.fired_at).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+                                  </div>
+                                  <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.4 }}>{f.message}</div>
+                                </div>
+                              ))}
+                            </div>
+                          ))
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )
+                if (pid === 'tradingview') return (
+                  <div key={`slot-${slotIdx}`} style={{ background: T.panelBg, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    {selector}
+                    <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                        {(['feed', 'setup'] as const).map((t) => (
+                          <div key={t} onClick={() => { setTvAlertTab(t); if (t === 'setup' && !webhookKey) void fetchWebhookKey() }} style={{ fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: tvAlertTab === t ? T.gold : T.text6, display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600, cursor: 'pointer', paddingBottom: '4px', borderBottom: tvAlertTab === t ? `2px solid ${T.gold}` : '2px solid transparent' }}>
+                            {t === 'feed' ? `Feed${tvAlerts.filter(a => isTodayET(a.created_at)).length ? ` (${tvAlerts.filter(a => isTodayET(a.created_at)).length})` : ''}` : 'Setup'}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {tvAlertTab === 'feed' ? (
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
                         <div style={{ display: 'flex', gap: '6px', padding: '8px 18px', borderBottom: `1px solid ${T.borderFaint}`, flexShrink: 0 }}>
                           {([['all', 'All'], ['signal', 'Signals'], ['indicator', 'Indicators'], ['price', 'Price']] as const).map(([val, lbl]) => (
