@@ -81,10 +81,11 @@ function computeSignals(candles: CandleRow[]): Signals | null {
   const vwap     = computeVWAP(vwapCandles)
   const prevVwap = computeVWAP(vwapCandles.slice(0, -1))
 
-  // Volume ratio vs trailing 20-bar average (excluding current bar)
-  const window  = candles.slice(-21, -1)   // up to 20 previous bars
-  const avgVol  = window.length > 0
-    ? window.reduce((s, c) => s + c.volume, 0) / window.length
+  // Volume ratio vs trailing 20-bar average of session candles (excluding current bar).
+  // Using session-only bars prevents pre-market low-volume from skewing the baseline.
+  const volBars  = (sessionCandles.length >= 3 ? sessionCandles : candles).slice(0, -1).slice(-20)
+  const avgVol   = volBars.length > 0
+    ? volBars.reduce((s, c) => s + c.volume, 0) / volBars.length
     : latest.volume
   const volumeRatio = avgVol > 0 ? latest.volume / avgVol : 1
 
@@ -209,9 +210,13 @@ export async function runAlertCheck(): Promise<AlertFiring[]> {
 
   if (!firings.length) return []
 
-  // Persist firings
+  // Persist firings first — only broadcast if the insert succeeded so
+  // history and live notifications stay in sync.
   const { error: insertErr } = await supabase.from('alert_firings').insert(firings)
-  if (insertErr) console.error('[alert-engine] insert firings:', insertErr.message)
+  if (insertErr) {
+    console.error('[alert-engine] insert firings:', insertErr.message)
+    return []
+  }
 
   // Stamp cooldown timestamps
   await Promise.all(

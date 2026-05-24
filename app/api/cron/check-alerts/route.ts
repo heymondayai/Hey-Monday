@@ -4,6 +4,7 @@ import { runAlertCheck } from '@/lib/alert-engine'
 import { deleteOldCandles } from '@/lib/candle-store'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 30
 
 export async function GET(req: NextRequest) {
   // Verify Vercel cron secret when configured
