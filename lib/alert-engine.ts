@@ -49,14 +49,37 @@ function isInCooldown(rule: AlertRule): boolean {
   return elapsedMin < rule.cooldown_minutes
 }
 
+// Returns the timestamp of the most recent 9:30 AM ET session open.
+function getSessionOpenTs(): string {
+  const now = new Date()
+  const etDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(now)
+  const openUtc = new Date(`${etDate}T09:30:00-04:00`)
+  // If DST is off (ET = UTC-5) the -04:00 parse will be wrong by 1h, so verify
+  // by checking the ET hour of the result and nudge if needed.
+  const etHour = parseInt(
+    new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }).format(openUtc),
+    10,
+  )
+  if (etHour !== 9) {
+    // EST window: offset is -05:00 instead
+    return new Date(`${etDate}T09:30:00-05:00`).toISOString()
+  }
+  return openUtc.toISOString()
+}
+
 function computeSignals(candles: CandleRow[]): Signals | null {
   if (candles.length < 2) return null
 
   const latest = candles[candles.length - 1]
   const prev   = candles[candles.length - 2]
 
-  const vwap     = computeVWAP(candles)
-  const prevVwap = computeVWAP(candles.slice(0, -1))
+  // Session candles = 9:30 AM ET onwards (VWAP and pctFromOpen use regular session only)
+  const sessionOpenTs = getSessionOpenTs()
+  const sessionCandles = candles.filter(c => c.ts >= sessionOpenTs)
+  const vwapCandles    = sessionCandles.length >= 2 ? sessionCandles : candles
+
+  const vwap     = computeVWAP(vwapCandles)
+  const prevVwap = computeVWAP(vwapCandles.slice(0, -1))
 
   // Volume ratio vs trailing 20-bar average (excluding current bar)
   const window  = candles.slice(-21, -1)   // up to 20 previous bars
@@ -65,8 +88,10 @@ function computeSignals(candles: CandleRow[]): Signals | null {
     : latest.volume
   const volumeRatio = avgVol > 0 ? latest.volume / avgVol : 1
 
-  // % change relative to the first candle in the fetched window (session open proxy)
-  const sessionOpen = candles[0].open
+  // % change from the 9:30 AM regular session open candle.
+  // Falls back to first available candle if session hasn't opened yet (pre-market only).
+  const openCandle  = sessionCandles.length > 0 ? sessionCandles[0] : candles[0]
+  const sessionOpen = openCandle.open
   const pctFromOpen = sessionOpen > 0
     ? ((latest.close - sessionOpen) / sessionOpen) * 100
     : 0
