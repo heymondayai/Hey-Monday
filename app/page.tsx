@@ -25,12 +25,12 @@ const NAV_SECTIONS = [
 ]
 
 const FEATURES = [
-  { icon: '◈', title: 'AI Voice Assistant',       tag: 'CORE',  desc: 'Say "Hey Monday" — get an instant spoken, institutional-grade analysis of any asset, event, or market structure. No typing. No searching.' },
-  { icon: '⊟', title: 'Live Prices — All Assets',  tag: 'LIVE',  desc: 'Stocks, ETFs, futures, commodities, crypto. Your watchlist refreshes every 30 seconds with real data. Completely customizable.' },
-  { icon: '◐', title: 'High-Impact Calendar',     tag: 'MACRO', desc: 'CPI, FOMC, NFP, earnings — every event that moves markets. Actuals populate the second data drops, and Monday immediately explains the impact.' },
-  { icon: '▦', title: 'Level 2 Order Flow',       tag: 'EDGE',  desc: 'Monday reads the order book and describes what institutions are doing — block buys, sweeps, unusual size — in plain spoken English.' },
-  { icon: '◫', title: 'Intelligent News Feed',    tag: 'NEWS',  desc: 'Every headline scored for market impact and sentiment. Monday connects news events directly to expected price movement on your watchlist.' },
-  { icon: '◉', title: 'Daily Briefings',          tag: 'DAILY', desc: 'A spoken morning briefing before the open, midday pulse, power hour summary, and end-of-day wrap. Delivered like a personal analyst.' },
+  { icon: '◈', title: 'AI Voice Assistant',        tag: 'CORE',   desc: 'Say "Hey Monday" — instant spoken analysis of any asset or event. No typing. Runs in the background as long as your tab is open.' },
+  { icon: '⊟', title: 'Live Prices — All Assets',  tag: 'LIVE',   desc: 'Stocks, ETFs, futures, commodities, crypto. Watchlist refreshes every 30 seconds. Fully customizable.' },
+  { icon: '◐', title: 'High-Impact Calendar',      tag: 'MACRO',  desc: 'CPI, FOMC, NFP, earnings. Voice alert before each event — spoken impact the moment actuals drop.' },
+  { icon: '▦', title: 'Options Flow & Order Book', tag: 'EDGE',   desc: 'Unusual sweeps, dark pool prints, block buys — surfaced and spoken in plain English as they happen.' },
+  { icon: '◫', title: 'Intelligent News Feed',     tag: 'NEWS',   desc: 'Headlines scored for market impact. Monday connects breaking news directly to your watchlist.' },
+  { icon: '◉', title: 'Proactive Alerts',          tag: 'ALERTS', desc: 'Price cross, VWAP, volume spike, % move. TradingView alerts supported. Spoken notification the moment it fires.' },
 ]
 
 const DEMO_CHAT = [
@@ -41,11 +41,11 @@ const DEMO_CHAT = [
 ]
 
 const STEPS = [
-  { n: '01', title: 'Build your watchlist',      sub: 'Any stock, ETF, future, commodity, or crypto. Monday tracks them all, refreshing every 30 seconds.' },
-  { n: '02', title: 'Say "Hey Monday"',           sub: 'Wake word always listening. Or type — your choice. No clicking through menus, no searching.' },
-  { n: '03', title: 'Monday pulls live data',     sub: 'Every API fires on your question: prices, news, order flow, macro calendar — all simultaneously.' },
-  { n: '04', title: 'Get a spoken answer',        sub: 'Claude AI synthesizes the data. ElevenLabs voices it. You hear a real analyst, not a robot, in under 4 seconds.' },
-  { n: '05', title: 'Stay briefed, hands-free',   sub: 'Automatic morning, midday, and EOD spoken briefings. Event-triggered alerts when CPI or FOMC drops.' },
+  { n: '01', title: 'Build your watchlist',      sub: 'Any stock, ETF, future, commodity, or crypto. Updates every 30 seconds.' },
+  { n: '02', title: 'Say "Hey Monday"',           sub: 'Wake word always listening. Or type — your choice.' },
+  { n: '03', title: 'Monday pulls live data',     sub: 'Prices, news, options flow, macro calendar — all fire simultaneously.' },
+  { n: '04', title: 'Get a spoken answer',        sub: 'Claude AI synthesizes. ElevenLabs delivers. Real analyst voice in under 4 seconds.' },
+  { n: '05', title: 'Stay briefed, hands-free',   sub: 'Morning, midday, and EOD briefings. Proactive alerts for price moves, events, and unusual activity.' },
 ]
 
 const FAQ_ITEMS = [
@@ -515,11 +515,10 @@ export default function MarketingPage() {
                       "Hey Monday" → wake word detected ✓
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:8, background:T.bg3, border:`1px solid ${T.border2}`, padding:'9px 12px' }}>
-                      <div style={{ width:22, height:22, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, color:T.btnText, flexShrink:0 }}>🎙</div>
+                      <div style={{ width:22, height:22, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><LogoSvg size={14} /></div>
                       <div style={{ flex:1, display:'flex', alignItems:'center', gap:2, height:16 }}>
                         {Array.from({length:18},(_,i)=><div key={i} className="wb" style={{ background:T.gold, animationDelay:`${(i%9)*.06}s` }} />)}
                       </div>
-                      <div style={{ fontSize:9, color:T.gold, letterSpacing:'0.1em' }}>LISTENING…</div>
                     </div>
                   </div>
                 </div>
@@ -529,7 +528,7 @@ export default function MarketingPage() {
                 <div>
                   <div style={{ fontSize:9, letterSpacing:'0.2em', color:T.goldDim, marginBottom:14, textTransform:'uppercase' }}>Live Data — All Sources Fire</div>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:7 }}>
-                    {[{icon:'⊟',label:'Live Prices',detail:'Stocks, ETFs, futures, crypto'},{icon:'◫',label:'News Feed',detail:'Scored for impact & sentiment'},{icon:'◐',label:'Macro Calendar',detail:'CPI, FOMC, NFP, earnings'},{icon:'▦',label:'Order Flow',detail:'Level 2 — block trades, sweeps'}].map((src,i)=>(
+                    {[{icon:'⊟',label:'Live Prices',detail:'Stocks, ETFs, futures, crypto'},{icon:'◫',label:'News Feed',detail:'Scored for impact & sentiment'},{icon:'◐',label:'Macro Calendar',detail:'CPI, FOMC, NFP, earnings'},{icon:'▦',label:'Options Flow',detail:'Sweeps, dark pool, unusual activity'}].map((src,i)=>(
                       <div key={i} style={{ background:T.bg2, border:`1px solid ${T.border2}`, padding:'10px', display:'flex', alignItems:'flex-start', gap:7 }}>
                         <div style={{ fontSize:14, color:T.gold, flexShrink:0 }}>{src.icon}</div>
                         <div>
@@ -702,7 +701,7 @@ export default function MarketingPage() {
               </div>
               <div className="price-features-col" style={{ flexShrink:0, minWidth:220 }}>
                 <div style={{ fontSize:9, letterSpacing:'0.18em', color:T.text3, marginBottom:10, textTransform:'uppercase' }}>Everything included</div>
-                {['Live prices — all asset classes','AI voice "Hey Monday" wake word','High-impact economic calendar','News feed with sentiment scoring','Level 2 / order flow descriptions','Morning & EOD spoken briefings','Price + macro event alerts','Watchlist (unlimited assets)','All APIs called per question','Conversation history + audio replay'].map((f,i)=>(
+                {['Live prices — all asset classes','AI voice "Hey Monday" wake word','High-impact calendar with voice alerts','News feed with sentiment scoring','Options flow, dark pool & unusual activity','Morning, midday & EOD spoken briefings','Proactive alerts — price, VWAP, volume, events','TradingView alert integration','Congressional & insider trade intelligence','Conversation history + audio replay'].map((f,i)=>(
                   <div key={i} style={{ display:'flex', gap:7, padding:'5px 0', borderBottom:i<9?`1px solid ${T.footerBorder}`:'none' }}>
                     <span style={{ color:T.gold, fontSize:11, flexShrink:0 }}>✓</span>
                     <span style={{ fontSize:11, color:T.text2 }}>{f}</span>
@@ -800,7 +799,7 @@ export default function MarketingPage() {
           </div>
           <div>
             <div style={{ fontSize:8, letterSpacing:'0.22em', color:T.footerMuted, marginBottom:12, textTransform:'uppercase' }}>Features</div>
-            {['AI Voice Assistant','Live Watchlist','Economic Calendar','News Feed','Level 2 / Order Flow','Daily Briefings'].map((l,i)=>(
+            {['AI Voice Assistant','Live Watchlist','Economic Calendar','News Feed','Options Flow & Alerts','Daily Briefings'].map((l,i)=>(
               <div key={i} style={{ fontSize:12, color:T.footerText, marginBottom:9 }}>{l}</div>
             ))}
           </div>
@@ -811,10 +810,6 @@ export default function MarketingPage() {
                 onMouseEnter={e=>((e.target as HTMLElement).style.color=isDark?'#c9922a':'#d4a030')}
                 onMouseLeave={e=>((e.target as HTMLElement).style.color=T.footerText)}>{l.label}</Link>
             ))}
-            <div style={{ marginTop:16 }}>
-              <div style={{ fontSize:8, letterSpacing:'0.18em', color:T.footerMuted, marginBottom:7, textTransform:'uppercase' }}>Powered by</div>
-              {['Claude AI','ElevenLabs','Finnhub','FRED'].map((pw,i)=><div key={i} style={{ fontSize:10, color:T.footerPowered, marginBottom:3 }}>{pw}</div>)}
-            </div>
           </div>
         </div>
         <div className="footer-bottom" style={{ borderTop:`1px solid ${isDark?'#2a2618':'#3a2808'}`, padding:'14px 18px', maxWidth:1100, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8 }}>
