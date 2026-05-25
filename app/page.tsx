@@ -240,6 +240,8 @@ export default function MarketingPage() {
         @keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
         @keyframes candleRise{from{transform:scaleY(0);opacity:0}to{transform:scaleY(1);opacity:1}}
         @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes radarSweep{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+        @keyframes radarPing{0%,88%,100%{opacity:0.2;filter:none}92%{opacity:1;filter:brightness(2.2)}}
         .ticker-inner{display:flex;animation:tickerScroll 45s linear infinite;white-space:nowrap;align-items:center;height:30px}
         .wb{width:3px;border-radius:2px;opacity:.65;animation:waveAnim 1.1s ease-in-out infinite}
         .wb:nth-child(1){animation-delay:.00s}.wb:nth-child(2){animation-delay:.08s}.wb:nth-child(3){animation-delay:.16s}
@@ -427,40 +429,127 @@ export default function MarketingPage() {
               </div>
             )}
 
-            {/* Phase 3+: candle chart */}
-            {heroPhase >= 3 && (
-              <div style={{ animation:'fadeUp 0.4s ease both', position:'relative' }}>
-                <div style={{ fontSize:8, letterSpacing:'0.15em', color:T.goldDim, marginBottom:6, textTransform:'uppercase', paddingLeft:2 }}>TSLA · 1-min chart</div>
-                <div style={{ display:'flex', alignItems:'flex-end', gap:'3px', height:80, background:T.bg2, border:`1px solid ${T.border}`, padding:'0 10px', overflow:'hidden', position:'relative' }}>
-                  {/* grid lines */}
-                  {[0.33,0.66].map((y,i)=>(
-                    <div key={i} style={{ position:'absolute', left:0, right:0, top:`${y*100}%`, height:1, background:T.border, opacity:0.6 }} />
-                  ))}
-                  {/* alert marker line */}
-                  <div style={{ position:'absolute', left:'58%', top:0, bottom:0, width:1, background:`${T.gold}55`, borderLeft:`1px dashed ${T.gold}66` }} />
-                  <div style={{ position:'absolute', left:'58%', top:6, fontSize:7, color:T.gold, letterSpacing:'0.08em', paddingLeft:4, textTransform:'uppercase' }}>alert</div>
-                  {[
-                    {h:28,up:false,d:'0s'},{h:24,up:false,d:'0.04s'},{h:26,up:true,d:'0.08s'},
-                    {h:22,up:false,d:'0.12s'},{h:25,up:false,d:'0.16s'},{h:23,up:false,d:'0.20s'},
-                    {h:40,up:true,d:'0.28s'},{h:56,up:true,d:'0.40s'},{h:72,up:true,d:'0.52s'},
-                    {h:76,up:true,d:'0.64s'},{h:70,up:true,d:'0.76s'},
-                  ].map((c,i)=>(
-                    <div key={i} style={{ flex:1, height:c.h, background:c.up?T.gold:T.red, opacity:i<6?0.4:0.55+(i-6)*0.09, animation:'candleRise 0.35s ease-out both', animationDelay:c.d, transformOrigin:'bottom', borderRadius:'1px 1px 0 0', position:'relative', zIndex:1 }} />
-                  ))}
-                  {/* glow on spike */}
-                  <div style={{ position:'absolute', bottom:0, right:0, width:'45%', height:'100%', background:`linear-gradient(to left,${T.glow},transparent)`, pointerEvents:'none' }} />
-                </div>
-
-                {/* Phase 4: price badge */}
-                {heroPhase >= 4 && (
-                  <div style={{ position:'absolute', bottom:10, right:10, background:T.gold, color:T.btnText, padding:'4px 10px', fontSize:12, fontWeight:700, fontFamily:"'JetBrains Mono',monospace", animation:'fadeUp 0.35s ease both', letterSpacing:'0.06em', zIndex:2 }}>
-                    TSLA +8.2%
+            {/* Phase 3+: SVG candlestick chart */}
+            {heroPhase >= 3 && (() => {
+              const svgW = 290, svgH = 84
+              const minP = 182, maxP = 214, rng = maxP - minP
+              const py = (p: number) => ((maxP - p) / rng) * 76 + 4
+              const cd = [
+                {o:188,h:190,l:185,c:186},{o:186,h:189,l:184,c:187},{o:187,h:189,l:184,c:185},
+                {o:185,h:187,l:183,c:184},{o:184,h:186,l:182,c:185},{o:185,h:186,l:183,c:184},
+                {o:184,h:194,l:183,c:193},{o:193,h:201,l:192,c:200},
+                {o:200,h:209,l:198,c:207},{o:207,h:214,l:205,c:212},
+              ]
+              const cW = 22, gap = 7, sx = 5
+              const alertX = sx + 6*(cW+gap) - 2
+              return (
+                <div style={{ animation:'fadeUp 0.4s ease both', position:'relative' }}>
+                  <div style={{ fontSize:8, letterSpacing:'0.15em', color:T.goldDim, marginBottom:5, textTransform:'uppercase' }}>TSLA · 1-min</div>
+                  <div style={{ background:T.bg2, border:`1px solid ${T.border}`, overflow:'hidden', position:'relative' }}>
+                    <svg width="100%" viewBox={`0 0 ${svgW} ${svgH}`} style={{ display:'block' }}>
+                      <defs>
+                        <linearGradient id="rg" x1="0" x2="1"><stop offset="0%" stopColor={T.gold} stopOpacity={0}/><stop offset="100%" stopColor={T.gold} stopOpacity={0.07}/></linearGradient>
+                      </defs>
+                      {[0.35,0.68].map((f,i)=><line key={i} x1={0} y1={svgH*f} x2={svgW} y2={svgH*f} stroke={isDark?'#2a2618':'#d0cdc8'} strokeWidth={0.5}/>)}
+                      <line x1={alertX} y1={0} x2={alertX} y2={svgH} stroke={T.gold} strokeWidth={0.8} strokeDasharray="3,2" opacity={0.65}/>
+                      <text x={alertX+3} y={11} fontSize="6.5" fill={T.gold} opacity={0.8} letterSpacing="0.8">ALERT</text>
+                      <rect x={alertX} y={0} width={svgW-alertX} height={svgH} fill="url(#rg)"/>
+                      {cd.map((c,i)=>{
+                        const bull = c.c >= c.o
+                        const x = sx + i*(cW+gap), cx = x + cW/2
+                        const col = bull ? T.gold : T.red
+                        const op = i < 6 ? 0.45 : 0.5+(i-6)*0.13
+                        const bTop = py(Math.max(c.o,c.c)), bBot = py(Math.min(c.o,c.c))
+                        return (
+                          <g key={i} style={{ animation:'fadeUp 0.28s ease-out both', animationDelay:`${i*0.08}s` }}>
+                            <line x1={cx} y1={py(c.h)} x2={cx} y2={py(c.l)} stroke={col} strokeWidth={1.2} opacity={op}/>
+                            <rect x={x} y={bTop} width={cW} height={Math.max(bBot-bTop,1.5)} fill={col} opacity={op}/>
+                          </g>
+                        )
+                      })}
+                    </svg>
                   </div>
-                )}
-              </div>
-            )}
+                  {heroPhase >= 4 && (
+                    <div style={{ position:'absolute', top:18, right:6, background:T.gold, color:T.btnText, padding:'3px 9px', fontSize:11, fontWeight:700, fontFamily:"'JetBrains Mono',monospace", animation:'fadeUp 0.35s ease both', letterSpacing:'0.06em', zIndex:2 }}>
+                      TSLA +8.2%
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         </div>
+
+        {/* ── RADAR COMPARISON ── */}
+        <div style={{ marginTop:22 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10, maxWidth:640, margin:'0 auto 18px' }}>
+            <div style={{ flex:1, height:1, background:`linear-gradient(90deg, transparent, ${T.border2})` }} />
+            <span style={{ fontSize:8, color:T.text3, letterSpacing:'0.22em', textTransform:'uppercase', flexShrink:0 }}>or this</span>
+            <div style={{ flex:1, height:1, background:`linear-gradient(270deg, transparent, ${T.border2})` }} />
+          </div>
+          <div style={{ maxWidth:640, margin:'0 auto', background:T.chatBg, border:`1px solid ${T.border2}`, position:'relative', overflow:'hidden', boxShadow:T.pricingShadow }}>
+            <div style={{ padding:'9px 14px', borderBottom:`1px solid ${T.border}`, display:'flex', alignItems:'center', gap:8, background:T.chatToolbar }}>
+              <div style={{ display:'flex', gap:4 }}>
+                {['#ff5f57','#febc2e','#28c840'].map((c,i)=><div key={i} style={{ width:8, height:8, borderRadius:'50%', background:c, opacity:.7 }} />)}
+              </div>
+              <div style={{ flex:1, textAlign:'center', fontSize:9, letterSpacing:'0.15em', color:T.text3, textTransform:'uppercase' }}>Monday · Radar</div>
+              <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:9, color:T.amber, letterSpacing:'0.1em' }}>
+                <span style={{ width:4, height:4, borderRadius:'50%', background:T.amber, display:'inline-block', animation:'gpulse 2s ease infinite' }} />
+                Scanning
+              </div>
+            </div>
+            <div style={{ padding:'28px 20px', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
+              {(() => {
+                const grb = isDark ? '201,146,42' : '184,117,12'
+                const D = 260, R = 130
+                const pts = [
+                  {label:'NVDA', angle:-90, r:0.68},
+                  {label:'/ES',  angle:-32, r:0.74},
+                  {label:'CPI',  angle:28,  r:0.62},
+                  {label:'TSLA', angle:88,  r:0.70},
+                  {label:'AMD',  angle:148, r:0.66},
+                  {label:'SPY',  angle:208, r:0.72},
+                ]
+                return (
+                  <div style={{ position:'relative', width:D, height:D, flexShrink:0 }}>
+                    <div style={{ position:'absolute', inset:0, borderRadius:'50%', overflow:'hidden' }}>
+                      <div style={{ position:'absolute', inset:0, background:T.bg3 }} />
+                      <div style={{ position:'absolute', inset:0, background:`conic-gradient(from 0deg, transparent 0%, rgba(${grb},0.05) 12%, rgba(${grb},0.38) 20%, transparent 20%)`, animation:'radarSweep 3s linear infinite' }} />
+                      <svg width={D} height={D} style={{ position:'absolute', inset:0 }}>
+                        {[0.72,0.46,0.24].map((f,i)=>(
+                          <circle key={i} cx={R} cy={R} r={R*f} fill="none" stroke={isDark?'#2a2618':'#c8c4be'} strokeWidth="0.8"/>
+                        ))}
+                        <line x1="0" y1={R} x2={D} y2={R} stroke={isDark?'#2a2618':'#c8c4be'} strokeWidth="0.5" opacity="0.7"/>
+                        <line x1={R} y1="0" x2={R} y2={D} stroke={isDark?'#2a2618':'#c8c4be'} strokeWidth="0.5" opacity="0.7"/>
+                      </svg>
+                      <div style={{ position:'absolute', top:'50%', left:'50%', width:R, height:1.5, transformOrigin:'left center', marginTop:'-0.75px', background:`linear-gradient(90deg, rgba(${grb},0.9), rgba(${grb},0.1))`, animation:'radarSweep 3s linear infinite' }} />
+                    </div>
+                    <div style={{ position:'absolute', inset:0, borderRadius:'50%', border:`1px solid rgba(${grb},0.25)`, pointerEvents:'none' }} />
+                    {pts.map(({label,angle,r},i)=>{
+                      const rad = angle * Math.PI / 180
+                      const lx = R + r * R * Math.cos(rad)
+                      const ly = R + r * R * Math.sin(rad)
+                      const delay = ((angle + 90 + 360) % 360) / 360 * 3
+                      return (
+                        <div key={i} style={{ position:'absolute', left:lx, top:ly, transform:'translate(-50%,-50%)', animation:`radarPing 3s ease-in-out infinite`, animationDelay:`${delay.toFixed(2)}s`, fontSize:8, letterSpacing:'0.12em', color:T.gold, fontWeight:700, whiteSpace:'nowrap', userSelect:'none' }}>
+                          {label}
+                        </div>
+                      )
+                    })}
+                    <div style={{ position:'absolute', left:'50%', top:'50%', transform:'translate(-50%,-50%)', width:44, height:44, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', boxShadow:`0 0 20px rgba(${grb},0.7), 0 0 40px rgba(${grb},0.25)`, zIndex:5 }}>
+                      <LogoSvg size={22} />
+                    </div>
+                  </div>
+                )
+              })()}
+              <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:8, color:T.text3, letterSpacing:'0.15em', textTransform:'uppercase' }}>
+                <span style={{ width:4, height:4, borderRadius:'50%', background:T.gold, display:'inline-block', animation:'pulse 1.5s ease infinite' }} />
+                Live scan · all markets
+              </div>
+            </div>
+          </div>
+        </div>
+
         <p style={{ marginTop:14, fontSize:9, color:T.text3, letterSpacing:'0.15em' }}>CANCEL ANYTIME · 5-DAY FREE TRIAL</p>
       </section>
 
