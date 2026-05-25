@@ -227,7 +227,8 @@ export default function MarketingPage() {
         @keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
         @keyframes toggleSpin{from{transform:rotate(-30deg);opacity:0}to{transform:rotate(0deg);opacity:1}}
         @keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes panelFire{0%,75%,100%{box-shadow:none}85%{box-shadow:inset 0 0 0 1px rgba(201,146,42,.5),inset 0 0 16px rgba(201,146,42,.08)}}
+        @keyframes float{0%,100%{transform:translateY(0px)}50%{transform:translateY(-5px)}}
+        @keyframes badgePulse{0%,100%{border-color:var(--b)}50%{border-color:var(--bg)}}
         .ticker-inner{display:flex;animation:tickerScroll 45s linear infinite;white-space:nowrap;align-items:center;height:30px}
         .wb{width:3px;border-radius:2px;opacity:.65;animation:waveAnim 1.1s ease-in-out infinite}
         .wb:nth-child(1){animation-delay:.00s}.wb:nth-child(2){animation-delay:.08s}.wb:nth-child(3){animation-delay:.16s}
@@ -376,85 +377,68 @@ export default function MarketingPage() {
         </div>
         <div className="demo-window" style={{ maxWidth:680, margin:'0 auto', background:T.chatBg, border:`1px solid ${T.border2}`, position:'relative', overflow:'hidden', boxShadow:T.pricingShadow }}>
           <div style={{ position:'absolute', left:0, right:0, height:1, background:`linear-gradient(90deg,transparent,${T.scanline},transparent)`, animation:'scanline 9s linear infinite', pointerEvents:'none', zIndex:2 }} />
+          {/* radial glow behind waveform */}
+          <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:320, height:180, background:`radial-gradient(ellipse,${T.glow} 0%,transparent 70%)`, pointerEvents:'none' }} />
+
           {/* Header */}
-          <div style={{ padding:'9px 14px', borderBottom:`1px solid ${T.border}`, display:'flex', alignItems:'center', gap:8, background:T.chatToolbar }}>
+          <div style={{ padding:'9px 14px', borderBottom:`1px solid ${T.border}`, display:'flex', alignItems:'center', gap:8, background:T.chatToolbar, position:'relative', zIndex:3 }}>
             <div style={{ display:'flex', gap:4 }}>
               {['#ff5f57','#febc2e','#28c840'].map((c,i)=><div key={i} style={{ width:8, height:8, borderRadius:'50%', background:c, opacity:.7 }} />)}
             </div>
-            <div style={{ flex:1, textAlign:'center', fontSize:9, letterSpacing:'0.15em', color:T.text3, textTransform:'uppercase' }}>Monday — Synthesizing 4 Sources</div>
+            <div style={{ flex:1, textAlign:'center', fontSize:9, letterSpacing:'0.15em', color:T.text3, textTransform:'uppercase' }}>Monday · Live</div>
             <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:9, color:T.amber, letterSpacing:'0.1em' }}>
               <span style={{ width:4, height:4, borderRadius:'50%', background:T.amber, display:'inline-block', animation:'gpulse 2s ease infinite' }} />
-              Live
+              Active
             </div>
           </div>
-          {/* 4-panel grid */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:1, background:T.border }}>
-            {/* Live Prices */}
-            <div style={{ background:T.bg2, padding:'10px 12px', animation:'panelFire 4s ease-in-out infinite 0s' }}>
-              <div style={{ fontSize:8, letterSpacing:'0.18em', color:T.goldDim, marginBottom:7, textTransform:'uppercase', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                Live Prices <span style={{ width:5, height:5, borderRadius:'50%', background:T.gold, display:'inline-block', animation:'pulse 2s ease infinite 0s' }} />
+
+          {/* Floating badges — top row */}
+          <div style={{ display:'flex', justifyContent:'space-between', padding:'22px 20px 0', position:'relative', zIndex:3 }}>
+            {[
+              {sym:'NVDA', chg:'-0.84%', up:false, delay:'0s',   dur:'3.1s'},
+              {sym:'AMD',  chg:'+1.60%', up:true,  delay:'0.6s', dur:'2.7s'},
+              {sym:'SPY',  chg:'-1.40%', up:false, delay:'1.1s', dur:'3.4s'},
+            ].map((tk,i)=>(
+              <div key={i} style={{ background:T.bg2, border:`1px solid ${tk.up?`${T.gold}44`:`${T.red}33`}`, padding:'6px 12px', display:'flex', alignItems:'center', gap:8, animation:`float ${tk.dur} ease-in-out infinite ${tk.delay}` }}>
+                <span style={{ fontSize:11, fontWeight:700, color:T.heading, letterSpacing:'0.04em' }}>{tk.sym}</span>
+                <div style={{ width:1, height:11, background:T.border }} />
+                <span style={{ fontSize:10, color:tk.up?T.gold:T.red, fontFamily:"'JetBrains Mono',monospace", fontWeight:600 }}>{tk.chg}</span>
               </div>
-              {[{sym:'NVDA',price:'$180.40',chg:'-0.84%',up:false},{sym:'AMD',price:'$199.46',chg:'+1.60%',up:true},{sym:'AAPL',price:'$249.94',chg:'-1.69%',up:false}].map((tk,i)=>(
-                <div key={i} style={{ display:'flex', alignItems:'center', padding:'4px 0', borderBottom:i<2?`1px solid ${T.border}`:'none', gap:6 }}>
-                  <span style={{ fontSize:11, fontWeight:700, color:T.heading, width:38 }}>{tk.sym}</span>
-                  <span style={{ flex:1, fontSize:10, color:T.text, fontFamily:"'JetBrains Mono',monospace" }}>{tk.price}</span>
-                  <span style={{ fontSize:10, color:tk.up?T.gold:T.red, fontFamily:"'JetBrains Mono',monospace" }}>{tk.chg}</span>
-                </div>
-              ))}
-            </div>
-            {/* Options Flow */}
-            <div style={{ background:T.bg2, padding:'10px 12px', animation:'panelFire 4s ease-in-out infinite 1s' }}>
-              <div style={{ fontSize:8, letterSpacing:'0.18em', color:T.goldDim, marginBottom:7, textTransform:'uppercase', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                Options Flow <span style={{ width:5, height:5, borderRadius:'50%', background:T.red, display:'inline-block', animation:'pulse 2s ease infinite 0.5s' }} />
-              </div>
-              {[{sym:'SPY',type:'SWEEP',desc:'$2.1M calls',bull:true},{sym:'NVDA',type:'BLOCK',desc:'$890K puts',bull:false},{sym:'QQQ',type:'SWEEP',desc:'$1.4M calls',bull:true}].map((f,i)=>(
-                <div key={i} style={{ display:'flex', alignItems:'center', padding:'4px 0', borderBottom:i<2?`1px solid ${T.border}`:'none', gap:5 }}>
-                  <span style={{ fontSize:11, fontWeight:700, color:f.bull?T.gold:T.red, width:38 }}>{f.sym}</span>
-                  <span style={{ fontSize:8, color:T.text3, letterSpacing:'0.05em', width:38 }}>{f.type}</span>
-                  <span style={{ fontSize:9, color:T.text2 }}>{f.desc}</span>
-                </div>
-              ))}
-            </div>
-            {/* Breaking News */}
-            <div style={{ background:T.bg2, padding:'10px 12px', animation:'panelFire 4s ease-in-out infinite 2s' }}>
-              <div style={{ fontSize:8, letterSpacing:'0.18em', color:T.goldDim, marginBottom:7, textTransform:'uppercase', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                Breaking News <span style={{ width:5, height:5, borderRadius:'50%', background:T.gold, display:'inline-block', animation:'pulse 2s ease infinite 1s' }} />
-              </div>
-              {[{txt:'Fed signals pause — markets reprice rate cut odds',hot:true},{txt:'NVDA Blackwell supply data expected from Taiwan',hot:false},{txt:'AMD gains on data center contract win',hot:false}].map((n,i)=>(
-                <div key={i} style={{ fontSize:9, color:i===0?T.text:T.text3, lineHeight:1.45, padding:'4px 0', borderBottom:i<2?`1px solid ${T.border}`:'none' }}>
-                  {i===0&&<span style={{ color:T.red, marginRight:4, fontSize:8 }}>●</span>}{n.txt}
-                </div>
-              ))}
-            </div>
-            {/* Macro Calendar */}
-            <div style={{ background:T.bg2, padding:'10px 12px', animation:'panelFire 4s ease-in-out infinite 3s' }}>
-              <div style={{ fontSize:8, letterSpacing:'0.18em', color:T.goldDim, marginBottom:7, textTransform:'uppercase', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                Macro Calendar <span style={{ width:5, height:5, borderRadius:'50%', background:T.amber, display:'inline-block', animation:'pulse 2s ease infinite 1.5s' }} />
-              </div>
-              {[{name:'CPI YoY',actual:'2.9%',beat:true},{name:'Jobless Claims',actual:'213K',beat:true},{name:'FOMC Minutes',actual:null,time:'2:00 PM'}].map((ev,i)=>(
-                <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'4px 0', borderBottom:i<2?`1px solid ${T.border}`:'none', gap:4 }}>
-                  <span style={{ fontSize:9, color:T.text, flex:1 }}>{ev.name}</span>
-                  {ev.actual
-                    ? <span style={{ fontSize:9, fontWeight:700, color:ev.beat?T.amber:T.red }}>{ev.actual} {ev.beat?'↑ BEAT':'↓ MISS'}</span>
-                    : <span style={{ fontSize:9, color:T.goldDim }}>⏳ {(ev as any).time}</span>
-                  }
-                </div>
-              ))}
-            </div>
+            ))}
           </div>
-          {/* Monday synthesis response */}
-          <div style={{ padding:'12px 14px', borderTop:`1px solid ${T.border}`, background:T.chatToolbar, display:'flex', alignItems:'flex-start', gap:10 }}>
-            <div style={{ width:26, height:26, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              <LogoSvg size={14} />
-            </div>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.08em', marginBottom:4 }}>Monday · synthesized from 4 sources · just now</div>
-              <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(12px,2.8vw,14px)', color:T.text, lineHeight:1.65, fontStyle:'italic' }}>
-                "SPY and QQQ sweeps point to institutional re-entry. CPI beat reduces rate pressure — AMD's strength makes sense. Watch NVDA for a reversal setup into Thursday."
+
+          {/* Central waveform */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'3px', height:72, padding:'0 32px', position:'relative', zIndex:3 }}>
+            {Array.from({length:36},(_,i)=>(
+              <div key={i} className="wb" style={{ background:T.gold, animationDelay:`${(i%9)*.055}s`, width:'3px', opacity:0.35+Math.abs(Math.sin(i*0.45))*0.65 }} />
+            ))}
+          </div>
+
+          {/* Floating badges — bottom row */}
+          <div style={{ display:'flex', justifyContent:'space-between', padding:'0 20px 22px', position:'relative', zIndex:3 }}>
+            {[
+              {sym:'/ES',  chg:'-0.92%', up:false, delay:'0.4s', dur:'2.9s'},
+              {sym:'BTC',  chg:'+1.22%', up:true,  delay:'0.9s', dur:'3.3s'},
+              {sym:'GLD',  chg:'-3.16%', up:false, delay:'0.2s', dur:'3.6s'},
+            ].map((tk,i)=>(
+              <div key={i} style={{ background:T.bg2, border:`1px solid ${tk.up?`${T.gold}44`:`${T.red}33`}`, padding:'6px 12px', display:'flex', alignItems:'center', gap:8, animation:`float ${tk.dur} ease-in-out infinite ${tk.delay}` }}>
+                <span style={{ fontSize:11, fontWeight:700, color:T.heading, letterSpacing:'0.04em' }}>{tk.sym}</span>
+                <div style={{ width:1, height:11, background:T.border }} />
+                <span style={{ fontSize:10, color:tk.up?T.gold:T.red, fontFamily:"'JetBrains Mono',monospace", fontWeight:600 }}>{tk.chg}</span>
               </div>
+            ))}
+          </div>
+
+          {/* Spoken response bar */}
+          <div style={{ padding:'11px 16px 13px', borderTop:`1px solid ${T.border}`, background:T.chatToolbar, display:'flex', alignItems:'center', gap:10, position:'relative', zIndex:3 }}>
+            <div style={{ width:24, height:24, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <LogoSvg size={13} />
             </div>
-            <div style={{ display:'flex', alignItems:'center', gap:2, height:24, flexShrink:0, alignSelf:'center' }}>
-              {Array.from({length:9},(_,i)=><div key={i} className="wb" style={{ background:T.gold, animationDelay:`${i*.06}s` }} />)}
+            <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(13px,3vw,15px)', color:T.text, lineHeight:1.5, fontStyle:'italic', flex:1 }}>
+              "AMD data center win — rotation into semis underway. Watch SPY for support at 660."
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:'2px', height:20, flexShrink:0 }}>
+              {Array.from({length:8},(_,i)=><div key={i} className="wb" style={{ background:T.gold, animationDelay:`${i*.065}s` }} />)}
             </div>
           </div>
         </div>
