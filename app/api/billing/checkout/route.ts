@@ -21,19 +21,23 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({}))
     const billing = String(body?.billing || 'monthly')
+    const plan    = String(body?.plan    || 'core')
 
-    const monthlyPriceId = process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY
-    const annualPriceId = process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL
+    const coreMonthly = process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY
+    const coreAnnual  = process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL
+    const edgeMonthly = process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_MONTHLY
+    const edgeAnnual  = process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_ANNUAL
 
-    if (!monthlyPriceId || !annualPriceId) {
-  return NextResponse.json(
-    { error: 'Stripe price IDs are not configured.' },
-    { status: 500 }
-  )
+    if (!coreMonthly || !coreAnnual || !edgeMonthly || !edgeAnnual) {
+      return NextResponse.json(
+        { error: 'Stripe price IDs are not configured.' },
+        { status: 500 }
+      )
     }
 
-    const priceId =
-    billing === 'annual' ? annualPriceId : monthlyPriceId
+    const priceId = plan === 'edge'
+      ? (billing === 'annual' ? edgeAnnual  : edgeMonthly)
+      : (billing === 'annual' ? coreAnnual  : coreMonthly)
 
     const { data: profile, error: profileError } = await admin
       .from('profiles')
@@ -113,15 +117,17 @@ export async function POST(req: NextRequest) {
         enabled: false,
       },
       subscription_data: {
-      ...(hasUsedTrial ? {} : { trial_period_days: 5 }),
+        ...(hasUsedTrial ? {} : { trial_period_days: 5 }),
         metadata: {
-        supabase_user_id: user.id,
-        billing,
+          supabase_user_id: user.id,
+          billing,
+          plan,
         },
       },
       metadata: {
         supabase_user_id: user.id,
         billing,
+        plan,
       },
       success_url: `${siteUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${siteUrl}/billing/cancel`,

@@ -44,13 +44,22 @@ const LIGHT = {
   checkBg: 'rgba(184,117,12,.04)', checkBorder: 'rgba(184,117,12,.18)',
 }
 
-const PLAN_FEATURES = [
-  'Full AI voice — "Hey Monday" wake word',
+const CORE_FEATURES = [
+  'AI voice — "Hey Monday" wake word',
   'Live prices: stocks, ETFs, futures, crypto',
   'High-impact economic calendar',
   'News feed with sentiment scoring',
-  'Level 2 / order flow descriptions',
-  'Morning & EOD spoken briefings',
+  'Options flow & dark pool activity',
+  'Up to 5 alerts · 3 briefings/day',
+]
+
+const EDGE_FEATURES = [
+  'Everything in Core, plus:',
+  'Unlimited alerts & briefings',
+  'Full data history',
+  'Political & social media intel',
+  'Congressional & insider trades',
+  'TradingView alert integration',
 ]
 
 type Field = 'email' | 'password' | 'name'
@@ -104,10 +113,14 @@ function SignupForm({
   isDark,
   billing,
   setBilling,
+  plan,
+  setPlan,
 }: {
   isDark: boolean
   billing: 'monthly' | 'annual'
   setBilling: (b: 'monthly' | 'annual') => void
+  plan: 'core' | 'edge'
+  setPlan: (p: 'core' | 'edge') => void
 }) {
   const T = isDark ? DARK : LIGHT
   const searchParams = useSearchParams()
@@ -229,7 +242,7 @@ function SignupForm({
       const res = await fetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ billing: billingMode }),
+        body: JSON.stringify({ billing: billingMode, plan }),
       })
 
       const data = await res.json()
@@ -308,41 +321,44 @@ function SignupForm({
 
       {step === 1 && !emailSent && (
         <div className="fade-up">
-          <div style={{ marginBottom: 28 }}>
+          {/* Plan selector */}
+          <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 11, letterSpacing: '0.18em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 10 }}>Choose your plan</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {(['core', 'edge'] as const).map(p => {
+                const monthlyPrice = p === 'core' ? '$79.99' : '$109.99'
+                const annualPrice  = p === 'core' ? '$66.66' : '$91.66'
+                const label        = p === 'core' ? 'Essential intel' : 'Every advantage'
+                const active       = plan === p
+                return (
+                  <div key={p} onClick={() => setPlan(p)} style={{ padding: '14px 12px', cursor: 'pointer', border: `1px solid ${active ? T.gold : T.border2}`, background: active ? T.bg4 : 'transparent', borderRadius: 6, transition: 'all .15s', position: 'relative', overflow: 'hidden' }}>
+                    {active && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: T.gold }} />}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <span style={{ fontSize: 10, letterSpacing: '0.15em', color: active ? T.gold : T.text3, textTransform: 'uppercase', fontWeight: 600 }}>{p === 'core' ? 'Core' : 'Edge'}</span>
+                      {p === 'edge' && <span style={{ fontSize: 8, padding: '1px 5px', background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, color: T.gold, borderRadius: 3 }}>POPULAR</span>}
+                    </div>
+                    <div style={{ fontSize: 17, fontWeight: 700, color: active ? T.gold : T.text2, lineHeight: 1 }}>
+                      {billing === 'annual' ? annualPrice : monthlyPrice}<span style={{ fontSize: 10, fontWeight: 400, color: T.text3 }}>/mo</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: T.text3, marginTop: 4 }}>{label}</div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Billing cycle */}
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ fontSize: 11, letterSpacing: '0.18em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 10 }}>Billing cycle</div>
             <div style={{ display: 'flex', background: T.bg2, border: `1px solid ${T.border2}`, padding: 3, gap: 3, borderRadius: 6 }}>
               {(['monthly', 'annual'] as const).map(b => (
-                <div
-                  key={b}
-                  onClick={() => setBilling(b)}
-                  style={{
-                    flex: 1,
-                    padding: '10px 16px',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    background: billing === b ? T.bg4 : 'transparent',
-                    color: billing === b ? T.heading : T.text3,
-                    border: billing === b ? `1px solid ${T.border2}` : '1px solid transparent',
-                    borderRadius: 4,
-                    transition: 'all .15s',
-                    textAlign: 'center',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
-                  }}
-                >
-                  {b === 'monthly' ? '$79.99/mo' : '$66.66/mo'}
-                  {b === 'annual' && (
-                    <span style={{ fontSize: 9, padding: '1px 6px', background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, color: T.gold, borderRadius: 3 }}>
-                      SAVE 17%
-                    </span>
-                  )}
+                <div key={b} onClick={() => setBilling(b)} style={{ flex: 1, padding: '10px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: billing === b ? T.bg4 : 'transparent', color: billing === b ? T.heading : T.text3, border: billing === b ? `1px solid ${T.border2}` : '1px solid transparent', borderRadius: 4, transition: 'all .15s', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  {b === 'monthly' ? 'Monthly' : 'Annual'}
+                  {b === 'annual' && <span style={{ fontSize: 9, padding: '1px 6px', background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, color: T.gold, borderRadius: 3 }}>SAVE 17%</span>}
                 </div>
               ))}
             </div>
-            {billing === 'annual' && <div style={{ marginTop: 8, fontSize: 11, color: T.gold }}>Billed as $799.92/year — save $159.96</div>}
+            {billing === 'annual' && <div style={{ marginTop: 8, fontSize: 11, color: T.gold }}>{plan === 'core' ? 'Billed as $799.92/year — save $159.96' : 'Billed as $1,099.92/year — save $219.96'}</div>}
           </div>
 
           <button
@@ -501,7 +517,10 @@ function SignupForm({
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: T.heading, marginBottom: 2 }}>Your card won't be charged today</div>
               <div style={{ fontSize: 12, color: T.text2, lineHeight: 1.6 }}>
-                5-day free trial. {billing === 'monthly' ? '$79.99/month' : '$66.66/month'} starts <strong style={{ color: T.gold }}>{chargeDate}</strong>. Cancel anytime.
+                5-day free trial. {plan === 'edge'
+                  ? (billing === 'monthly' ? '$109.99/month' : '$91.66/month')
+                  : (billing === 'monthly' ? '$79.99/month'  : '$66.66/month')
+                } starts <strong style={{ color: T.gold }}>{chargeDate}</strong>. Cancel anytime.
               </div>
             </div>
           </div>
@@ -599,11 +618,14 @@ function SignupPageInner() {
   const { isDark } = useTheme()
   const T = isDark ? DARK : LIGHT
   const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
+  const [plan,    setPlan]    = useState<'core' | 'edge'>('core')
   const searchParams = useSearchParams()
   const confirmedParam = searchParams.get('confirmed') === '1'
   const currentStep = confirmedParam ? 2 : 1
 
-  const price = billing === 'monthly' ? '79.99' : '66.66'
+  const price = plan === 'edge'
+    ? (billing === 'monthly' ? '109.99' : '91.66')
+    : (billing === 'monthly' ? '79.99'  : '66.66')
   const chargeDate = (() => {
     const d = new Date()
     d.setDate(d.getDate() + 5)
@@ -649,7 +671,7 @@ function SignupPageInner() {
       </div>
 
       <div className="layout" style={{ maxWidth: 1000, margin: '0 auto', padding: '48px 24px', display: 'flex', gap: 48, alignItems: 'flex-start' }}>
-        <SignupForm isDark={isDark} billing={billing} setBilling={setBilling} />
+        <SignupForm isDark={isDark} billing={billing} setBilling={setBilling} plan={plan} setPlan={setPlan} />
 
         <div className="sidebar" style={{ width: 300, flexShrink: 0, position: 'sticky', top: 80 }}>
           <div style={{ background: T.cardBg, border: `1px solid ${T.cardBorder}`, overflow: 'hidden', borderRadius: 8 }}>
@@ -657,7 +679,7 @@ function SignupPageInner() {
             <div style={{ padding: '22px' }}>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 9, letterSpacing: '0.18em', color: T.gold, background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, padding: '3px 10px', marginBottom: 16, textTransform: 'uppercase', borderRadius: 3 }}>
                 <span style={{ width: 4, height: 4, borderRadius: '50%', background: T.gold, display: 'inline-block', animation: 'pulse 2s ease infinite' }} />
-                Pro Plan · 5-Day Free Trial
+                {plan === 'edge' ? 'Edge Plan' : 'Core Plan'} · 5-Day Free Trial
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginBottom: 4 }}>
                 <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 48, fontWeight: 700, color: T.gold, lineHeight: 1 }}>${price.split('.')[0]}</span>
@@ -665,16 +687,21 @@ function SignupPageInner() {
                 <span style={{ fontSize: 11, color: T.text3 }}>/mo</span>
               </div>
               <div style={{ fontSize: 11, color: T.text2, marginBottom: 18 }}>
-                {billing === 'annual' ? 'Billed as $799.92 annually' : 'Billed monthly, cancel anytime'}
+                {billing === 'annual'
+                  ? `Billed as $${plan === 'edge' ? '1,099.92' : '799.92'} annually`
+                  : 'Billed monthly, cancel anytime'}
               </div>
               <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 16, marginBottom: 16 }}>
                 <div style={{ fontSize: 10, letterSpacing: '0.15em', color: T.text3, textTransform: 'uppercase', marginBottom: 12 }}>What's included</div>
-                {PLAN_FEATURES.map((f, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 8, padding: '6px 0', borderBottom: i < PLAN_FEATURES.length - 1 ? `1px solid ${T.border}` : 'none' }}>
-                    <span style={{ color: T.gold, fontSize: 11, flexShrink: 0, marginTop: 1 }}>✓</span>
-                    <span style={{ fontSize: 12, color: T.text2 }}>{f}</span>
-                  </div>
-                ))}
+                {(plan === 'edge' ? EDGE_FEATURES : CORE_FEATURES).map((f, i) => {
+                  const features = plan === 'edge' ? EDGE_FEATURES : CORE_FEATURES
+                  return (
+                    <div key={i} style={{ display: 'flex', gap: 8, padding: '6px 0', borderBottom: i < features.length - 1 ? `1px solid ${T.border}` : 'none' }}>
+                      <span style={{ color: T.gold, fontSize: 11, flexShrink: 0, marginTop: 1 }}>✓</span>
+                      <span style={{ fontSize: 12, color: T.text2 }}>{f}</span>
+                    </div>
+                  )
+                })}
               </div>
               <div style={{ background: 'rgba(201,146,42,.05)', border: `1px solid rgba(201,146,42,.15)`, padding: '10px 12px', borderRadius: 4 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: T.gold, marginBottom: 3 }}>Trial: 5 voice/chat replies/day</div>
