@@ -33,12 +33,6 @@ const FEATURES = [
   { icon: '◉', title: 'Proactive Alerts',          tag: 'ALERTS', desc: 'Price cross, VWAP, volume spike, % move. TradingView alerts supported. Spoken notification the moment it fires.' },
 ]
 
-const DEMO_CHAT = [
-  { role: 'user',   text: "Hey Monday, what's happening with NVDA right now?" },
-  { role: 'monday', text: "NVDA is down 0.84% at $180.40 on moderate volume. The broader semis are mixed — AMD is the outlier at +1.60%. Key watch: Blackwell supply data out of Taiwan this week." },
-  { role: 'user',   text: "How does today's macro backdrop affect my tech positions?" },
-  { role: 'monday', text: "The 10Y Treasury Yield sits at 4.21% — elevated rates are pressuring growth multiples across your watchlist. AAPL, TSLA, META are all red. GLD at -3.16% may signal broader risk-off rotation." },
-]
 
 const STEPS = [
   { n: '01', title: 'Build your watchlist',      sub: 'Any stock, ETF, future, commodity, or crypto. Updates every 30 seconds.' },
@@ -164,7 +158,6 @@ export default function MarketingPage() {
   const T = isDark ? DARK : LIGHT
 
   const [activeNav, setActiveNav]           = useState('')
-  const [chatStep, setChatStep]             = useState(1)
   const [openFaq, setOpenFaq]               = useState<number | null>(null)
   const [billing, setBilling]               = useState<'monthly'|'annual'>('monthly')
   const [activeStep, setActiveStep]         = useState(0)
@@ -186,10 +179,6 @@ export default function MarketingPage() {
   })
 }, [])
 
-  useEffect(() => {
-    const t = setInterval(() => setChatStep(s => s < DEMO_CHAT.length ? s + 1 : s), 2800)
-    return () => clearInterval(t)
-  }, [])
 
   useEffect(() => {
     const handler = () => {
@@ -238,6 +227,7 @@ export default function MarketingPage() {
         @keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
         @keyframes toggleSpin{from{transform:rotate(-30deg);opacity:0}to{transform:rotate(0deg);opacity:1}}
         @keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes panelFire{0%,75%,100%{box-shadow:none}85%{box-shadow:inset 0 0 0 1px rgba(201,146,42,.5),inset 0 0 16px rgba(201,146,42,.08)}}
         .ticker-inner{display:flex;animation:tickerScroll 45s linear infinite;white-space:nowrap;align-items:center;height:30px}
         .wb{width:3px;border-radius:2px;opacity:.65;animation:waveAnim 1.1s ease-in-out infinite}
         .wb:nth-child(1){animation-delay:.00s}.wb:nth-child(2){animation-delay:.08s}.wb:nth-child(3){animation-delay:.16s}
@@ -386,32 +376,86 @@ export default function MarketingPage() {
         </div>
         <div className="demo-window" style={{ maxWidth:680, margin:'0 auto', background:T.chatBg, border:`1px solid ${T.border2}`, position:'relative', overflow:'hidden', boxShadow:T.pricingShadow }}>
           <div style={{ position:'absolute', left:0, right:0, height:1, background:`linear-gradient(90deg,transparent,${T.scanline},transparent)`, animation:'scanline 9s linear infinite', pointerEvents:'none', zIndex:2 }} />
+          {/* Header */}
           <div style={{ padding:'9px 14px', borderBottom:`1px solid ${T.border}`, display:'flex', alignItems:'center', gap:8, background:T.chatToolbar }}>
             <div style={{ display:'flex', gap:4 }}>
               {['#ff5f57','#febc2e','#28c840'].map((c,i)=><div key={i} style={{ width:8, height:8, borderRadius:'50%', background:c, opacity:.7 }} />)}
             </div>
-            <div style={{ flex:1, textAlign:'center', fontSize:9, letterSpacing:'0.15em', color:T.text3, textTransform:'uppercase' }}>Monday — AI Market Intelligence</div>
+            <div style={{ flex:1, textAlign:'center', fontSize:9, letterSpacing:'0.15em', color:T.text3, textTransform:'uppercase' }}>Monday — Synthesizing 4 Sources</div>
             <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:9, color:T.amber, letterSpacing:'0.1em' }}>
               <span style={{ width:4, height:4, borderRadius:'50%', background:T.amber, display:'inline-block', animation:'gpulse 2s ease infinite' }} />
-              Listening
+              Live
             </div>
           </div>
-          <div style={{ padding:'14px 16px 8px', display:'flex', flexDirection:'column', gap:10, minHeight:220, background:T.chatBg }}>
-            {DEMO_CHAT.slice(0,chatStep).map((msg,i)=>(
-              <div key={i} className="msg-in" style={{ display:'flex', flexDirection:'column', alignItems:msg.role==='user'?'flex-end':'flex-start', gap:3 }}>
-                <div className="demo-chat-msg" style={{ maxWidth:'88%', padding:'9px 12px', fontSize:'clamp(11px,2.5vw,12px)', lineHeight:1.65, background:msg.role==='user'?T.chatUser:T.chatMonday, border:msg.role==='user'?`1px solid ${T.chatUserBorder}`:`1px solid ${T.chatMondayBorder}`, color:T.text, textAlign:'left' }}>
-                  {msg.text}
-                </div>
-                <div style={{ fontSize:9, letterSpacing:'0.1em', color:T.text3 }}>{msg.role==='monday'?'Monday · just now':'You'}</div>
+          {/* 4-panel grid */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:1, background:T.border }}>
+            {/* Live Prices */}
+            <div style={{ background:T.bg2, padding:'10px 12px', animation:'panelFire 4s ease-in-out infinite 0s' }}>
+              <div style={{ fontSize:8, letterSpacing:'0.18em', color:T.goldDim, marginBottom:7, textTransform:'uppercase', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                Live Prices <span style={{ width:5, height:5, borderRadius:'50%', background:T.gold, display:'inline-block', animation:'pulse 2s ease infinite 0s' }} />
               </div>
-            ))}
-          </div>
-          <div style={{ padding:'8px 12px 10px', borderTop:`1px solid ${T.border}`, display:'flex', alignItems:'center', gap:8, background:T.chatToolbar }}>
-            <div style={{ width:26, height:26, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, color:T.btnText, flexShrink:0 }}>🎙</div>
-            <div style={{ flex:1, display:'flex', alignItems:'center', gap:2, height:20 }}>
-              {Array.from({length:18},(_,i)=><div key={i} className="wb" style={{ background:T.gold, animationDelay:`${(i%9)*.06}s` }} />)}
+              {[{sym:'NVDA',price:'$180.40',chg:'-0.84%',up:false},{sym:'AMD',price:'$199.46',chg:'+1.60%',up:true},{sym:'AAPL',price:'$249.94',chg:'-1.69%',up:false}].map((tk,i)=>(
+                <div key={i} style={{ display:'flex', alignItems:'center', padding:'4px 0', borderBottom:i<2?`1px solid ${T.border}`:'none', gap:6 }}>
+                  <span style={{ fontSize:11, fontWeight:700, color:T.heading, width:38 }}>{tk.sym}</span>
+                  <span style={{ flex:1, fontSize:10, color:T.text, fontFamily:"'JetBrains Mono',monospace" }}>{tk.price}</span>
+                  <span style={{ fontSize:10, color:tk.up?T.gold:T.red, fontFamily:"'JetBrains Mono',monospace" }}>{tk.chg}</span>
+                </div>
+              ))}
             </div>
-            <div style={{ fontSize:9, letterSpacing:'0.12em', color:T.gold, textTransform:'uppercase' }}>Listening</div>
+            {/* Options Flow */}
+            <div style={{ background:T.bg2, padding:'10px 12px', animation:'panelFire 4s ease-in-out infinite 1s' }}>
+              <div style={{ fontSize:8, letterSpacing:'0.18em', color:T.goldDim, marginBottom:7, textTransform:'uppercase', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                Options Flow <span style={{ width:5, height:5, borderRadius:'50%', background:T.red, display:'inline-block', animation:'pulse 2s ease infinite 0.5s' }} />
+              </div>
+              {[{sym:'SPY',type:'SWEEP',desc:'$2.1M calls',bull:true},{sym:'NVDA',type:'BLOCK',desc:'$890K puts',bull:false},{sym:'QQQ',type:'SWEEP',desc:'$1.4M calls',bull:true}].map((f,i)=>(
+                <div key={i} style={{ display:'flex', alignItems:'center', padding:'4px 0', borderBottom:i<2?`1px solid ${T.border}`:'none', gap:5 }}>
+                  <span style={{ fontSize:11, fontWeight:700, color:f.bull?T.gold:T.red, width:38 }}>{f.sym}</span>
+                  <span style={{ fontSize:8, color:T.text3, letterSpacing:'0.05em', width:38 }}>{f.type}</span>
+                  <span style={{ fontSize:9, color:T.text2 }}>{f.desc}</span>
+                </div>
+              ))}
+            </div>
+            {/* Breaking News */}
+            <div style={{ background:T.bg2, padding:'10px 12px', animation:'panelFire 4s ease-in-out infinite 2s' }}>
+              <div style={{ fontSize:8, letterSpacing:'0.18em', color:T.goldDim, marginBottom:7, textTransform:'uppercase', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                Breaking News <span style={{ width:5, height:5, borderRadius:'50%', background:T.gold, display:'inline-block', animation:'pulse 2s ease infinite 1s' }} />
+              </div>
+              {[{txt:'Fed signals pause — markets reprice rate cut odds',hot:true},{txt:'NVDA Blackwell supply data expected from Taiwan',hot:false},{txt:'AMD gains on data center contract win',hot:false}].map((n,i)=>(
+                <div key={i} style={{ fontSize:9, color:i===0?T.text:T.text3, lineHeight:1.45, padding:'4px 0', borderBottom:i<2?`1px solid ${T.border}`:'none' }}>
+                  {i===0&&<span style={{ color:T.red, marginRight:4, fontSize:8 }}>●</span>}{n.txt}
+                </div>
+              ))}
+            </div>
+            {/* Macro Calendar */}
+            <div style={{ background:T.bg2, padding:'10px 12px', animation:'panelFire 4s ease-in-out infinite 3s' }}>
+              <div style={{ fontSize:8, letterSpacing:'0.18em', color:T.goldDim, marginBottom:7, textTransform:'uppercase', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                Macro Calendar <span style={{ width:5, height:5, borderRadius:'50%', background:T.amber, display:'inline-block', animation:'pulse 2s ease infinite 1.5s' }} />
+              </div>
+              {[{name:'CPI YoY',actual:'2.9%',beat:true},{name:'Jobless Claims',actual:'213K',beat:true},{name:'FOMC Minutes',actual:null,time:'2:00 PM'}].map((ev,i)=>(
+                <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'4px 0', borderBottom:i<2?`1px solid ${T.border}`:'none', gap:4 }}>
+                  <span style={{ fontSize:9, color:T.text, flex:1 }}>{ev.name}</span>
+                  {ev.actual
+                    ? <span style={{ fontSize:9, fontWeight:700, color:ev.beat?T.amber:T.red }}>{ev.actual} {ev.beat?'↑ BEAT':'↓ MISS'}</span>
+                    : <span style={{ fontSize:9, color:T.goldDim }}>⏳ {(ev as any).time}</span>
+                  }
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Monday synthesis response */}
+          <div style={{ padding:'12px 14px', borderTop:`1px solid ${T.border}`, background:T.chatToolbar, display:'flex', alignItems:'flex-start', gap:10 }}>
+            <div style={{ width:26, height:26, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <LogoSvg size={14} />
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.08em', marginBottom:4 }}>Monday · synthesized from 4 sources · just now</div>
+              <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(12px,2.8vw,14px)', color:T.text, lineHeight:1.65, fontStyle:'italic' }}>
+                "SPY and QQQ sweeps point to institutional re-entry. CPI beat reduces rate pressure — AMD's strength makes sense. Watch NVDA for a reversal setup into Thursday."
+              </div>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:2, height:24, flexShrink:0, alignSelf:'center' }}>
+              {Array.from({length:9},(_,i)=><div key={i} className="wb" style={{ background:T.gold, animationDelay:`${i*.06}s` }} />)}
+            </div>
           </div>
         </div>
         <p style={{ marginTop:14, fontSize:9, color:T.text3, letterSpacing:'0.15em' }}>CANCEL ANYTIME · 5-DAY FREE TRIAL</p>
