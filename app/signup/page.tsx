@@ -164,6 +164,10 @@ function SignupForm({
   setGoogleLoading(true)
   setError('')
 
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('hm_selected_plan', plan)
+  }
+
   await supabase.auth.signOut()
 
   const { error } = await supabase.auth.signInWithOAuth({
@@ -618,10 +622,27 @@ function SignupPageInner() {
   const { isDark } = useTheme()
   const T = isDark ? DARK : LIGHT
   const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
-  const [plan,    setPlan]    = useState<'core' | 'edge'>('core')
   const searchParams = useSearchParams()
   const confirmedParam = searchParams.get('confirmed') === '1'
   const currentStep = confirmedParam ? 2 : 1
+
+  const initialPlan = (): 'core' | 'edge' => {
+    const urlPlan = searchParams.get('plan')
+    if (urlPlan === 'edge') return 'edge'
+    if (urlPlan === 'core') return 'core'
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('hm_selected_plan')
+      if (stored === 'edge' || stored === 'core') return stored
+    }
+    return 'core'
+  }
+  const [plan, setPlan] = useState<'core' | 'edge'>(initialPlan)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('hm_selected_plan', plan)
+    }
+  }, [plan])
 
   const price = plan === 'edge'
     ? (billing === 'monthly' ? '109.99' : '91.66')

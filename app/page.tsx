@@ -778,7 +778,7 @@ export default function MarketingPage() {
                 </div>
               ))}
               <div style={{ marginTop:24 }}>
-                <Link href="/signup" style={{ textDecoration:'none' }}>
+                <Link href="/signup?plan=core" style={{ textDecoration:'none' }}>
                   <div style={{ border:`1px solid ${T.gold}`, color:T.gold, padding:'12px 20px', fontWeight:700, fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', textAlign:'center', cursor:'pointer' }}>
                     Start Free Trial →
                   </div>
@@ -821,7 +821,7 @@ export default function MarketingPage() {
                 </div>
               ))}
               <div style={{ marginTop:24 }}>
-                <Link href="/signup" style={{ textDecoration:'none' }}>
+                <Link href="/signup?plan=edge" style={{ textDecoration:'none' }}>
                   <div style={{ background:T.gold, color:T.btnText, padding:'12px 20px', fontWeight:700, fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', textAlign:'center', cursor:'pointer' }}>
                     Start Free Trial →
                   </div>
