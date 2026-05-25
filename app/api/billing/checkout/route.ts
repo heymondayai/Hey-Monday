@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
     const billing = String(body?.billing || 'monthly')
     const plan    = String(body?.plan    || 'core')
 
-    const coreMonthly = process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY
-    const coreAnnual  = process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL
+    const coreMonthly = process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_MONTHLY || process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY
+    const coreAnnual  = process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_ANNUAL  || process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL
     const edgeMonthly = process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_MONTHLY
     const edgeAnnual  = process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_ANNUAL
 
