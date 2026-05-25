@@ -407,6 +407,28 @@ export default function MarketingPage() {
           <div style={{ padding:'24px 22px 20px', minHeight:280, display:'flex', flexDirection:'column', gap:18, position:'relative' }}>
             <div style={{ position:'absolute', top:'30%', left:'50%', transform:'translate(-50%,-50%)', width:'80%', height:160, background:`radial-gradient(ellipse,${T.glow} 0%,transparent 70%)`, pointerEvents:'none' }} />
 
+            {/* Phase 1+: waveform */}
+            <div style={{ display:'flex', alignItems:'center', gap:10, opacity:heroPhase>=1?1:0, transition:'opacity 0.7s ease', animation:heroPhase===1?'fadeUp 0.7s ease both':undefined }}>
+              <div style={{ width:28, height:28, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <LogoSvg size={14} />
+              </div>
+              <div style={{ flex:1, display:'flex', alignItems:'center', gap:'3px', height:44 }}>
+                {Array.from({length:32},(_,i)=>(
+                  <div key={i} className="wb" style={{ background:T.gold, animationDelay:`${(i%9)*.055}s`, width:'3px', opacity:0.3+Math.abs(Math.sin(i*0.52))*0.7 }} />
+                ))}
+              </div>
+            </div>
+
+            {/* Phase 2+: spoken alert text */}
+            {heroPhase >= 2 && (
+              <div style={{ paddingLeft:38, animation:'fadeUp 0.5s ease both' }}>
+                <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(15px,3.5vw,19px)', color:T.heading, lineHeight:1.6, fontStyle:'italic' }}>
+                  "Heads up — TSLA earnings in 90 minutes. Large call sweeps just hit the chain. Watch for a move."
+                </div>
+                <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.1em', marginTop:5 }}>Monday · proactive alert</div>
+              </div>
+            )}
+
             {/* Phase 1+: SVG candlestick chart — pre-alert candles visible from start, surge at phase 3 */}
             {heroPhase >= 1 && (() => {
               const svgW = 290, svgH = 84
@@ -457,28 +479,6 @@ export default function MarketingPage() {
                 </div>
               )
             })()}
-
-            {/* Phase 1+: waveform */}
-            <div style={{ display:'flex', alignItems:'center', gap:10, opacity:heroPhase>=1?1:0, transition:'opacity 0.7s ease', animation:heroPhase===1?'fadeUp 0.7s ease both':undefined }}>
-              <div style={{ width:28, height:28, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                <LogoSvg size={14} />
-              </div>
-              <div style={{ flex:1, display:'flex', alignItems:'center', gap:'3px', height:44 }}>
-                {Array.from({length:32},(_,i)=>(
-                  <div key={i} className="wb" style={{ background:T.gold, animationDelay:`${(i%9)*.055}s`, width:'3px', opacity:0.3+Math.abs(Math.sin(i*0.52))*0.7 }} />
-                ))}
-              </div>
-            </div>
-
-            {/* Phase 2+: spoken alert text */}
-            {heroPhase >= 2 && (
-              <div style={{ paddingLeft:38, animation:'fadeUp 0.5s ease both' }}>
-                <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(15px,3.5vw,19px)', color:T.heading, lineHeight:1.6, fontStyle:'italic' }}>
-                  "Heads up — TSLA earnings in 90 minutes. Large call sweeps just hit the chain. Watch for a move."
-                </div>
-                <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.1em', marginTop:5 }}>Monday · proactive alert</div>
-              </div>
-            )}
           </div>
         </div>
 
