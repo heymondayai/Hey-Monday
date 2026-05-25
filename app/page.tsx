@@ -407,30 +407,8 @@ export default function MarketingPage() {
           <div style={{ padding:'24px 22px 20px', minHeight:280, display:'flex', flexDirection:'column', gap:18, position:'relative' }}>
             <div style={{ position:'absolute', top:'30%', left:'50%', transform:'translate(-50%,-50%)', width:'80%', height:160, background:`radial-gradient(ellipse,${T.glow} 0%,transparent 70%)`, pointerEvents:'none' }} />
 
-            {/* Phase 1+: waveform */}
-            <div style={{ display:'flex', alignItems:'center', gap:10, opacity:heroPhase>=1?1:0, transition:'opacity 0.7s ease', animation:heroPhase===1?'fadeUp 0.7s ease both':undefined }}>
-              <div style={{ width:28, height:28, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                <LogoSvg size={14} />
-              </div>
-              <div style={{ flex:1, display:'flex', alignItems:'center', gap:'3px', height:44 }}>
-                {Array.from({length:32},(_,i)=>(
-                  <div key={i} className="wb" style={{ background:T.gold, animationDelay:`${(i%9)*.055}s`, width:'3px', opacity:0.3+Math.abs(Math.sin(i*0.52))*0.7 }} />
-                ))}
-              </div>
-            </div>
-
-            {/* Phase 2+: spoken alert text */}
-            {heroPhase >= 2 && (
-              <div style={{ paddingLeft:38, animation:'fadeUp 0.5s ease both' }}>
-                <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(15px,3.5vw,19px)', color:T.heading, lineHeight:1.6, fontStyle:'italic' }}>
-                  "Heads up — TSLA earnings in 90 minutes. Large call sweeps just hit the chain. Watch for a move."
-                </div>
-                <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.1em', marginTop:5 }}>Monday · proactive alert</div>
-              </div>
-            )}
-
-            {/* Phase 3+: SVG candlestick chart */}
-            {heroPhase >= 3 && (() => {
+            {/* Phase 1+: SVG candlestick chart — pre-alert candles visible from start, surge at phase 3 */}
+            {heroPhase >= 1 && (() => {
               const svgW = 290, svgH = 84
               const minP = 182, maxP = 214, rng = maxP - minP
               const py = (p: number) => ((maxP - p) / rng) * 76 + 4
@@ -453,15 +431,17 @@ export default function MarketingPage() {
                       {[0.35,0.68].map((f,i)=><line key={i} x1={0} y1={svgH*f} x2={svgW} y2={svgH*f} stroke={isDark?'#2a2618':'#d0cdc8'} strokeWidth={0.5}/>)}
                       <line x1={alertX} y1={0} x2={alertX} y2={svgH} stroke={T.gold} strokeWidth={0.8} strokeDasharray="3,2" opacity={0.65}/>
                       <text x={alertX+3} y={11} fontSize="6.5" fill={T.gold} opacity={0.8} letterSpacing="0.8">ALERT</text>
-                      <rect x={alertX} y={0} width={svgW-alertX} height={svgH} fill="url(#rg)"/>
+                      {heroPhase >= 3 && <rect x={alertX} y={0} width={svgW-alertX} height={svgH} fill="url(#rg)"/>}
                       {cd.map((c,i)=>{
+                        if (i >= 6 && heroPhase < 3) return null
                         const bull = c.c >= c.o
                         const x = sx + i*(cW+gap), cx = x + cW/2
                         const col = bull ? T.gold : T.red
                         const op = i < 6 ? 0.45 : 0.5+(i-6)*0.13
                         const bTop = py(Math.max(c.o,c.c)), bBot = py(Math.min(c.o,c.c))
+                        const animDelay = i >= 6 ? `${(i-6)*0.22}s` : `${i*0.06}s`
                         return (
-                          <g key={i} style={{ animation:'fadeUp 0.28s ease-out both', animationDelay:`${i*0.08}s` }}>
+                          <g key={i} style={{ animation:'fadeUp 0.28s ease-out both', animationDelay:animDelay }}>
                             <line x1={cx} y1={py(c.h)} x2={cx} y2={py(c.l)} stroke={col} strokeWidth={1.2} opacity={op}/>
                             <rect x={x} y={bTop} width={cW} height={Math.max(bBot-bTop,1.5)} fill={col} opacity={op}/>
                           </g>
@@ -477,76 +457,28 @@ export default function MarketingPage() {
                 </div>
               )
             })()}
-          </div>
-        </div>
 
-        {/* ── RADAR COMPARISON ── */}
-        <div style={{ marginTop:22 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:10, maxWidth:640, margin:'0 auto 18px' }}>
-            <div style={{ flex:1, height:1, background:`linear-gradient(90deg, transparent, ${T.border2})` }} />
-            <span style={{ fontSize:8, color:T.text3, letterSpacing:'0.22em', textTransform:'uppercase', flexShrink:0 }}>or this</span>
-            <div style={{ flex:1, height:1, background:`linear-gradient(270deg, transparent, ${T.border2})` }} />
-          </div>
-          <div style={{ maxWidth:640, margin:'0 auto', background:T.chatBg, border:`1px solid ${T.border2}`, position:'relative', overflow:'hidden', boxShadow:T.pricingShadow }}>
-            <div style={{ padding:'9px 14px', borderBottom:`1px solid ${T.border}`, display:'flex', alignItems:'center', gap:8, background:T.chatToolbar }}>
-              <div style={{ display:'flex', gap:4 }}>
-                {['#ff5f57','#febc2e','#28c840'].map((c,i)=><div key={i} style={{ width:8, height:8, borderRadius:'50%', background:c, opacity:.7 }} />)}
+            {/* Phase 1+: waveform */}
+            <div style={{ display:'flex', alignItems:'center', gap:10, opacity:heroPhase>=1?1:0, transition:'opacity 0.7s ease', animation:heroPhase===1?'fadeUp 0.7s ease both':undefined }}>
+              <div style={{ width:28, height:28, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <LogoSvg size={14} />
               </div>
-              <div style={{ flex:1, textAlign:'center', fontSize:9, letterSpacing:'0.15em', color:T.text3, textTransform:'uppercase' }}>Monday · Radar</div>
-              <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:9, color:T.amber, letterSpacing:'0.1em' }}>
-                <span style={{ width:4, height:4, borderRadius:'50%', background:T.amber, display:'inline-block', animation:'gpulse 2s ease infinite' }} />
-                Scanning
+              <div style={{ flex:1, display:'flex', alignItems:'center', gap:'3px', height:44 }}>
+                {Array.from({length:32},(_,i)=>(
+                  <div key={i} className="wb" style={{ background:T.gold, animationDelay:`${(i%9)*.055}s`, width:'3px', opacity:0.3+Math.abs(Math.sin(i*0.52))*0.7 }} />
+                ))}
               </div>
             </div>
-            <div style={{ padding:'28px 20px', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
-              {(() => {
-                const grb = isDark ? '201,146,42' : '184,117,12'
-                const D = 260, R = 130
-                const pts = [
-                  {label:'NVDA', angle:-90, r:0.68},
-                  {label:'/ES',  angle:-32, r:0.74},
-                  {label:'CPI',  angle:28,  r:0.62},
-                  {label:'TSLA', angle:88,  r:0.70},
-                  {label:'AMD',  angle:148, r:0.66},
-                  {label:'SPY',  angle:208, r:0.72},
-                ]
-                return (
-                  <div style={{ position:'relative', width:D, height:D, flexShrink:0 }}>
-                    <div style={{ position:'absolute', inset:0, borderRadius:'50%', overflow:'hidden' }}>
-                      <div style={{ position:'absolute', inset:0, background:T.bg3 }} />
-                      <div style={{ position:'absolute', inset:0, background:`conic-gradient(from 0deg, transparent 0%, rgba(${grb},0.05) 12%, rgba(${grb},0.38) 20%, transparent 20%)`, animation:'radarSweep 3s linear infinite' }} />
-                      <svg width={D} height={D} style={{ position:'absolute', inset:0 }}>
-                        {[0.72,0.46,0.24].map((f,i)=>(
-                          <circle key={i} cx={R} cy={R} r={R*f} fill="none" stroke={isDark?'#2a2618':'#c8c4be'} strokeWidth="0.8"/>
-                        ))}
-                        <line x1="0" y1={R} x2={D} y2={R} stroke={isDark?'#2a2618':'#c8c4be'} strokeWidth="0.5" opacity="0.7"/>
-                        <line x1={R} y1="0" x2={R} y2={D} stroke={isDark?'#2a2618':'#c8c4be'} strokeWidth="0.5" opacity="0.7"/>
-                      </svg>
-                      <div style={{ position:'absolute', top:'50%', left:'50%', width:R, height:1.5, transformOrigin:'left center', marginTop:'-0.75px', background:`linear-gradient(90deg, rgba(${grb},0.9), rgba(${grb},0.1))`, animation:'radarSweep 3s linear infinite' }} />
-                    </div>
-                    <div style={{ position:'absolute', inset:0, borderRadius:'50%', border:`1px solid rgba(${grb},0.25)`, pointerEvents:'none' }} />
-                    {pts.map(({label,angle,r},i)=>{
-                      const rad = angle * Math.PI / 180
-                      const lx = R + r * R * Math.cos(rad)
-                      const ly = R + r * R * Math.sin(rad)
-                      const delay = ((angle + 90 + 360) % 360) / 360 * 3
-                      return (
-                        <div key={i} style={{ position:'absolute', left:lx, top:ly, transform:'translate(-50%,-50%)', animation:`radarPing 3s ease-in-out infinite`, animationDelay:`${delay.toFixed(2)}s`, fontSize:8, letterSpacing:'0.12em', color:T.gold, fontWeight:700, whiteSpace:'nowrap', userSelect:'none' }}>
-                          {label}
-                        </div>
-                      )
-                    })}
-                    <div style={{ position:'absolute', left:'50%', top:'50%', transform:'translate(-50%,-50%)', width:44, height:44, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', boxShadow:`0 0 20px rgba(${grb},0.7), 0 0 40px rgba(${grb},0.25)`, zIndex:5 }}>
-                      <LogoSvg size={22} />
-                    </div>
-                  </div>
-                )
-              })()}
-              <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:8, color:T.text3, letterSpacing:'0.15em', textTransform:'uppercase' }}>
-                <span style={{ width:4, height:4, borderRadius:'50%', background:T.gold, display:'inline-block', animation:'pulse 1.5s ease infinite' }} />
-                Live scan · all markets
+
+            {/* Phase 2+: spoken alert text */}
+            {heroPhase >= 2 && (
+              <div style={{ paddingLeft:38, animation:'fadeUp 0.5s ease both' }}>
+                <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(15px,3.5vw,19px)', color:T.heading, lineHeight:1.6, fontStyle:'italic' }}>
+                  "Heads up — TSLA earnings in 90 minutes. Large call sweeps just hit the chain. Watch for a move."
+                </div>
+                <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.1em', marginTop:5 }}>Monday · proactive alert</div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
