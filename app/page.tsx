@@ -162,6 +162,7 @@ export default function MarketingPage() {
   const [billing, setBilling]               = useState<'monthly'|'annual'>('monthly')
   const [activeStep, setActiveStep]         = useState(0)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [heroPhase, setHeroPhase]           = useState(0)
 
   const sectionRefs   = useRef<Record<string, HTMLElement | null>>({})
   const hiwContentRef = useRef<HTMLDivElement | null>(null)
@@ -193,6 +194,16 @@ export default function MarketingPage() {
     window.addEventListener('scroll', handler, { passive: true })
     return () => window.removeEventListener('scroll', handler)
   }, [])
+
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout>
+    if      (heroPhase === 0) t = setTimeout(() => setHeroPhase(1), 600)
+    else if (heroPhase === 1) t = setTimeout(() => setHeroPhase(2), 1800)
+    else if (heroPhase === 2) t = setTimeout(() => setHeroPhase(3), 2200)
+    else if (heroPhase === 3) t = setTimeout(() => setHeroPhase(4), 1400)
+    else if (heroPhase === 4) t = setTimeout(() => setHeroPhase(0), 5000)
+    return () => clearTimeout(t)
+  }, [heroPhase])
 
   // Auto-scroll HIW on step change
   useEffect(() => {
@@ -227,8 +238,8 @@ export default function MarketingPage() {
         @keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
         @keyframes toggleSpin{from{transform:rotate(-30deg);opacity:0}to{transform:rotate(0deg);opacity:1}}
         @keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes float{0%,100%{transform:translateY(0px)}50%{transform:translateY(-5px)}}
-        @keyframes badgePulse{0%,100%{border-color:var(--b)}50%{border-color:var(--bg)}}
+        @keyframes candleRise{from{transform:scaleY(0);opacity:0}to{transform:scaleY(1);opacity:1}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
         .ticker-inner{display:flex;animation:tickerScroll 45s linear infinite;white-space:nowrap;align-items:center;height:30px}
         .wb{width:3px;border-radius:2px;opacity:.65;animation:waveAnim 1.1s ease-in-out infinite}
         .wb:nth-child(1){animation-delay:.00s}.wb:nth-child(2){animation-delay:.08s}.wb:nth-child(3){animation-delay:.16s}
@@ -375,13 +386,11 @@ export default function MarketingPage() {
             See How It Works
           </div>
         </div>
-        <div className="demo-window" style={{ maxWidth:680, margin:'0 auto', background:T.chatBg, border:`1px solid ${T.border2}`, position:'relative', overflow:'hidden', boxShadow:T.pricingShadow }}>
+        <div className="demo-window" style={{ maxWidth:640, margin:'0 auto', background:T.chatBg, border:`1px solid ${T.border2}`, position:'relative', overflow:'hidden', boxShadow:T.pricingShadow }}>
           <div style={{ position:'absolute', left:0, right:0, height:1, background:`linear-gradient(90deg,transparent,${T.scanline},transparent)`, animation:'scanline 9s linear infinite', pointerEvents:'none', zIndex:2 }} />
-          {/* radial glow behind waveform */}
-          <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:320, height:180, background:`radial-gradient(ellipse,${T.glow} 0%,transparent 70%)`, pointerEvents:'none' }} />
 
           {/* Header */}
-          <div style={{ padding:'9px 14px', borderBottom:`1px solid ${T.border}`, display:'flex', alignItems:'center', gap:8, background:T.chatToolbar, position:'relative', zIndex:3 }}>
+          <div style={{ padding:'9px 14px', borderBottom:`1px solid ${T.border}`, display:'flex', alignItems:'center', gap:8, background:T.chatToolbar }}>
             <div style={{ display:'flex', gap:4 }}>
               {['#ff5f57','#febc2e','#28c840'].map((c,i)=><div key={i} style={{ width:8, height:8, borderRadius:'50%', background:c, opacity:.7 }} />)}
             </div>
@@ -392,54 +401,64 @@ export default function MarketingPage() {
             </div>
           </div>
 
-          {/* Floating badges — top row */}
-          <div style={{ display:'flex', justifyContent:'space-between', padding:'22px 20px 0', position:'relative', zIndex:3 }}>
-            {[
-              {sym:'NVDA', chg:'-0.84%', up:false, delay:'0s',   dur:'3.1s'},
-              {sym:'AMD',  chg:'+1.60%', up:true,  delay:'0.6s', dur:'2.7s'},
-              {sym:'SPY',  chg:'-1.40%', up:false, delay:'1.1s', dur:'3.4s'},
-            ].map((tk,i)=>(
-              <div key={i} style={{ background:T.bg2, border:`1px solid ${tk.up?`${T.gold}44`:`${T.red}33`}`, padding:'6px 12px', display:'flex', alignItems:'center', gap:8, animation:`float ${tk.dur} ease-in-out infinite ${tk.delay}` }}>
-                <span style={{ fontSize:11, fontWeight:700, color:T.heading, letterSpacing:'0.04em' }}>{tk.sym}</span>
-                <div style={{ width:1, height:11, background:T.border }} />
-                <span style={{ fontSize:10, color:tk.up?T.gold:T.red, fontFamily:"'JetBrains Mono',monospace", fontWeight:600 }}>{tk.chg}</span>
+          {/* Story area */}
+          <div style={{ padding:'24px 22px 20px', minHeight:280, display:'flex', flexDirection:'column', gap:18, position:'relative' }}>
+            <div style={{ position:'absolute', top:'30%', left:'50%', transform:'translate(-50%,-50%)', width:'80%', height:160, background:`radial-gradient(ellipse,${T.glow} 0%,transparent 70%)`, pointerEvents:'none' }} />
+
+            {/* Phase 1+: waveform */}
+            <div style={{ display:'flex', alignItems:'center', gap:10, opacity:heroPhase>=1?1:0, transition:'opacity 0.7s ease', animation:heroPhase===1?'fadeUp 0.7s ease both':undefined }}>
+              <div style={{ width:28, height:28, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <LogoSvg size={14} />
               </div>
-            ))}
-          </div>
-
-          {/* Central waveform */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'3px', height:72, padding:'0 32px', position:'relative', zIndex:3 }}>
-            {Array.from({length:36},(_,i)=>(
-              <div key={i} className="wb" style={{ background:T.gold, animationDelay:`${(i%9)*.055}s`, width:'3px', opacity:0.35+Math.abs(Math.sin(i*0.45))*0.65 }} />
-            ))}
-          </div>
-
-          {/* Floating badges — bottom row */}
-          <div style={{ display:'flex', justifyContent:'space-between', padding:'0 20px 22px', position:'relative', zIndex:3 }}>
-            {[
-              {sym:'/ES',  chg:'-0.92%', up:false, delay:'0.4s', dur:'2.9s'},
-              {sym:'BTC',  chg:'+1.22%', up:true,  delay:'0.9s', dur:'3.3s'},
-              {sym:'GLD',  chg:'-3.16%', up:false, delay:'0.2s', dur:'3.6s'},
-            ].map((tk,i)=>(
-              <div key={i} style={{ background:T.bg2, border:`1px solid ${tk.up?`${T.gold}44`:`${T.red}33`}`, padding:'6px 12px', display:'flex', alignItems:'center', gap:8, animation:`float ${tk.dur} ease-in-out infinite ${tk.delay}` }}>
-                <span style={{ fontSize:11, fontWeight:700, color:T.heading, letterSpacing:'0.04em' }}>{tk.sym}</span>
-                <div style={{ width:1, height:11, background:T.border }} />
-                <span style={{ fontSize:10, color:tk.up?T.gold:T.red, fontFamily:"'JetBrains Mono',monospace", fontWeight:600 }}>{tk.chg}</span>
+              <div style={{ flex:1, display:'flex', alignItems:'center', gap:'3px', height:44 }}>
+                {Array.from({length:32},(_,i)=>(
+                  <div key={i} className="wb" style={{ background:T.gold, animationDelay:`${(i%9)*.055}s`, width:'3px', opacity:0.3+Math.abs(Math.sin(i*0.52))*0.7 }} />
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
 
-          {/* Spoken response bar */}
-          <div style={{ padding:'11px 16px 13px', borderTop:`1px solid ${T.border}`, background:T.chatToolbar, display:'flex', alignItems:'center', gap:10, position:'relative', zIndex:3 }}>
-            <div style={{ width:24, height:24, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              <LogoSvg size={13} />
-            </div>
-            <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(13px,3vw,15px)', color:T.text, lineHeight:1.5, fontStyle:'italic', flex:1 }}>
-              "AMD data center win — rotation into semis underway. Watch SPY for support at 660."
-            </div>
-            <div style={{ display:'flex', alignItems:'center', gap:'2px', height:20, flexShrink:0 }}>
-              {Array.from({length:8},(_,i)=><div key={i} className="wb" style={{ background:T.gold, animationDelay:`${i*.065}s` }} />)}
-            </div>
+            {/* Phase 2+: spoken alert text */}
+            {heroPhase >= 2 && (
+              <div style={{ paddingLeft:38, animation:'fadeUp 0.5s ease both' }}>
+                <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(15px,3.5vw,19px)', color:T.heading, lineHeight:1.6, fontStyle:'italic' }}>
+                  "Heads up — TSLA earnings in 90 minutes. Large call sweeps just hit the chain. Watch for a move."
+                </div>
+                <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.1em', marginTop:5 }}>Monday · proactive alert</div>
+              </div>
+            )}
+
+            {/* Phase 3+: candle chart */}
+            {heroPhase >= 3 && (
+              <div style={{ animation:'fadeUp 0.4s ease both', position:'relative' }}>
+                <div style={{ fontSize:8, letterSpacing:'0.15em', color:T.goldDim, marginBottom:6, textTransform:'uppercase', paddingLeft:2 }}>TSLA · 1-min chart</div>
+                <div style={{ display:'flex', alignItems:'flex-end', gap:'3px', height:80, background:T.bg2, border:`1px solid ${T.border}`, padding:'0 10px', overflow:'hidden', position:'relative' }}>
+                  {/* grid lines */}
+                  {[0.33,0.66].map((y,i)=>(
+                    <div key={i} style={{ position:'absolute', left:0, right:0, top:`${y*100}%`, height:1, background:T.border, opacity:0.6 }} />
+                  ))}
+                  {/* alert marker line */}
+                  <div style={{ position:'absolute', left:'58%', top:0, bottom:0, width:1, background:`${T.gold}55`, borderLeft:`1px dashed ${T.gold}66` }} />
+                  <div style={{ position:'absolute', left:'58%', top:6, fontSize:7, color:T.gold, letterSpacing:'0.08em', paddingLeft:4, textTransform:'uppercase' }}>alert</div>
+                  {[
+                    {h:28,up:false,d:'0s'},{h:24,up:false,d:'0.04s'},{h:26,up:true,d:'0.08s'},
+                    {h:22,up:false,d:'0.12s'},{h:25,up:false,d:'0.16s'},{h:23,up:false,d:'0.20s'},
+                    {h:40,up:true,d:'0.28s'},{h:56,up:true,d:'0.40s'},{h:72,up:true,d:'0.52s'},
+                    {h:76,up:true,d:'0.64s'},{h:70,up:true,d:'0.76s'},
+                  ].map((c,i)=>(
+                    <div key={i} style={{ flex:1, height:c.h, background:c.up?T.gold:T.red, opacity:i<6?0.4:0.55+(i-6)*0.09, animation:'candleRise 0.35s ease-out both', animationDelay:c.d, transformOrigin:'bottom', borderRadius:'1px 1px 0 0', position:'relative', zIndex:1 }} />
+                  ))}
+                  {/* glow on spike */}
+                  <div style={{ position:'absolute', bottom:0, right:0, width:'45%', height:'100%', background:`linear-gradient(to left,${T.glow},transparent)`, pointerEvents:'none' }} />
+                </div>
+
+                {/* Phase 4: price badge */}
+                {heroPhase >= 4 && (
+                  <div style={{ position:'absolute', bottom:10, right:10, background:T.gold, color:T.btnText, padding:'4px 10px', fontSize:12, fontWeight:700, fontFamily:"'JetBrains Mono',monospace", animation:'fadeUp 0.35s ease both', letterSpacing:'0.06em', zIndex:2 }}>
+                    TSLA +8.2%
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <p style={{ marginTop:14, fontSize:9, color:T.text3, letterSpacing:'0.15em' }}>CANCEL ANYTIME · 5-DAY FREE TRIAL</p>
