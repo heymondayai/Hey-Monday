@@ -35,11 +35,11 @@ const FEATURES = [
 
 
 const STEPS = [
-  { n: '01', title: 'Build your watchlist',      sub: 'Any stock, ETF, future, commodity, or crypto. Updates every 30 seconds.' },
+  { n: '01', title: 'Build your watchlist',      sub: 'Any stock, ETF, future, commodity, or crypto.' },
   { n: '02', title: 'Say "Hey Monday"',           sub: 'Wake word always listening. Or type — your choice.' },
-  { n: '03', title: 'Monday pulls live data',     sub: 'Prices, news, options flow, macro calendar — all fire simultaneously.' },
-  { n: '04', title: 'Get a spoken answer',        sub: 'Claude AI synthesizes. ElevenLabs delivers. Real analyst voice in under 4 seconds.' },
-  { n: '05', title: 'Stay briefed, hands-free',   sub: 'Morning, midday, and EOD briefings. Proactive alerts for price moves, events, and unusual activity.' },
+  { n: '03', title: 'Monday pulls live data',     sub: 'Prices, news, options flow, macro calendar, insider trades, and more.' },
+  { n: '04', title: 'Get a spoken answer',        sub: 'Professional analyst voice in real time.' },
+  { n: '05', title: 'Stay briefed, hands-free',   sub: 'Daily scheduled briefings. Proactive alerts for price moves, events, and unusual activity.' },
 ]
 
 const FAQ_ITEMS = [
