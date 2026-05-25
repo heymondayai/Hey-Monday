@@ -626,22 +626,22 @@ function SignupPageInner() {
   const confirmedParam = searchParams.get('confirmed') === '1'
   const currentStep = confirmedParam ? 2 : 1
 
-  const initialPlan = (): 'core' | 'edge' => {
-    const urlPlan = searchParams.get('plan')
-    if (urlPlan === 'edge') return 'edge'
-    if (urlPlan === 'core') return 'core'
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('hm_selected_plan')
-      if (stored === 'edge' || stored === 'core') return stored
-    }
-    return 'core'
-  }
-  const [plan, setPlan] = useState<'core' | 'edge'>(initialPlan)
+  const [plan, setPlan] = useState<'core' | 'edge'>('core')
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('hm_selected_plan', plan)
+    const urlPlan = searchParams.get('plan')
+    if (urlPlan === 'edge' || urlPlan === 'core') {
+      setPlan(urlPlan)
+      localStorage.setItem('hm_selected_plan', urlPlan)
+    } else {
+      const stored = localStorage.getItem('hm_selected_plan')
+      if (stored === 'edge' || stored === 'core') setPlan(stored)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem('hm_selected_plan', plan)
   }, [plan])
 
   const price = plan === 'edge'
