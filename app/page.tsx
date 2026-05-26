@@ -197,11 +197,8 @@ export default function MarketingPage() {
 
   useEffect(() => {
     let t: ReturnType<typeof setTimeout>
-    if      (heroPhase === 0) t = setTimeout(() => setHeroPhase(1), 600)
-    else if (heroPhase === 1) t = setTimeout(() => setHeroPhase(2), 1800)
-    else if (heroPhase === 2) t = setTimeout(() => setHeroPhase(3), 2200)
-    else if (heroPhase === 3) t = setTimeout(() => setHeroPhase(4), 1400)
-    else if (heroPhase === 4) t = setTimeout(() => setHeroPhase(0), 5000)
+    if      (heroPhase === 0) t = setTimeout(() => setHeroPhase(1), 3000)
+    else if (heroPhase === 1) t = setTimeout(() => setHeroPhase(0), 4500)
     return () => clearTimeout(t)
   }, [heroPhase])
 
@@ -408,8 +405,8 @@ export default function MarketingPage() {
           <div style={{ padding:'24px 22px 20px', minHeight:280, display:'flex', flexDirection:'column', gap:18, position:'relative' }}>
             <div style={{ position:'absolute', top:'30%', left:'50%', transform:'translate(-50%,-50%)', width:'80%', height:160, background:`radial-gradient(ellipse,${T.glow} 0%,transparent 70%)`, pointerEvents:'none' }} />
 
-            {/* Phase 1+: waveform */}
-            <div style={{ display:'flex', alignItems:'center', gap:10, opacity:heroPhase>=1?1:0, transition:'opacity 0.7s ease', animation:heroPhase===1?'fadeUp 0.7s ease both':undefined }}>
+            {/* Waveform — always visible */}
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               <div style={{ width:28, height:28, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                 <LogoSvg size={14} />
               </div>
@@ -420,18 +417,16 @@ export default function MarketingPage() {
               </div>
             </div>
 
-            {/* Phase 2+: spoken alert text */}
-            {heroPhase >= 2 && (
-              <div style={{ paddingLeft:38, animation:'fadeUp 0.5s ease both' }}>
-                <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(15px,3.5vw,19px)', color:T.heading, lineHeight:1.6, fontStyle:'italic' }}>
-                  "Heads up — TSLA earnings in 90 minutes. Large call sweeps just hit the chain. Watch for a move."
-                </div>
-                <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.1em', marginTop:5 }}>Monday · proactive alert</div>
+            {/* Quote — always visible */}
+            <div style={{ paddingLeft:38 }}>
+              <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(15px,3.5vw,19px)', color:T.heading, lineHeight:1.6, fontStyle:'italic' }}>
+                "Heads up — TSLA earnings in 90 minutes. Large call sweeps just hit the chain. Watch for a move."
               </div>
-            )}
+              <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.1em', marginTop:5 }}>Monday · proactive alert</div>
+            </div>
 
-            {/* Phase 1+: SVG candlestick chart — pre-alert candles visible from start, surge at phase 3 */}
-            {heroPhase >= 1 && (() => {
+            {/* Chart — always visible, bullish candles animate in at phase 1 */}
+            {(() => {
               const svgW = 290, svgH = 84
               const minP = 182, maxP = 214, rng = maxP - minP
               const py = (p: number) => ((maxP - p) / rng) * 76 + 4
@@ -444,7 +439,7 @@ export default function MarketingPage() {
               const cW = 22, gap = 7, sx = 5
               const alertX = sx + 6*(cW+gap) - 2
               return (
-                <div style={{ animation:'fadeUp 0.4s ease both', position:'relative' }}>
+                <div style={{ position:'relative' }}>
                   <div style={{ fontSize:8, letterSpacing:'0.15em', color:T.goldDim, marginBottom:5, textTransform:'uppercase' }}>TSLA · 1-min</div>
                   <div style={{ background:T.bg2, border:`1px solid ${T.border}`, overflow:'hidden', position:'relative' }}>
                     <svg width="100%" viewBox={`0 0 ${svgW} ${svgH}`} style={{ display:'block' }}>
@@ -454,17 +449,16 @@ export default function MarketingPage() {
                       {[0.35,0.68].map((f,i)=><line key={i} x1={0} y1={svgH*f} x2={svgW} y2={svgH*f} stroke={isDark?'#2a2618':'#d0cdc8'} strokeWidth={0.5}/>)}
                       <line x1={alertX} y1={0} x2={alertX} y2={svgH} stroke={T.gold} strokeWidth={0.8} strokeDasharray="3,2" opacity={0.65}/>
                       <text x={alertX+3} y={11} fontSize="6.5" fill={T.gold} opacity={0.8} letterSpacing="0.8">ALERT</text>
-                      {heroPhase >= 3 && <rect x={alertX} y={0} width={svgW-alertX} height={svgH} fill="url(#rg)"/>}
+                      {heroPhase >= 1 && <rect x={alertX} y={0} width={svgW-alertX} height={svgH} fill="url(#rg)"/>}
                       {cd.map((c,i)=>{
-                        if (i >= 6 && heroPhase < 3) return null
+                        if (i >= 6 && heroPhase < 1) return null
                         const bull = c.c >= c.o
                         const x = sx + i*(cW+gap), cx = x + cW/2
                         const col = bull ? T.gold : T.red
                         const op = i < 6 ? 0.45 : 0.5+(i-6)*0.13
                         const bTop = py(Math.max(c.o,c.c)), bBot = py(Math.min(c.o,c.c))
-                        const animDelay = i >= 6 ? `${(i-6)*0.22}s` : `${i*0.06}s`
                         return (
-                          <g key={i} style={{ animation:'fadeUp 0.28s ease-out both', animationDelay:animDelay }}>
+                          <g key={i} style={{ animation: i >= 6 ? 'fadeUp 0.28s ease-out both' : undefined, animationDelay: i >= 6 ? `${(i-6)*0.22}s` : undefined }}>
                             <line x1={cx} y1={py(c.h)} x2={cx} y2={py(c.l)} stroke={col} strokeWidth={1.2} opacity={op}/>
                             <rect x={x} y={bTop} width={cW} height={Math.max(bBot-bTop,1.5)} fill={col} opacity={op}/>
                           </g>
@@ -472,8 +466,8 @@ export default function MarketingPage() {
                       })}
                     </svg>
                   </div>
-                  {heroPhase >= 4 && (
-                    <div style={{ position:'absolute', top:18, right:6, background:T.gold, color:T.btnText, padding:'3px 9px', fontSize:11, fontWeight:700, fontFamily:"'JetBrains Mono',monospace", animation:'fadeUp 0.35s ease both', letterSpacing:'0.06em', zIndex:2 }}>
+                  {heroPhase >= 1 && (
+                    <div style={{ position:'absolute', top:18, right:6, background:T.gold, color:T.btnText, padding:'3px 9px', fontSize:11, fontWeight:700, fontFamily:"'JetBrains Mono',monospace", animation:'fadeUp 0.35s ease both', animationDelay:'0.66s', animationFillMode:'both', letterSpacing:'0.06em', zIndex:2 }}>
                       TSLA +8.2%
                     </div>
                   )}
