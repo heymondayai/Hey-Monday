@@ -54,8 +54,8 @@ const FAQ_ITEMS = [
 const COMPARISONS = [
   { name: 'Edge',         monthly: '$109.99', annual: '$91.66', highlight: true,  note: 'Full access + political', cross: false },
   { name: 'Core',         monthly: '$79.99',  annual: '$66.66', highlight: false, note: 'Essential intel',         cross: false },
-  { name: 'Bloomberg',    monthly: '$2,665',  annual: '$2,083', highlight: false, note: 'Data terminal, no AI',    cross: true  },
-  { name: 'Trade Ideas',  monthly: '$254',    annual: '$167',   highlight: false, note: 'Charts, no macro AI',     cross: true  },
+  { name: 'Bloomberg',    monthly: '$2,665',  annual: '$2,083', highlight: false, note: 'Too expensive, no AI',    cross: true  },
+  { name: 'Trade Ideas',  monthly: '$254',    annual: '$167',   highlight: false, note: 'Scanner, no market intel', cross: true  },
 ]
 
 const DARK = {
