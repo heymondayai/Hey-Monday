@@ -52,8 +52,8 @@ const FAQ_ITEMS = [
 ]
 
 const COMPARISONS = [
-  { name: 'Edge',         monthly: '$109.99', annual: '$91.66', highlight: true,  note: 'Full access + political', cross: false },
-  { name: 'Core',         monthly: '$79.99',  annual: '$66.66', highlight: false, note: 'Essential intel',         cross: false },
+  { name: 'Advantage',    monthly: '$109.99', annual: '$91.66', highlight: true,  note: 'Full access + political', cross: false },
+  { name: 'Essential',    monthly: '$79.99',  annual: '$66.66', highlight: false, note: 'Essential intel',         cross: false },
   { name: 'Bloomberg',    monthly: '$2,665',  annual: '$2,083', highlight: false, note: 'Too expensive, no AI',    cross: true  },
   { name: 'Trade Ideas',  monthly: '$254',    annual: '$167',   highlight: false, note: 'Scanner, no market intel', cross: true  },
 ]
@@ -726,7 +726,7 @@ export default function MarketingPage() {
           <div style={{ textAlign:'center', marginBottom:44 }}>
             <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:12, textTransform:'uppercase' }}>Pricing</div>
             <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(24px,4.5vw,48px)', fontStyle:'italic', fontWeight:600, color:T.heading, marginBottom:8 }}>Two plans. Every edge.</h2>
-            <p style={{ fontSize:12, color:T.text2 }}>Start with Core. Upgrade when you want more.</p>
+            <p style={{ fontSize:12, color:T.text2 }}>Most serious traders choose Advantage — unlimited alerts, full history, every data edge.</p>
           </div>
           <div style={{ display:'flex', justifyContent:'center', marginBottom:32 }}>
             <div className="billing-toggle" style={{ display:'inline-flex', background:T.bg2, border:`1px solid ${T.border2}`, padding:3, gap:3 }}>
@@ -746,7 +746,7 @@ export default function MarketingPage() {
             <div style={{ background:T.pricingBg, border:`1px solid ${T.pricingBorder}`, padding:'28px 24px', position:'relative', boxShadow:T.pricingShadow }}>
               <div style={{ height:2, background:`linear-gradient(90deg,transparent,${T.gold},transparent)`, position:'absolute', top:0, left:0, right:0 }} />
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-                <div style={{ fontSize:8, letterSpacing:'0.22em', color:T.gold, textTransform:'uppercase' }}>Edge</div>
+                <div style={{ fontSize:8, letterSpacing:'0.22em', color:T.gold, textTransform:'uppercase' }}>Advantage</div>
                 <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:7, letterSpacing:'0.15em', padding:'2px 8px', background:T.badgeBg, border:`1px solid ${T.badgeBorder}`, color:T.gold, textTransform:'uppercase' }}>
                   <span style={{ width:4, height:4, borderRadius:'50%', background:T.gold, display:'inline-block', animation:'pulse 2s ease infinite' }} />
                   Most Popular
@@ -761,7 +761,7 @@ export default function MarketingPage() {
               {billing==='annual' && <div style={{ fontSize:10, color:T.gold, marginBottom:2 }}>Save $219.96/year</div>}
               <div style={{ margin:'18px 0', height:1, background:T.border }} />
               {[
-                {dim:true,  label:'Everything in Core, plus:'},
+                {dim:true,  label:'Everything in Essential, plus:'},
                 {dim:false, label:'Unlimited proactive alerts'},
                 {dim:false, label:'Unlimited AI briefings & summaries'},
                 {dim:false, label:'Full data history'},
@@ -787,7 +787,7 @@ export default function MarketingPage() {
 
             {/* ── CORE ── */}
             <div style={{ background:T.pricingBg, padding:'28px 24px', position:'relative' }}>
-              <div style={{ fontSize:8, letterSpacing:'0.22em', color:T.text3, marginBottom:6, textTransform:'uppercase' }}>Core</div>
+              <div style={{ fontSize:8, letterSpacing:'0.22em', color:T.text3, marginBottom:6, textTransform:'uppercase' }}>Essential</div>
               <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(20px,3.5vw,28px)', color:T.heading, fontStyle:'italic', fontWeight:600, lineHeight:1.1, marginBottom:18 }}>Essential intel.</div>
               <div style={{ display:'flex', alignItems:'baseline', gap:3, marginBottom:4 }}>
                 <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(38px,7vw,54px)', fontWeight:700, color:T.heading, lineHeight:1 }}>${corePrice.split('.')[0]}</span>

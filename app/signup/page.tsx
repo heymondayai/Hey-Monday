@@ -54,7 +54,7 @@ const CORE_FEATURES = [
 ]
 
 const EDGE_FEATURES = [
-  'Everything in Core, plus:',
+  'Everything in Essential, plus:',
   'Unlimited alerts & briefings',
   'Full data history',
   'Political & social media intel',
@@ -338,7 +338,7 @@ function SignupForm({
                   <div key={p} onClick={() => setPlan(p)} style={{ padding: '14px 12px', cursor: 'pointer', border: `1px solid ${active ? T.gold : T.border2}`, background: active ? T.bg4 : 'transparent', borderRadius: 6, transition: 'all .15s', position: 'relative', overflow: 'hidden' }}>
                     {active && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: T.gold }} />}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                      <span style={{ fontSize: 10, letterSpacing: '0.15em', color: active ? T.gold : T.text3, textTransform: 'uppercase', fontWeight: 600 }}>{p === 'core' ? 'Core' : 'Edge'}</span>
+                      <span style={{ fontSize: 10, letterSpacing: '0.15em', color: active ? T.gold : T.text3, textTransform: 'uppercase', fontWeight: 600 }}>{p === 'core' ? 'Essential' : 'Advantage'}</span>
                       {p === 'edge' && <span style={{ fontSize: 8, padding: '1px 5px', background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, color: T.gold, borderRadius: 3 }}>POPULAR</span>}
                     </div>
                     <div style={{ fontSize: 17, fontWeight: 700, color: active ? T.gold : T.text2, lineHeight: 1 }}>
@@ -700,7 +700,7 @@ function SignupPageInner() {
             <div style={{ padding: '22px' }}>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 9, letterSpacing: '0.18em', color: T.gold, background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, padding: '3px 10px', marginBottom: 16, textTransform: 'uppercase', borderRadius: 3 }}>
                 <span style={{ width: 4, height: 4, borderRadius: '50%', background: T.gold, display: 'inline-block', animation: 'pulse 2s ease infinite' }} />
-                {plan === 'edge' ? 'Edge Plan' : 'Core Plan'} · 5-Day Free Trial
+                {plan === 'edge' ? 'Advantage Plan' : 'Essential Plan'} · 5-Day Free Trial
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginBottom: 4 }}>
                 <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 48, fontWeight: 700, color: T.gold, lineHeight: 1 }}>${price.split('.')[0]}</span>
