@@ -52,10 +52,10 @@ const FAQ_ITEMS = [
 ]
 
 const COMPARISONS = [
-  { name: 'Core',         monthly: '$79.99',  annual: '$66.66', highlight: false, note: 'Essential intel'         },
-  { name: 'Edge',         monthly: '$109.99', annual: '$91.66', highlight: true,  note: 'Full access + political' },
-  { name: 'Bloomberg',    monthly: '$2,665',  annual: '$2,083', highlight: false, note: 'Data terminal, no AI'    },
-  { name: 'Trade Ideas',  monthly: '$254',    annual: '$167',   highlight: false, note: 'Charts, no macro AI'     },
+  { name: 'Edge',         monthly: '$109.99', annual: '$91.66', highlight: true,  note: 'Full access + political', cross: false },
+  { name: 'Core',         monthly: '$79.99',  annual: '$66.66', highlight: false, note: 'Essential intel',         cross: false },
+  { name: 'Bloomberg',    monthly: '$2,665',  annual: '$2,083', highlight: false, note: 'Data terminal, no AI',    cross: true  },
+  { name: 'Trade Ideas',  monthly: '$254',    annual: '$167',   highlight: false, note: 'Charts, no macro AI',     cross: true  },
 ]
 
 const DARK = {
@@ -312,8 +312,7 @@ export default function MarketingPage() {
         <div style={{ maxWidth:1100, margin:'0 auto', padding:'0 18px', height:54, display:'flex', alignItems:'center', gap:12 }}>
           <div style={{ marginRight:24, flexShrink:0, cursor:'pointer', display:'flex', alignItems:'center', gap:8 }} onClick={()=>window.scrollTo({top:0,behavior:'smooth'})}>
             <LogoSvg size={20} />
-            <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, fontStyle:'italic', color:T.heading, fontWeight:600 }}>Hey </span>
-            <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, fontStyle:'italic', color:T.gold, fontWeight:700 }}>Monday</span>
+            <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, fontStyle:'italic', color:T.heading, fontWeight:600 }}>Hey <span style={{ color:T.gold, fontWeight:700 }}>Monday</span></span>
           </div>
           <div className="nav-links" style={{ display:'flex', gap:24, marginRight:'auto' }}>
             {NAV_SECTIONS.map(s=>(
@@ -749,44 +748,6 @@ export default function MarketingPage() {
           {/* Plan cards */}
           <div className="plans-grid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:1, background:T.border }}>
 
-            {/* ── CORE ── */}
-            <div style={{ background:T.pricingBg, padding:'28px 24px', position:'relative' }}>
-              <div style={{ fontSize:8, letterSpacing:'0.22em', color:T.text3, marginBottom:6, textTransform:'uppercase' }}>Core</div>
-              <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(20px,3.5vw,28px)', color:T.heading, fontStyle:'italic', fontWeight:600, lineHeight:1.1, marginBottom:18 }}>Essential intel.</div>
-              <div style={{ display:'flex', alignItems:'baseline', gap:3, marginBottom:4 }}>
-                <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(38px,7vw,54px)', fontWeight:700, color:T.heading, lineHeight:1 }}>${corePrice.split('.')[0]}</span>
-                <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(14px,2.5vw,20px)', color:T.text3, fontWeight:500 }}>.{corePrice.split('.')[1]}</span>
-                <span style={{ fontSize:10, color:T.text3 }}>/ mo{billing==='annual'?', billed annually':''}</span>
-              </div>
-              {billing==='annual' && <div style={{ fontSize:10, color:T.gold, marginBottom:2 }}>Save $159.96/year</div>}
-              <div style={{ margin:'18px 0', height:1, background:T.border }} />
-              {[
-                {ok:true,  label:'AI voice — "Hey Monday" wake word'},
-                {ok:true,  label:'Live prices — stocks, futures, crypto'},
-                {ok:true,  label:'High-impact economic calendar'},
-                {ok:true,  label:'News feed with sentiment scoring'},
-                {ok:true,  label:'Options flow & dark pool activity'},
-                {ok:true,  label:'Conversation history + audio replay'},
-                {ok:false, label:'Up to 5 active alerts'},
-                {ok:false, label:'30-day data history'},
-                {ok:false, label:'3 AI briefings per day'},
-                {ok:false, label:'Political & social media intel'},
-              ].map((f,i)=>(
-                <div key={i} style={{ display:'flex', gap:7, padding:'5px 0', borderBottom:i<9?`1px solid ${T.footerBorder}`:'none', alignItems:'flex-start' }}>
-                  <span style={{ color:f.ok?T.gold:T.border2, fontSize:11, flexShrink:0, marginTop:1 }}>{f.ok?'✓':'–'}</span>
-                  <span style={{ fontSize:11, color:f.ok?T.text2:T.text3 }}>{f.label}</span>
-                </div>
-              ))}
-              <div style={{ marginTop:24 }}>
-                <Link href="/signup?plan=core" style={{ textDecoration:'none' }}>
-                  <div style={{ border:`1px solid ${T.gold}`, color:T.gold, padding:'12px 20px', fontWeight:700, fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', textAlign:'center', cursor:'pointer' }}>
-                    Start Free Trial →
-                  </div>
-                </Link>
-                <div style={{ marginTop:8, fontSize:9, color:T.text3, textAlign:'center' }}>✓ Cancel anytime · no contracts</div>
-              </div>
-            </div>
-
             {/* ── EDGE ── */}
             <div style={{ background:T.pricingBg, border:`1px solid ${T.pricingBorder}`, padding:'28px 24px', position:'relative', boxShadow:T.pricingShadow }}>
               <div style={{ height:2, background:`linear-gradient(90deg,transparent,${T.gold},transparent)`, position:'absolute', top:0, left:0, right:0 }} />
@@ -829,18 +790,63 @@ export default function MarketingPage() {
                 <div style={{ marginTop:8, fontSize:9, color:T.text3, textAlign:'center' }}>✓ Cancel anytime · no contracts</div>
               </div>
             </div>
+
+            {/* ── CORE ── */}
+            <div style={{ background:T.pricingBg, padding:'28px 24px', position:'relative' }}>
+              <div style={{ fontSize:8, letterSpacing:'0.22em', color:T.text3, marginBottom:6, textTransform:'uppercase' }}>Core</div>
+              <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(20px,3.5vw,28px)', color:T.heading, fontStyle:'italic', fontWeight:600, lineHeight:1.1, marginBottom:18 }}>Essential intel.</div>
+              <div style={{ display:'flex', alignItems:'baseline', gap:3, marginBottom:4 }}>
+                <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(38px,7vw,54px)', fontWeight:700, color:T.heading, lineHeight:1 }}>${corePrice.split('.')[0]}</span>
+                <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(14px,2.5vw,20px)', color:T.text3, fontWeight:500 }}>.{corePrice.split('.')[1]}</span>
+                <span style={{ fontSize:10, color:T.text3 }}>/ mo{billing==='annual'?', billed annually':''}</span>
+              </div>
+              {billing==='annual' && <div style={{ fontSize:10, color:T.gold, marginBottom:2 }}>Save $159.96/year</div>}
+              <div style={{ margin:'18px 0', height:1, background:T.border }} />
+              {[
+                {ok:true,  label:'AI voice — "Hey Monday" wake word'},
+                {ok:true,  label:'Live prices — stocks, futures, crypto'},
+                {ok:true,  label:'High-impact economic calendar'},
+                {ok:true,  label:'News feed with sentiment scoring'},
+                {ok:true,  label:'Options flow & dark pool activity'},
+                {ok:true,  label:'Conversation history + audio replay'},
+                {ok:false, label:'Up to 5 active alerts'},
+                {ok:false, label:'30-day data history'},
+                {ok:false, label:'3 AI briefings per day'},
+                {ok:false, label:'Political & social media intel'},
+              ].map((f,i)=>(
+                <div key={i} style={{ display:'flex', gap:7, padding:'5px 0', borderBottom:i<9?`1px solid ${T.footerBorder}`:'none', alignItems:'flex-start' }}>
+                  <span style={{ color:f.ok?T.gold:T.border2, fontSize:11, flexShrink:0, marginTop:1 }}>{f.ok?'✓':'–'}</span>
+                  <span style={{ fontSize:11, color:f.ok?T.text2:T.text3 }}>{f.label}</span>
+                </div>
+              ))}
+              <div style={{ marginTop:24 }}>
+                <Link href="/signup?plan=core" style={{ textDecoration:'none' }}>
+                  <div style={{ border:`1px solid ${T.gold}`, color:T.gold, padding:'12px 20px', fontWeight:700, fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', textAlign:'center', cursor:'pointer' }}>
+                    Start Free Trial →
+                  </div>
+                </Link>
+                <div style={{ marginTop:8, fontSize:9, color:T.text3, textAlign:'center' }}>✓ Cancel anytime · no contracts</div>
+              </div>
+            </div>
+
           </div>
 
           {/* Comparison strip */}
           <div className="comp-grid-wrap" style={{ marginTop:14 }}>
             <div className="comp-grid" style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:1, background:T.border, minWidth:320 }}>
               {COMPARISONS.map((c,i)=>(
-                <div key={i} style={{ background:c.highlight?T.dataRowBg:T.compBg, padding:'12px 10px', textAlign:'center', borderTop:c.highlight?`2px solid ${T.gold}`:'2px solid transparent' }}>
+                <div key={i} style={{ background:c.highlight?T.dataRowBg:T.compBg, padding:'12px 10px', textAlign:'center', borderTop:c.highlight?`2px solid ${T.gold}`:'2px solid transparent', position:'relative', overflow:'hidden' }}>
                   <div style={{ fontSize:9, letterSpacing:'0.08em', color:c.highlight?T.gold:T.text3, marginBottom:4, textTransform:'uppercase' }}>{c.name}</div>
                   <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(14px,3vw,18px)', fontStyle:'italic', fontWeight:700, color:c.highlight?T.gold:T.text3, marginBottom:3 }}>
                     {billing==='annual'?c.annual:c.monthly}<span style={{ fontSize:10, fontStyle:'normal', fontWeight:400 }}>/mo</span>
                   </div>
                   <div style={{ fontSize:9, color:T.text3 }}>{c.note}</div>
+                  {c.cross && (
+                    <svg style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none', opacity:0.35 }} viewBox="0 0 100 100" preserveAspectRatio="none">
+                      <line x1="0" y1="0" x2="100" y2="100" stroke={T.text3} strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>
+                      <line x1="100" y1="0" x2="0" y2="100" stroke={T.text3} strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>
+                    </svg>
+                  )}
                 </div>
               ))}
             </div>

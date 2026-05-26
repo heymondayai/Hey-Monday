@@ -1062,15 +1062,16 @@ useEffect(() => {
   scheduleEffectReadyRef.current = true
 
   if (scheduledOff) {
-    if (!wakeManualOverride && wakeOn) setWakeOn(false)
-    if (!speechManualOverride && speechOn) { stopCurrentAudio(); setSpeechOn(false) }
+    if (!wakeManualOverride) setWakeOn(false)
+    if (!speechManualOverride) { stopCurrentAudio(); setSpeechOn(false) }
     return
   }
 
   // Schedule ended: restore both settings to the user's preferences
-  if (!wakeManualOverride && wakeOn !== wakePreferredOnRef.current) setWakeOn(wakePreferredOnRef.current)
-  if (!speechManualOverride && speechOn !== speechPreferredOnRef.current) setSpeechOn(speechPreferredOnRef.current)
-}, [scheduledOff, user, wakeManualOverride, speechManualOverride, wakeOn, speechOn])
+  if (!wakeManualOverride) setWakeOn(wakePreferredOnRef.current)
+  if (!speechManualOverride) setSpeechOn(speechPreferredOnRef.current)
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [scheduledOff, user, wakeManualOverride, speechManualOverride])
 
 useEffect(() => {
   if (!wakeManualOverride) return

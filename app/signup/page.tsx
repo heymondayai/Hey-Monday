@@ -329,7 +329,7 @@ function SignupForm({
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 11, letterSpacing: '0.18em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 10 }}>Choose your plan</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {(['core', 'edge'] as const).map(p => {
+              {(['edge', 'core'] as const).map(p => {
                 const monthlyPrice = p === 'core' ? '$79.99' : '$109.99'
                 const annualPrice  = p === 'core' ? '$66.66' : '$91.66'
                 const label        = p === 'core' ? 'Essential intel' : 'Every advantage'
