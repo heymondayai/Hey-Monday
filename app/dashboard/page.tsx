@@ -1006,6 +1006,7 @@ const wakeOverrideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 const lastWakeDetectionRef = useRef<number>(0)
 const wakePreferredOnRef = useRef(true)
 const speechPreferredOnRef = useRef(true)
+const scheduledOffRef = useRef(false)
 
   const supabase = createClient()
   const router = useRouter()
@@ -1052,6 +1053,8 @@ const [wakeManualOverride, setWakeManualOverride] = useState(false)
 const [speechManualOverride, setSpeechManualOverride] = useState(false)
 const [micReady, setMicReady] = useState(false)
 const scheduleEffectReadyRef = useRef(false)
+
+useEffect(() => { scheduledOffRef.current = scheduledOff }, [scheduledOff])
 
 useEffect(() => {
   // Don't run until user prefs have loaded from Supabase
@@ -2329,10 +2332,20 @@ const visibleDaySummaries = useMemo(() => {
         onDetected={() => {
           if (!isRecordingVoice && !isThinking) {
             lastWakeDetectionRef.current = Date.now()
-            // Reset the 30-min override timer on each detection
+            // Reset the 30-min override timer on each detection without toggling state
             if (wakeManualOverride) {
-              setWakeManualOverride(false)
-              setTimeout(() => setWakeManualOverride(true), 50)
+              if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
+              wakeOverrideTimerRef.current = setTimeout(() => {
+                setWakeManualOverride(false)
+                if (scheduledOffRef.current) {
+                  setWakeOn(false)
+                  setSpeechOn(false)
+                  stopCurrentAudio()
+                } else {
+                  setWakeOn(wakePreferredOnRef.current)
+                  setSpeechOn(speechPreferredOnRef.current)
+                }
+              }, 30 * 60 * 1000)
             }
             // Barge-in: stop Monday mid-sentence and start listening
             if (isSpeaking) {
