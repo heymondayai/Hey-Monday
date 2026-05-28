@@ -19,7 +19,7 @@ const TICKERS = [
 
 const NAV_SECTIONS = [
   { id: 'features',     label: 'Features'     },
-  { id: 'how-it-works', label: 'How It Works' },
+  { id: 'how-it-works', label: 'In Action' },
   { id: 'pricing',      label: 'Pricing'      },
   { id: 'faq',          label: 'FAQ'          },
 ]
@@ -385,7 +385,7 @@ export default function MarketingPage() {
             </div>
           </Link>
           <div onClick={()=>scrollTo('how-it-works')} style={{ border:`1px solid ${T.border2}`, color:T.text2, padding:'14px 24px', fontSize:11, letterSpacing:'0.1em', textTransform:'uppercase', cursor:'pointer' }}>
-            See How It Works
+            See It In Action
           </div>
         </div>
         <div className="demo-window" style={{ maxWidth:640, margin:'0 auto', background:T.chatBg, border:`1px solid ${T.border2}`, position:'relative', overflow:'hidden', boxShadow:T.pricingShadow }}>
@@ -535,7 +535,7 @@ export default function MarketingPage() {
       <section id="how-it-works" ref={el=>{sectionRefs.current['how-it-works']=el}} className="section-pad" style={{ padding:'88px 24px', background:T.bg2, borderTop:`1px solid ${T.border}` }}>
         <div style={{ maxWidth:1020, margin:'0 auto' }}>
           <div style={{ textAlign:'center', marginBottom:52 }}>
-            <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:14, textTransform:'uppercase' }}>How it works</div>
+            <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:14, textTransform:'uppercase' }}>In action</div>
             <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(24px,4.5vw,50px)', fontStyle:'italic', fontWeight:600, color:T.heading, lineHeight:1.15 }}>
               Five steps.<br /><span style={{ color:T.gold, fontWeight:400 }}>Infinite market intelligence.</span>
             </h2>
@@ -660,49 +660,6 @@ export default function MarketingPage() {
         </div>
       </section>
 
-      {/* ── CALENDAR PREVIEW ── */}
-      <section className="section-pad-sm" style={{ padding:'72px 24px', borderTop:`1px solid ${T.border}` }}>
-        <div style={{ maxWidth:820, margin:'0 auto' }}>
-          <div style={{ textAlign:'center', marginBottom:36 }}>
-            <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:12, textTransform:'uppercase' }}>High-impact calendar</div>
-            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(22px,4vw,42px)', fontStyle:'italic', fontWeight:600, color:T.heading }}>
-              Know what's coming before it moves markets.
-            </h2>
-          </div>
-          <div style={{ border:`1px solid ${T.border2}`, background:T.calendarBg }}>
-            <div style={{ padding:'9px 16px', borderBottom:`1px solid ${T.border}`, fontSize:9, letterSpacing:'0.18em', color:T.text3, textTransform:'uppercase', display:'flex', alignItems:'center', gap:7 }}>
-              <span style={{ width:5, height:5, borderRadius:'50%', background:T.gold, display:'inline-block' }} />
-              Today's Events
-            </div>
-            {[
-              { time:'8:30 AM', name:'Initial Jobless Claims',   tag:'JOBS · HIGH',   pip:T.red,     est:'225K', actual:'213K', beat:true  },
-              { time:'8:30 AM', name:'Philly Fed Manufacturing', tag:'FED · HIGH',    pip:T.red,     est:'8.5',  actual:null,   countdown:'5h 42m' },
-              { time:'8:30 AM', name:'Philly Fed Employment',    tag:'FED · MEDIUM',  pip:T.goldDim, est:'—',    actual:null,   countdown:'5h 42m' },
-              { time:'4:30 PM', name:"Fed's Balance Sheet",      tag:'FED · MEDIUM',  pip:T.goldDim, est:'—',    actual:null,   countdown:'13h 42m' },
-            ].map((ev,i)=>(
-              <div key={i} className="calendar-event" style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderBottom:i<3?`1px solid ${T.border}`:'none', flexWrap:'wrap' }}>
-                <div style={{ width:2, alignSelf:'stretch', background:ev.pip, borderRadius:1, flexShrink:0 }} />
-                <div className="calendar-event-time" style={{ fontSize:10, color:T.text3, width:54, flexShrink:0 }}>{ev.time}</div>
-                <div style={{ flex:1, minWidth:140 }}>
-                  <div style={{ fontSize:'clamp(12px,3vw,13px)', color:T.heading, fontWeight:500 }}>{ev.name}</div>
-                  <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.1em', marginTop:2 }}>{ev.tag}</div>
-                </div>
-                <div style={{ textAlign:'right', flexShrink:0 }}>
-                  <div style={{ fontSize:10, color:T.text3 }}>Est: {ev.est}</div>
-                  {ev.actual
-                    ? <div style={{ fontSize:11, fontWeight:600, color:ev.beat?T.amber:T.red, marginTop:2 }}>{ev.actual} {ev.beat?'↑ BEAT':'↑ MISS'}</div>
-                    : <div style={{ fontSize:10, color:T.goldDim, marginTop:2 }}>⏳ {(ev as any).countdown}</div>
-                  }
-                </div>
-              </div>
-            ))}
-          </div>
-          <p style={{ textAlign:'center', marginTop:10, fontSize:9, color:T.text3, letterSpacing:'0.1em' }}>
-            Actuals populate the moment data drops. Monday speaks the impact immediately.
-          </p>
-        </div>
-      </section>
-
       {/* ── INTELLIGENCE ENGINE ── */}
       <section className="section-pad" style={{ padding:'88px 24px', background:T.bg2, borderTop:`1px solid ${T.border}` }}>
         <div style={{ maxWidth:980, margin:'0 auto' }}>
@@ -774,6 +731,49 @@ export default function MarketingPage() {
             </div>
 
           </div>
+        </div>
+      </section>
+
+      {/* ── CALENDAR PREVIEW ── */}
+      <section className="section-pad-sm" style={{ padding:'72px 24px', borderTop:`1px solid ${T.border}` }}>
+        <div style={{ maxWidth:820, margin:'0 auto' }}>
+          <div style={{ textAlign:'center', marginBottom:36 }}>
+            <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:12, textTransform:'uppercase' }}>High-impact calendar</div>
+            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(22px,4vw,42px)', fontStyle:'italic', fontWeight:600, color:T.heading }}>
+              Know what's coming before it moves markets.
+            </h2>
+          </div>
+          <div style={{ border:`1px solid ${T.border2}`, background:T.calendarBg }}>
+            <div style={{ padding:'9px 16px', borderBottom:`1px solid ${T.border}`, fontSize:9, letterSpacing:'0.18em', color:T.text3, textTransform:'uppercase', display:'flex', alignItems:'center', gap:7 }}>
+              <span style={{ width:5, height:5, borderRadius:'50%', background:T.gold, display:'inline-block' }} />
+              Today's Events
+            </div>
+            {[
+              { time:'8:30 AM', name:'Initial Jobless Claims',   tag:'JOBS · HIGH',   pip:T.red,     est:'225K', actual:'213K', beat:true  },
+              { time:'8:30 AM', name:'Philly Fed Manufacturing', tag:'FED · HIGH',    pip:T.red,     est:'8.5',  actual:null,   countdown:'5h 42m' },
+              { time:'8:30 AM', name:'Philly Fed Employment',    tag:'FED · MEDIUM',  pip:T.goldDim, est:'—',    actual:null,   countdown:'5h 42m' },
+              { time:'4:30 PM', name:"Fed's Balance Sheet",      tag:'FED · MEDIUM',  pip:T.goldDim, est:'—',    actual:null,   countdown:'13h 42m' },
+            ].map((ev,i)=>(
+              <div key={i} className="calendar-event" style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderBottom:i<3?`1px solid ${T.border}`:'none', flexWrap:'wrap' }}>
+                <div style={{ width:2, alignSelf:'stretch', background:ev.pip, borderRadius:1, flexShrink:0 }} />
+                <div className="calendar-event-time" style={{ fontSize:10, color:T.text3, width:54, flexShrink:0 }}>{ev.time}</div>
+                <div style={{ flex:1, minWidth:140 }}>
+                  <div style={{ fontSize:'clamp(12px,3vw,13px)', color:T.heading, fontWeight:500 }}>{ev.name}</div>
+                  <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.1em', marginTop:2 }}>{ev.tag}</div>
+                </div>
+                <div style={{ textAlign:'right', flexShrink:0 }}>
+                  <div style={{ fontSize:10, color:T.text3 }}>Est: {ev.est}</div>
+                  {ev.actual
+                    ? <div style={{ fontSize:11, fontWeight:600, color:ev.beat?T.amber:T.red, marginTop:2 }}>{ev.actual} {ev.beat?'↑ BEAT':'↑ MISS'}</div>
+                    : <div style={{ fontSize:10, color:T.goldDim, marginTop:2 }}>⏳ {(ev as any).countdown}</div>
+                  }
+                </div>
+              </div>
+            ))}
+          </div>
+          <p style={{ textAlign:'center', marginTop:10, fontSize:9, color:T.text3, letterSpacing:'0.1em' }}>
+            Actuals populate the moment data drops. Monday speaks the impact immediately.
+          </p>
         </div>
       </section>
 
