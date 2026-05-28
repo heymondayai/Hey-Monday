@@ -976,6 +976,7 @@ function handleTouchEnd(e: React.TouchEvent) {
     if (typeof window === 'undefined') return 'speak'
     return (localStorage.getItem('tv_alert_behavior') as 'speak' | 'speak_and_brief' | 'silent') ?? 'speak'
   })
+  const [userPlan, setUserPlan] = useState<'core' | 'edge' | null>(null)
   const [webhookKey, setWebhookKey] = useState<string | null>(null)
   const [webhookKeyLoading, setWebhookKeyLoading] = useState(false)
   const [tvAlertTab, setTvAlertTab] = useState<'feed' | 'setup'>('feed')
@@ -1217,7 +1218,11 @@ useEffect(() => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
       setUser(user)
-      const { data: profile } = await supabase.from('profiles').select('trader_type, wake_word_enabled, voice_replies_enabled').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('trader_type, wake_word_enabled, voice_replies_enabled, stripe_price_id').eq('id', user.id).single()
+      const coreIds = [process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_MONTHLY, process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_ANNUAL].filter(Boolean)
+      const edgeIds = [process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_MONTHLY, process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_ANNUAL].filter(Boolean)
+      const priceId = (profile as any)?.stripe_price_id ?? null
+      setUserPlan(coreIds.includes(priceId) ? 'core' : edgeIds.includes(priceId) ? 'edge' : null)
       if (!profile?.trader_type) { router.push('/onboarding'); return }
       if (profile?.trader_type) { setTraderType(profile.trader_type); setSettingsType(profile.trader_type) }
       const initialWakeOn = profile?.wake_word_enabled !== false
@@ -2028,6 +2033,10 @@ function startThinkingChimes(): () => void {
     if (!user || !ruleTicker || !ruleThreshold || ruleSaving) return
     const threshold = parseFloat(ruleThreshold)
     if (isNaN(threshold) || threshold <= 0) return
+    if (userPlan === 'core' && alertRules.filter(r => r.enabled).length >= 5) {
+      alert('Essential plan is limited to 5 active alerts. Upgrade to Advantage for unlimited alerts.')
+      return
+    }
     setRuleSaving(true)
     const { data } = await supabase.from('alert_rules').insert({
       user_id: user.id, ticker: ruleTicker, rule_type: ruleType, threshold, cooldown_minutes: ruleCooldown,
@@ -2114,6 +2123,10 @@ function startThinkingChimes(): () => void {
 
   async function addCustomSummary() {
     if (!user || !summaryName.trim() || !summaryPrompt.trim()) return
+    if (userPlan === 'core') {
+      alert('Custom scheduled summaries are available on the Advantage plan. Upgrade to unlock.')
+      return
+    }
     if (!summaryDate) { alert('Please select a date.'); return }
     const runAtIso = buildRunAtIsoFromLocalInput(summaryDate, summaryTime)
     if (new Date(runAtIso).getTime() <= Date.now()) { alert('Please choose a future date and time.'); return }
@@ -2156,6 +2169,16 @@ function startThinkingChimes(): () => void {
 
   async function runScheduledSummary(summary: ScheduledSummary) {
     if (!user) return
+    if (userPlan === 'core') {
+      const todayEt = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' })
+      const [mm, dd, yyyy] = todayEt.split('/')
+      const todayPrefix = `${yyyy}-${mm}-${dd}`
+      const { data: todayBriefings } = await supabase.from('briefings').select('id').eq('user_id', user.id).gte('briefing_date', `${todayPrefix}T00:00:00`)
+      if ((todayBriefings?.length ?? 0) >= 2) {
+        alert('Essential plan is limited to 2 AI summaries per day. Upgrade to Advantage for unlimited summaries.')
+        return
+      }
+    }
     try {
       const history = messages.map((m) => ({ role: m.role === 'monday' ? 'assistant' : 'user', content: m.text }))
       const res = await fetch('/api/chat', {
@@ -2698,9 +2721,17 @@ const visibleDaySummaries = useMemo(() => {
                   </div>
                 ) : (
                   <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div style={{ padding: '10px 12px', background: isDark ? 'rgba(234,179,8,0.07)' : 'rgba(180,120,0,0.06)', border: `1px solid ${T.goldFaint7}`, borderLeft: `3px solid ${T.gold}` }}>
+                    {userPlan === 'core' ? (
+                      <div style={{ padding: '16px', background: isDark ? 'rgba(234,179,8,0.06)' : 'rgba(180,120,0,0.05)', border: `1px solid ${T.goldFaint7}`, borderLeft: `3px solid ${T.gold}`, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: T.gold }}>Advantage plan required</div>
+                        <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.6 }}>TradingView alert integration is available on the Advantage plan. Upgrade to connect your TradingView alerts directly to Monday.</div>
+                        <a href="/billing" style={{ display: 'inline-block', marginTop: '4px', padding: '6px 14px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, fontSize: '12px', fontWeight: 600, textDecoration: 'none', cursor: 'pointer' }}>Upgrade to Advantage →</a>
+                      </div>
+                    ) : null}
+                    {userPlan !== 'core' && <div style={{ padding: '10px 12px', background: isDark ? 'rgba(234,179,8,0.07)' : 'rgba(180,120,0,0.06)', border: `1px solid ${T.goldFaint7}`, borderLeft: `3px solid ${T.gold}` }}>
                       <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.6 }}><span style={{ fontWeight: 700, color: T.gold }}>TradingView Pro required.</span> Webhooks are only available on Pro, Pro+, or Premium plans.</div>
-                    </div>
+                    </div>}
+                    {userPlan !== 'core' && <>
                     <div>
                       <div style={{ fontSize: '11px', letterSpacing: '0.14em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: '8px' }}>Webhook URL</div>
                       {webhookKeyLoading ? <div style={{ fontSize: '12px', color: T.text6, fontStyle: 'italic' }}>Loading...</div> : webhookKey ? (
@@ -2718,6 +2749,7 @@ const visibleDaySummaries = useMemo(() => {
                         </div>
                       ))}
                     </div>
+                    </>}
                   </div>
                 )}
               </div>
@@ -3761,6 +3793,13 @@ const visibleDaySummaries = useMemo(() => {
                       </div>
                     ) : (
                       <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        {userPlan === 'core' ? (
+                          <div style={{ padding: '16px', background: isDark ? 'rgba(234,179,8,0.06)' : 'rgba(180,120,0,0.05)', border: `1px solid ${T.goldFaint7}`, borderLeft: `3px solid ${T.gold}`, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ fontSize: '13px', fontWeight: 700, color: T.gold }}>Advantage plan required</div>
+                            <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.6 }}>TradingView alert integration is available on the Advantage plan. Upgrade to connect your TradingView alerts directly to Monday.</div>
+                            <a href="/billing" style={{ display: 'inline-block', marginTop: '4px', padding: '7px 16px', background: T.goldFaint3, border: `1px solid ${T.goldFaint9}`, color: T.gold, fontSize: '12px', fontWeight: 600, textDecoration: 'none' }}>Upgrade to Advantage →</a>
+                          </div>
+                        ) : <>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 14px', background: isDark ? 'rgba(234,179,8,0.07)' : 'rgba(180,120,0,0.06)', border: `1px solid ${T.goldFaint7}`, borderLeft: `3px solid ${T.gold}` }}>
                           <div style={{ fontSize: '12px', color: T.text4, lineHeight: 1.6 }}>
                             <span style={{ fontWeight: 700, color: T.gold }}>TradingView Pro required.</span> Webhooks are only available on TradingView Pro, Pro+, or Premium plans. The "Webhook URL" field won't appear when creating alerts on a free account.
@@ -3837,6 +3876,7 @@ const visibleDaySummaries = useMemo(() => {
                             </div>
                           ))}
                         </div>
+                        </>}
                       </div>
                     )}
                   </div>

@@ -128,6 +128,7 @@ export async function buildHistoricalContext(
   message: string,
   watchlistTickers: string[],
   focusSymbol?: string | null,
+  plan?: 'core' | 'edge' | null,
 ): Promise<string> {
   const range = inferTimeRange(message)
   const signals = inferDataSignals(message)
@@ -267,7 +268,7 @@ export async function buildHistoricalContext(
     ))
   }
 
-  if (signals.congressional) {
+  if (signals.congressional && plan !== 'core') {
     queries.push(q(
       supabase
         .from('congressional_trades')

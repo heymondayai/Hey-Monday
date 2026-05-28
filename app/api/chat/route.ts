@@ -24,6 +24,7 @@ import {
 import { buildMarketState, MarketStateSnapshot } from '@/lib/market-state'
 import { getNyseEquitiesStatus } from '@/lib/market-hours'
 import { buildHistoricalContext } from '@/lib/context-builder'
+import { createAdminSupabaseClient } from '@/lib/supabase-admin'
 
 // ── SONNET DAILY CAP ─────────────────────────────────────────────────────────
 const sonnetUsage = new Map<string, { count: number; dateET: string }>()
@@ -614,6 +615,18 @@ const calendarToDate = new Date(`${todayStr}T12:00:00`)
 calendarToDate.setDate(calendarToDate.getDate() + 45)
 const calendarTo = calendarToDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
+const userPlan = await (async (): Promise<'core' | 'edge' | null> => {
+  if (!userId) return null
+  const admin = createAdminSupabaseClient()
+  const { data } = await admin.from('profiles').select('stripe_price_id').eq('id', userId).single()
+  const pid = (data as any)?.stripe_price_id ?? null
+  const coreIds = [process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_MONTHLY, process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_ANNUAL]
+  const edgeIds = [process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_MONTHLY, process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_ANNUAL]
+  if (coreIds.includes(pid)) return 'core'
+  if (edgeIds.includes(pid)) return 'edge'
+  return null
+})()
+
 const [intradayResult, economicEvents, earningsEvents, macroData, sectorData, historicalContext] = await Promise.all([
   fetchIntraday(intradaySymbols, {
     interval: '5min',
@@ -625,7 +638,7 @@ const [intradayResult, economicEvents, earningsEvents, macroData, sectorData, hi
   fetchEarningsCalendar(intradaySymbols, todayStr, calendarTo),
   fetchMacroData(),
   fetchSectorPerformance(),
-  buildHistoricalContext(message, watchlistTickers, intent.focusSymbol),
+  buildHistoricalContext(message, watchlistTickers, intent.focusSymbol, userPlan),
 ])
 
 console.log('[chat intraday fetch result]', {
