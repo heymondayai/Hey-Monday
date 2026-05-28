@@ -496,7 +496,7 @@ export default function MarketingPage() {
       <div style={{ borderBottom:`1px solid ${T.border}`, padding:'52px 24px' }}>
         <div style={{ maxWidth:760, margin:'0 auto', textAlign:'center' }}>
           <p style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(17px,3.5vw,26px)', fontStyle:'italic', fontWeight:500, color:T.heading, lineHeight:1.75 }}>
-            Imagine having a Bloomberg terminal, a news desk, an options analyst, and a macro strategist all in the same room — and any one of them will answer you the moment you speak.{' '}
+            Imagine having a professional trading terminal, a news desk, an options analyst, and a macro strategist all in the same room — and any one of them will answer you the moment you speak.{' '}
             <span style={{ color:T.gold }}>That's Monday.</span>{' '}
             Except it fits in a browser tab and costs less than a dinner out.
           </p>
