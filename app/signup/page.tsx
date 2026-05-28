@@ -50,6 +50,7 @@ const CORE_FEATURES = [
   'High-impact economic calendar',
   'News feed with sentiment scoring',
   'Options flow & dark pool activity',
+  'Full data history',
   'Up to 5 alerts · 2 summaries/day',
   'No TradingView integration',
 ]
@@ -336,8 +337,8 @@ function SignupForm({
             <div style={{ fontSize: 11, letterSpacing: '0.18em', color: T.goldDim, textTransform: 'uppercase', marginBottom: 10 }}>Choose your plan</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {(['edge', 'core'] as const).map(p => {
-                const monthlyPrice = p === 'core' ? '$79.99' : '$99.99'
-                const annualPrice  = p === 'core' ? '$66.66' : '$83.33'
+                const monthlyPrice = p === 'core' ? '$79.99' : '$109.99'
+                const annualPrice  = p === 'core' ? '$66.66' : '$91.66'
                 const label        = p === 'core' ? 'Essential intel' : 'Every advantage'
                 const active       = plan === p
                 return (
@@ -368,7 +369,7 @@ function SignupForm({
                 </div>
               ))}
             </div>
-            {billing === 'annual' && <div style={{ marginTop: 8, fontSize: 11, color: T.gold }}>{plan === 'core' ? 'Billed as $799.92/year — save $159.96' : 'Billed as $999.96/year — save $199.92'}</div>}
+            {billing === 'annual' && <div style={{ marginTop: 8, fontSize: 11, color: T.gold }}>{plan === 'core' ? 'Billed as $799.92/year — save $159.96' : 'Billed as $1,099.92/year — save $219.96'}</div>}
           </div>
 
           <button
@@ -528,7 +529,7 @@ function SignupForm({
               <div style={{ fontSize: 13, fontWeight: 600, color: T.heading, marginBottom: 2 }}>Your card won't be charged today</div>
               <div style={{ fontSize: 12, color: T.text2, lineHeight: 1.6 }}>
                 5-day free trial. {plan === 'edge'
-                  ? (billing === 'monthly' ? '$99.99/month' : '$83.33/month')
+                  ? (billing === 'monthly' ? '$109.99/month' : '$91.66/month')
                   : (billing === 'monthly' ? '$79.99/month'  : '$66.66/month')
                 } starts <strong style={{ color: T.gold }}>{chargeDate}</strong>. Cancel anytime.
               </div>
@@ -651,7 +652,7 @@ function SignupPageInner() {
   }, [plan])
 
   const price = plan === 'edge'
-    ? (billing === 'monthly' ? '99.99' : '83.33')
+    ? (billing === 'monthly' ? '109.99' : '91.66')
     : (billing === 'monthly' ? '79.99'  : '66.66')
   const chargeDate = (() => {
     const d = new Date()
@@ -715,7 +716,7 @@ function SignupPageInner() {
               </div>
               <div style={{ fontSize: 11, color: T.text2, marginBottom: 18 }}>
                 {billing === 'annual'
-                  ? `Billed as $${plan === 'edge' ? '999.96' : '799.92'} annually`
+                  ? `Billed as $${plan === 'edge' ? '1,099.92' : '799.92'} annually`
                   : 'Billed monthly, cancel anytime'}
               </div>
               <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 16, marginBottom: 16 }}>

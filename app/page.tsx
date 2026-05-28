@@ -52,7 +52,7 @@ const FAQ_ITEMS = [
 ]
 
 const COMPARISONS = [
-  { name: 'Advantage',    monthly: '$99.99',  annual: '$83.33', highlight: true,  note: 'Full access + political intel', cross: false },
+  { name: 'Advantage',    monthly: '$109.99', annual: '$91.66', highlight: true,  note: 'Full access + political intel', cross: false },
   { name: 'Essential',    monthly: '$79.99',  annual: '$66.66', highlight: false, note: 'Essential intel',         cross: false },
   { name: 'Bloomberg',    monthly: '$2,665',  annual: '$2,083', highlight: false, note: 'Too expensive, no AI',    cross: true  },
   { name: 'Trade Ideas',  monthly: '$254',    annual: '$167',   highlight: false, note: 'Scanner, no market intel', cross: true  },
@@ -221,7 +221,7 @@ export default function MarketingPage() {
   }
 
   const corePrice = billing === 'monthly' ? '79.99' : '66.66'
-  const edgePrice = billing === 'monthly' ? '99.99' : '83.33'
+  const edgePrice = billing === 'monthly' ? '109.99' : '91.66'
 
   return (
     <div style={{ background:T.pageBg, color:T.text, fontFamily:"'JetBrains Mono', monospace", minHeight:'100vh', transition:'background 0.3s ease, color 0.3s ease' }}>
@@ -281,6 +281,8 @@ export default function MarketingPage() {
           .section-pad-sm{padding:48px 18px!important}
           .comp-grid-wrap{overflow-x:auto!important}
           .plans-grid{grid-template-columns:1fr!important}
+          .intel-grid{grid-template-columns:1fr!important}
+          .intel-center{display:none!important}
         }
         @media(max-width:480px){
           .comp-grid{grid-template-columns:1fr 1fr!important}
@@ -490,6 +492,17 @@ export default function MarketingPage() {
         </div>
       </div>
 
+      {/* ── HOOK STATEMENT ── */}
+      <div style={{ borderBottom:`1px solid ${T.border}`, padding:'52px 24px' }}>
+        <div style={{ maxWidth:760, margin:'0 auto', textAlign:'center' }}>
+          <p style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(17px,3.5vw,26px)', fontStyle:'italic', fontWeight:500, color:T.heading, lineHeight:1.75 }}>
+            Imagine having a Bloomberg terminal, a news desk, an options analyst, and a macro strategist all in the same room — and any one of them will answer you the moment you speak.{' '}
+            <span style={{ color:T.gold }}>That's Monday.</span>{' '}
+            Except it fits in a browser tab and costs less than a dinner out.
+          </p>
+        </div>
+      </div>
+
       {/* ── FEATURES ── */}
       <section id="features" ref={el=>{sectionRefs.current['features']=el}} className="section-pad" style={{ padding:'88px 24px' }}>
         <div style={{ maxWidth:1060, margin:'0 auto' }}>
@@ -690,6 +703,80 @@ export default function MarketingPage() {
         </div>
       </section>
 
+      {/* ── INTELLIGENCE ENGINE ── */}
+      <section className="section-pad" style={{ padding:'88px 24px', background:T.bg2, borderTop:`1px solid ${T.border}` }}>
+        <div style={{ maxWidth:980, margin:'0 auto' }}>
+          <div style={{ textAlign:'center', marginBottom:52 }}>
+            <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:14, textTransform:'uppercase' }}>How the intelligence works</div>
+            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(26px,5vw,52px)', fontStyle:'italic', fontWeight:600, color:T.heading, lineHeight:1.15 }}>
+              While you watch one chart,<br/>
+              <span style={{ color:T.gold, fontWeight:400 }}>Monday monitors everything.</span>
+            </h2>
+            <p style={{ marginTop:16, fontSize:'clamp(12px,2.5vw,13px)', color:T.text2, maxWidth:600, margin:'16px auto 0', lineHeight:1.85 }}>
+              There's a version of trading where nothing slips past you. Where someone flags the options sweep before you see the move, reads the CPI print before you open Twitter, and already knows what it means for your specific watchlist. Where you never have to choose between watching one chart and missing everything else. Monday is that version — six live data sources, one voice, in seconds.
+            </p>
+          </div>
+
+          <div className="intel-grid" style={{ display:'grid', gridTemplateColumns:'1fr 56px 1fr', alignItems:'stretch', gap:1, background:T.border }}>
+
+            {/* ── Sources ── */}
+            <div style={{ background:T.pageBg, padding:'24px 20px', display:'flex', flexDirection:'column', gap:1 }}>
+              <div style={{ fontSize:9, letterSpacing:'0.2em', color:T.text3, textTransform:'uppercase', marginBottom:10 }}>Live data sources</div>
+              {[
+                { icon:'⊟', label:'Live Prices',          detail:'Stocks, ETFs, futures, crypto · refreshes every 30s' },
+                { icon:'◐', label:'Macro Calendar',        detail:'CPI, FOMC, NFP — actuals spoken the moment they drop' },
+                { icon:'◫', label:'News Feed',             detail:'Every headline scored by market impact and sentiment' },
+                { icon:'▦', label:'Options Flow',          detail:'Unusual sweeps, dark pool prints, block trades' },
+                { icon:'◈', label:'Insider & Political',   detail:'Congressional trades, insider filings, political signals' },
+                { icon:'◉', label:'Technical Alerts',      detail:'Price cross, VWAP break, % move, volume spike' },
+              ].map((src,i)=>(
+                <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', background:T.bg2, border:`1px solid ${T.border}` }}>
+                  <span style={{ fontSize:14, color:T.gold, flexShrink:0 }}>{src.icon}</span>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:11, fontWeight:600, color:T.heading }}>{src.label}</div>
+                    <div style={{ fontSize:9, color:T.text3, lineHeight:1.45, marginTop:1 }}>{src.detail}</div>
+                  </div>
+                  <div style={{ width:5, height:5, borderRadius:'50%', background:T.gold, flexShrink:0, animation:'pulse 2s ease infinite', animationDelay:`${i*0.28}s` }} />
+                </div>
+              ))}
+            </div>
+
+            {/* ── Center connector ── */}
+            <div className="intel-center" style={{ background:T.bg2, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:0 }}>
+              <div style={{ width:1, flex:1, background:`linear-gradient(to bottom,transparent,rgba(201,146,42,.5))` }} />
+              <div style={{ width:38, height:38, borderRadius:'50%', background:T.bg3, border:`1px solid rgba(201,146,42,.4)`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, boxShadow:`0 0 24px rgba(201,146,42,.1)` }}>
+                <LogoSvg size={17} />
+              </div>
+              <div style={{ width:1, flex:1, background:`linear-gradient(to bottom,rgba(201,146,42,.5),transparent)` }} />
+            </div>
+
+            {/* ── Output ── */}
+            <div style={{ background:T.pageBg, padding:'24px 20px', display:'flex', flexDirection:'column', gap:10 }}>
+              <div style={{ fontSize:9, letterSpacing:'0.2em', color:T.text3, textTransform:'uppercase', marginBottom:0 }}>Monday's output</div>
+
+              <div style={{ background:T.chatMonday, border:`1px solid ${T.chatMondayBorder}`, padding:'14px 14px 12px' }}>
+                <div style={{ fontSize:8, letterSpacing:'0.12em', color:T.goldDim, textTransform:'uppercase', marginBottom:7 }}>Proactive alert — unprompted</div>
+                <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(13px,2.5vw,15px)', color:T.heading, lineHeight:1.75, fontStyle:'italic' }}>
+                  "Heads up — TSLA earnings in 90 minutes. Options flow just spiked 3× normal with large call sweeps. 10Y yields are flat, giving growth names room to run. Watch for a move above $395."
+                </div>
+              </div>
+
+              <div style={{ background:T.chatMonday, border:`1px solid ${T.chatMondayBorder}`, padding:'14px 14px 12px' }}>
+                <div style={{ fontSize:8, letterSpacing:'0.12em', color:T.goldDim, textTransform:'uppercase', marginBottom:7 }}>On demand — spoken in ~3 seconds</div>
+                <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(13px,2.5vw,15px)', color:T.heading, lineHeight:1.75, fontStyle:'italic' }}>
+                  "AMD is up 1.6% on strong volume — AI infrastructure demand is the catalyst. Sector rotation into semis is accelerating. CPI tomorrow at 8:30 is the next risk event for your watchlist."
+                </div>
+              </div>
+
+              <div style={{ marginTop:'auto', padding:'10px 12px', border:`1px solid ${T.border2}`, fontSize:11, color:T.text3, lineHeight:1.65 }}>
+                Six data sources. One coherent answer.<br/>Spoken before you open a chart.
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
       {/* ── TESTIMONIALS ── */}
       <section className="section-pad-sm" style={{ padding:'72px 24px', background:T.bg2, borderTop:`1px solid ${T.border}` }}>
         <div style={{ maxWidth:960, margin:'0 auto' }}>
@@ -758,7 +845,7 @@ export default function MarketingPage() {
                 <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(14px,2.5vw,20px)', color:T.goldDim, fontWeight:500 }}>.{edgePrice.split('.')[1]}</span>
                 <span style={{ fontSize:10, color:T.text3 }}>/ mo{billing==='annual'?', billed annually':''}</span>
               </div>
-              {billing==='annual' && <div style={{ fontSize:10, color:T.gold, marginBottom:2 }}>Save $199.92/year</div>}
+              {billing==='annual' && <div style={{ fontSize:10, color:T.gold, marginBottom:2 }}>Save $219.96/year</div>}
               <div style={{ margin:'18px 0', height:1, background:T.border }} />
               {[
                 'AI voice — "Hey Monday" wake word',
@@ -766,6 +853,7 @@ export default function MarketingPage() {
                 'High-impact economic calendar',
                 'News feed with sentiment scoring',
                 'Options flow & dark pool activity',
+                'Full data history',
                 'Unlimited proactive alerts',
                 'Unlimited AI summaries & briefings',
                 'Custom scheduled summaries',
@@ -806,9 +894,9 @@ export default function MarketingPage() {
                 {ok:true,  label:'News feed with sentiment scoring'},
                 {ok:true,  label:'Options flow & dark pool activity'},
                 {ok:true,  label:'Conversation history + audio replay'},
+                {ok:true,  label:'Full data history'},
                 {ok:false, label:'Up to 5 active alerts'},
                 {ok:false, label:'2 AI summaries per day'},
-                {ok:false, label:'30-day data history'},
                 {ok:false, label:'Political & social media intel'},
                 {ok:false, label:'TradingView alert integration'},
               ].map((f,i)=>(
