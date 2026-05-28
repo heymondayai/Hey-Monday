@@ -52,7 +52,7 @@ const FAQ_ITEMS = [
 ]
 
 const COMPARISONS = [
-  { name: 'Advantage',    monthly: '$109.99', annual: '$91.66', highlight: true,  note: 'Full access + political', cross: false },
+  { name: 'Advantage',    monthly: '$99.99',  annual: '$83.33', highlight: true,  note: 'Full access + political intel', cross: false },
   { name: 'Essential',    monthly: '$79.99',  annual: '$66.66', highlight: false, note: 'Essential intel',         cross: false },
   { name: 'Bloomberg',    monthly: '$2,665',  annual: '$2,083', highlight: false, note: 'Too expensive, no AI',    cross: true  },
   { name: 'Trade Ideas',  monthly: '$254',    annual: '$167',   highlight: false, note: 'Scanner, no market intel', cross: true  },
@@ -221,7 +221,7 @@ export default function MarketingPage() {
   }
 
   const corePrice = billing === 'monthly' ? '79.99' : '66.66'
-  const edgePrice = billing === 'monthly' ? '109.99' : '91.66'
+  const edgePrice = billing === 'monthly' ? '99.99' : '83.33'
 
   return (
     <div style={{ background:T.pageBg, color:T.text, fontFamily:"'JetBrains Mono', monospace", minHeight:'100vh', transition:'background 0.3s ease, color 0.3s ease' }}>
@@ -758,21 +758,24 @@ export default function MarketingPage() {
                 <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(14px,2.5vw,20px)', color:T.goldDim, fontWeight:500 }}>.{edgePrice.split('.')[1]}</span>
                 <span style={{ fontSize:10, color:T.text3 }}>/ mo{billing==='annual'?', billed annually':''}</span>
               </div>
-              {billing==='annual' && <div style={{ fontSize:10, color:T.gold, marginBottom:2 }}>Save $219.96/year</div>}
+              {billing==='annual' && <div style={{ fontSize:10, color:T.gold, marginBottom:2 }}>Save $199.92/year</div>}
               <div style={{ margin:'18px 0', height:1, background:T.border }} />
               {[
-                {dim:true,  label:'Everything in Essential, plus:'},
-                {dim:false, label:'Unlimited proactive alerts'},
-                {dim:false, label:'Unlimited AI briefings & summaries'},
-                {dim:false, label:'Full data history'},
-                {dim:false, label:'Political & social media intel'},
-                {dim:false, label:'Congressional & insider trade intel'},
-                {dim:false, label:'TradingView alert integration'},
-                {dim:false, label:'Priority AI response time'},
-              ].map((f,i)=>(
-                <div key={i} style={{ display:'flex', gap:7, padding:'5px 0', borderBottom:i<7?`1px solid ${T.footerBorder}`:'none', alignItems:'flex-start' }}>
-                  <span style={{ color:f.dim?T.text3:T.gold, fontSize:11, flexShrink:0, marginTop:1 }}>{f.dim?'·':'✓'}</span>
-                  <span style={{ fontSize:11, color:f.dim?T.text3:T.text2, fontStyle:f.dim?'italic':'normal' }}>{f.label}</span>
+                'AI voice — "Hey Monday" wake word',
+                'Live prices — stocks, futures, crypto',
+                'High-impact economic calendar',
+                'News feed with sentiment scoring',
+                'Options flow & dark pool activity',
+                'Unlimited proactive alerts',
+                'Unlimited AI summaries & briefings',
+                'Custom scheduled summaries',
+                'Political & social media intel',
+                'Congressional & insider trade intel',
+                'TradingView alert integration',
+              ].map((label,i,arr)=>(
+                <div key={i} style={{ display:'flex', gap:7, padding:'5px 0', borderBottom:i<arr.length-1?`1px solid ${T.footerBorder}`:'none', alignItems:'flex-start' }}>
+                  <span style={{ color:T.gold, fontSize:11, flexShrink:0, marginTop:1 }}>✓</span>
+                  <span style={{ fontSize:11, color:T.text2 }}>{label}</span>
                 </div>
               ))}
               <div style={{ marginTop:24 }}>
@@ -804,11 +807,12 @@ export default function MarketingPage() {
                 {ok:true,  label:'Options flow & dark pool activity'},
                 {ok:true,  label:'Conversation history + audio replay'},
                 {ok:false, label:'Up to 5 active alerts'},
+                {ok:false, label:'2 AI summaries per day'},
                 {ok:false, label:'30-day data history'},
-                {ok:false, label:'3 AI briefings per day'},
                 {ok:false, label:'Political & social media intel'},
+                {ok:false, label:'TradingView alert integration'},
               ].map((f,i)=>(
-                <div key={i} style={{ display:'flex', gap:7, padding:'5px 0', borderBottom:i<9?`1px solid ${T.footerBorder}`:'none', alignItems:'flex-start' }}>
+                <div key={i} style={{ display:'flex', gap:7, padding:'5px 0', borderBottom:i<10?`1px solid ${T.footerBorder}`:'none', alignItems:'flex-start' }}>
                   <span style={{ color:f.ok?T.gold:T.border2, fontSize:11, flexShrink:0, marginTop:1 }}>{f.ok?'✓':'–'}</span>
                   <span style={{ fontSize:11, color:f.ok?T.text2:T.text3 }}>{f.label}</span>
                 </div>
