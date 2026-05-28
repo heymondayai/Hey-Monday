@@ -986,8 +986,26 @@ function SettingsPageInner() {
                   borderRadius: 6,
                   overflow: 'hidden',
                 }}>
-                  {[
-  ['Plan', profile?.billing_interval === 'year' ? 'Hey Monday Pro (Annual)' : profile?.billing_interval === 'month' ? 'Hey Monday Pro (Monthly)' : 'Hey Monday Pro'],
+                  {(() => {
+                  const priceId = profile?.stripe_price_id
+                  const coreIds = [
+                    process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_MONTHLY,
+                    process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_ANNUAL,
+                    process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY,
+                    process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL,
+                  ].filter(Boolean) as string[]
+                  const edgeIds = [
+                    process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_MONTHLY,
+                    process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_ANNUAL,
+                  ].filter(Boolean) as string[]
+                  const planTier = priceId && coreIds.includes(priceId) ? 'Essential' : priceId && edgeIds.includes(priceId) ? 'Advantage' : '—'
+                  const planLabel = profile?.billing_interval === 'year'
+                    ? `${planTier} (Annual)`
+                    : profile?.billing_interval === 'month'
+                    ? `${planTier} (Monthly)`
+                    : planTier
+                  return [
+                  ['Plan', planLabel],
   ['Status', subscriptionMeta.label],
   ['Billing interval', profile?.billing_interval || '—'],
   ['Trial ends', fmtDate(profile?.trial_ends_at || null)],
@@ -1007,7 +1025,8 @@ function SettingsPageInner() {
     <div style={{ color: T.text4, fontSize: 12 }}>{label}</div>
     <div style={{ color: T.text2, fontSize: 13, wordBreak: 'break-word' }}>{value}</div>
   </div>
-))}
+))
+})()}
                 </div>
 
                 {profile?.cancel_at_period_end ? (
@@ -1035,21 +1054,25 @@ function SettingsPageInner() {
                 )}
 
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  <button onClick={openCustomerPortal} disabled={billingLoading} style={actionBtn(true)}>
+                  <Link href="/billing" style={{ ...actionBtn(true), textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    View Plan & Billing
+                  </Link>
+
+                  <button onClick={openCustomerPortal} disabled={billingLoading} style={actionBtn(false)}>
                     {billingLoading ? 'Opening...' : 'Manage Billing'}
                   </button>
 
                   <button
-  onClick={toggleCancelAtPeriodEnd}
-  disabled={billingLoading || !profile?.stripe_subscription_id}
-  style={actionBtn(false)}
->
-  {profile?.cancel_at_period_end
-    ? 'Reactivate Subscription'
-    : profile?.subscription_status === 'trialing'
-    ? 'Cancel Free Trial'
-    : 'Cancel Subscription'}
-</button>
+                    onClick={toggleCancelAtPeriodEnd}
+                    disabled={billingLoading || !profile?.stripe_subscription_id}
+                    style={actionBtn(false)}
+                  >
+                    {profile?.cancel_at_period_end
+                      ? 'Reactivate Subscription'
+                      : profile?.subscription_status === 'trialing'
+                      ? 'Cancel Free Trial'
+                      : 'Cancel Subscription'}
+                  </button>
                 </div>
               </div>
             </div>

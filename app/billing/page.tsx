@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useTheme } from '@/app/context/theme-context'
+import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
 
 // ── THEMES ────────────────────────────────────────────────────────────────────
@@ -21,6 +23,7 @@ const DARK = {
   toggleBg: '#1c1608', toggleBorder: '#3a3420',
   navBg: '#120f07',
   modalOverlay: 'rgba(0,0,0,0.78)',
+  featureBg: 'rgba(201,146,42,.04)',
 }
 
 const LIGHT = {
@@ -39,31 +42,69 @@ const LIGHT = {
   toggleBg: '#e8e6e2', toggleBorder: '#c4c1bc',
   navBg: '#f2f1ee',
   modalOverlay: 'rgba(0,0,0,0.50)',
+  featureBg: 'rgba(184,117,12,.04)',
 }
 
-const MOCK = {
-  name: 'Jane Smith',
-  email: 'jane@example.com',
-  plan: 'Pro' as const,
-  billing: 'monthly' as 'monthly' | 'annual',
-  status: 'active' as 'active' | 'trialing' | 'canceled' | 'past_due',
-  trialEndsAt: null as string | null,
-  currentPeriodEnd: '2026-04-20',
-  cancelAtPeriodEnd: false,
-  price: 79.99,
-  card: { brand: 'Visa', last4: '4242', expMonth: 12, expYear: 2027 },
-  invoices: [
-    { id: 'inv_001', date: '2026-03-20', amount: 79.99, status: 'paid', description: 'Pro Plan — March 2026' },
-    { id: 'inv_002', date: '2026-02-20', amount: 79.99, status: 'paid', description: 'Pro Plan — February 2026' },
-    { id: 'inv_003', date: '2026-01-20', amount: 79.99, status: 'paid', description: 'Pro Plan — January 2026' },
-    { id: 'inv_004', date: '2025-12-20', amount: 79.99, status: 'paid', description: 'Pro Plan — December 2025' },
+// ── PLAN HELPERS ─────────────────────────────────────────────────────────────
+function derivePlan(priceId: string | null | undefined): 'core' | 'edge' | null {
+  if (!priceId) return null
+  const coreIds = [
+    process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_MONTHLY,
+    process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_ANNUAL,
+    process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY,
+    process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL,
+  ].filter(Boolean) as string[]
+  const edgeIds = [
+    process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_MONTHLY,
+    process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_ANNUAL,
+  ].filter(Boolean) as string[]
+  if (coreIds.includes(priceId)) return 'core'
+  if (edgeIds.includes(priceId)) return 'edge'
+  return null
+}
+
+const PLAN_FEATURES: Record<'core' | 'edge', string[]> = {
+  core: [
+    'AI voice — "Hey Monday" wake word',
+    'Live prices — stocks, ETFs, futures, crypto',
+    'High-impact economic calendar',
+    'News feed with sentiment scoring',
+    'Options flow & dark pool activity',
+    'Full data history',
+    'Up to 5 active alerts',
+    '2 AI summaries / day',
   ],
-  repliesUsed: 3,
-  repliesLimit: 5,
-  repliesResetAt: 'midnight ET',
+  edge: [
+    'AI voice — "Hey Monday" wake word',
+    'Live prices — stocks, ETFs, futures, crypto',
+    'High-impact economic calendar',
+    'News feed with sentiment scoring',
+    'Options flow & dark pool activity',
+    'Full data history',
+    'Unlimited active alerts',
+    'Unlimited AI summaries & briefings',
+    'Custom scheduled summaries',
+    'Political & social media intel',
+    'Congressional & insider trades',
+    'TradingView alert integration',
+  ],
 }
 
-type Modal = 'cancel' | 'reactivate' | 'change-billing' | 'update-card' | null
+type ProfileRow = {
+  id: string
+  email: string | null
+  full_name: string | null
+  stripe_customer_id: string | null
+  stripe_subscription_id: string | null
+  stripe_price_id: string | null
+  subscription_status: string | null
+  billing_interval: string | null
+  trial_ends_at: string | null
+  current_period_end: string | null
+  cancel_at_period_end: boolean | null
+}
+
+type Modal = 'cancel' | 'reactivate' | 'change-plan' | null
 
 function SunIcon({ color }: { color: string }) {
   return (
@@ -94,51 +135,152 @@ function CardIcon({ color }: { color: string }) {
   )
 }
 
+function CheckIcon({ color }: { color: string }) {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="2 6 5 9 10 3"/>
+    </svg>
+  )
+}
+
 export default function BillingPage() {
   const { isDark, toggle } = useTheme()
   const T = isDark ? DARK : LIGHT
+  const router = useRouter()
+  const supabase = createClient()
 
-  const [data, setData] = useState(MOCK)
+  const [loading, setLoading] = useState(true)
+  const [profile, setProfile] = useState<ProfileRow | null>(null)
   const [modal, setModal] = useState<Modal>(null)
-  const [loading, setLoading] = useState(false)
+  const [actionLoading, setActionLoading] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
-  const [billingChoice, setBillingChoice] = useState<'monthly' | 'annual'>(data.billing)
+
+  // Plan change modal state
+  const [changeTier, setChangeTier] = useState<'core' | 'edge'>('core')
+  const [changeCycle, setChangeCycle] = useState<'monthly' | 'annual'>('monthly')
+
+  useEffect(() => {
+    let mounted = true
+    async function load() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user) { router.replace('/login'); return }
+
+      const { data: row } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, stripe_customer_id, stripe_subscription_id, stripe_price_id, subscription_status, billing_interval, trial_ends_at, current_period_end, cancel_at_period_end')
+        .eq('id', session.user.id)
+        .maybeSingle()
+
+      if (!mounted) return
+      const p = (row as ProfileRow) || null
+      setProfile(p)
+      setLoading(false)
+
+      // Pre-seed the change modal to current plan
+      if (p) {
+        const cur = derivePlan(p.stripe_price_id)
+        setChangeTier(cur === 'edge' ? 'edge' : 'core')
+        setChangeCycle(p.billing_interval === 'year' ? 'annual' : 'monthly')
+      }
+
+      if (row?.stripe_subscription_id) {
+        fetch('/api/billing/sync', { method: 'POST' })
+          .then(r => r.json())
+          .then(data => {
+            if (!mounted || !data.synced) return
+            setProfile(prev => prev ? {
+              ...prev,
+              subscription_status: data.subscription_status ?? prev.subscription_status,
+              billing_interval: data.billing_interval ?? prev.billing_interval,
+              current_period_end: data.current_period_end ?? prev.current_period_end,
+              trial_ends_at: data.trial_ends_at ?? prev.trial_ends_at,
+              cancel_at_period_end: data.cancel_at_period_end ?? prev.cancel_at_period_end,
+              stripe_price_id: data.stripe_price_id ?? prev.stripe_price_id,
+            } : prev)
+          })
+          .catch(() => {})
+      }
+    }
+    load()
+    return () => { mounted = false }
+  }, [])
 
   function showToast(msg: string, type: 'success' | 'error' = 'success') {
     setToast({ msg, type })
-    setTimeout(() => setToast(null), 4000)
+    setTimeout(() => setToast(null), 4500)
+  }
+
+  async function openPortal() {
+    setActionLoading(true)
+    try {
+      const res = await fetch('/api/billing/portal', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok || !data.url) throw new Error(data.error || 'Could not open billing portal.')
+      window.location.href = data.url
+    } catch (err: any) {
+      showToast(err.message || 'Could not open billing portal.', 'error')
+      setActionLoading(false)
+    }
   }
 
   async function handleCancel() {
-    setLoading(true)
-    await new Promise(r => setTimeout(r, 1200))
-    setData(d => ({ ...d, cancelAtPeriodEnd: true }))
-    setLoading(false); setModal(null)
-    showToast('Subscription will cancel at period end. You keep access until then.')
+    setActionLoading(true)
+    try {
+      const res = await fetch('/api/billing/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cancelAtPeriodEnd: true }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not cancel subscription.')
+      setProfile(prev => prev ? { ...prev, cancel_at_period_end: true } : prev)
+      setModal(null)
+      showToast('Subscription will cancel at period end. You keep access until then.')
+    } catch (err: any) {
+      showToast(err.message || 'Could not cancel.', 'error')
+    } finally {
+      setActionLoading(false)
+    }
   }
 
   async function handleReactivate() {
-    setLoading(true)
-    await new Promise(r => setTimeout(r, 1200))
-    setData(d => ({ ...d, cancelAtPeriodEnd: false }))
-    setLoading(false); setModal(null)
-    showToast("Subscription reactivated — you're all set.")
+    setActionLoading(true)
+    try {
+      const res = await fetch('/api/billing/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cancelAtPeriodEnd: false }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not reactivate.')
+      setProfile(prev => prev ? { ...prev, cancel_at_period_end: false } : prev)
+      setModal(null)
+      showToast("Subscription reactivated — you're all set.")
+    } catch (err: any) {
+      showToast(err.message || 'Could not reactivate.', 'error')
+    } finally {
+      setActionLoading(false)
+    }
   }
 
-  async function handleChangeBilling() {
-    setLoading(true)
-    await new Promise(r => setTimeout(r, 1200))
-    setData(d => ({ ...d, billing: billingChoice, price: billingChoice === 'annual' ? 66.66 : 79.99 }))
-    setLoading(false); setModal(null)
-    showToast(`Switched to ${billingChoice} billing successfully.`)
-  }
+  // Derived values
+  const plan = derivePlan(profile?.stripe_price_id)
+  const planName = plan === 'core' ? 'Essential' : plan === 'edge' ? 'Advantage' : '—'
+  const billingInterval = profile?.billing_interval
+  const price = plan === 'edge'
+    ? (billingInterval === 'year' ? 91.66 : 109.99)
+    : plan === 'core'
+    ? (billingInterval === 'year' ? 66.66 : 79.99)
+    : null
 
-  const renewDate = new Date(data.currentPeriodEnd).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-  const isTrial = data.status === 'trialing'
-  const isCanceled = data.cancelAtPeriodEnd
-
+  const renewDate = profile?.current_period_end
+    ? new Date(profile.current_period_end).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : '—'
+  const isTrial = profile?.subscription_status === 'trialing'
+  const isCanceled = !!profile?.cancel_at_period_end
   const statusColor = isCanceled ? T.red : isTrial ? T.amber : T.green
-  const statusLabel = isCanceled ? 'Cancels ' + renewDate : isTrial ? 'Trial' : 'Active'
+  const statusLabel = isCanceled ? `Cancels ${renewDate}` : isTrial ? 'Trial' : 'Active'
+  const planFeatures = plan ? PLAN_FEATURES[plan] : []
 
   const sectionHead = (label: string) => (
     <div style={{ fontSize: 9, letterSpacing: '0.22em', color: T.goldDim, textTransform: 'uppercase' as const, marginBottom: 16, transition: 'color 0.3s' }}>{label}</div>
@@ -154,12 +296,27 @@ export default function BillingPage() {
     <span style={{ width: 12, height: 12, border: `2px solid ${color}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
   )
 
+  if (loading) {
+    return (
+      <div style={{ background: T.pageBg, color: T.gold, fontFamily: "'JetBrains Mono', monospace", minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, letterSpacing: '0.1em' }}>
+        Loading billing...
+      </div>
+    )
+  }
+
+  // Plan card helpers for change-plan modal
+  const planPrice = (tier: 'core' | 'edge', cycle: 'monthly' | 'annual') =>
+    tier === 'edge'
+      ? (cycle === 'annual' ? '91.66' : '109.99')
+      : (cycle === 'annual' ? '66.66' : '79.99')
+
+  const planLabel = (tier: 'core' | 'edge') => tier === 'core' ? 'Essential' : 'Advantage'
+
   return (
     <div style={{ background: T.pageBg, color: T.text, fontFamily: "'JetBrains Mono', monospace", minHeight: '100vh', transition: 'background 0.3s, color 0.3s' }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600;1,700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
         *{margin:0;padding:0;box-sizing:border-box}
-        @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(201,146,42,.4)}50%{opacity:.8;box-shadow:0 0 0 5px rgba(201,146,42,0)}}
         @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
         @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -183,8 +340,8 @@ export default function BillingPage() {
               {isDark ? <SunIcon color={T.text2} /> : <MoonIcon color={T.text2} />}
             </span>
           </button>
-          <Link href="/dashboard" style={{ textDecoration: 'none', fontSize: 10, color: T.text3, letterSpacing: '0.1em', textTransform: 'uppercase', transition: 'color 0.3s' }}>← Dashboard</Link>
-          <div style={{ fontSize: 11, color: T.text2, transition: 'color 0.3s' }}>{data.email}</div>
+          <Link href="/dashboard/settings" style={{ textDecoration: 'none', fontSize: 10, color: T.text3, letterSpacing: '0.1em', textTransform: 'uppercase', transition: 'color 0.3s' }}>← Settings</Link>
+          <div style={{ fontSize: 11, color: T.text2, transition: 'color 0.3s' }}>{profile?.email || '—'}</div>
         </div>
       </nav>
 
@@ -203,28 +360,40 @@ export default function BillingPage() {
         </div>
 
         <div className="billing-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+          {/* Current plan */}
           {card(
             <div style={{ padding: '20px' }}>
               {sectionHead('Current plan')}
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
                 <div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: T.heading, marginBottom: 4, transition: 'color 0.3s' }}>Pro Plan</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: T.heading, marginBottom: 4, transition: 'color 0.3s' }}>
+                    {planName} Plan
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor, display: 'inline-block', animation: isTrial ? 'pulse 2s ease infinite' : 'none' }} />
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor, display: 'inline-block' }} />
                     <span style={{ fontSize: 10, letterSpacing: '0.12em', color: statusColor, textTransform: 'uppercase' }}>{statusLabel}</span>
                   </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 28, fontWeight: 700, color: T.gold, lineHeight: 1, transition: 'color 0.3s' }}>${data.price.toFixed(2)}</div>
-                  <div style={{ fontSize: 9, color: T.text3, marginTop: 2, transition: 'color 0.3s' }}>/{data.billing === 'annual' ? 'mo, billed annually' : 'month'}</div>
-                </div>
+                {price !== null && (
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 28, fontWeight: 700, color: T.gold, lineHeight: 1, transition: 'color 0.3s' }}>${price.toFixed(2)}</div>
+                    <div style={{ fontSize: 9, color: T.text3, marginTop: 2, transition: 'color 0.3s' }}>/{billingInterval === 'year' ? 'mo, billed annually' : 'month'}</div>
+                  </div>
+                )}
               </div>
               <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontSize: 10, color: T.text3, transition: 'color 0.3s' }}>
                   {isCanceled ? `Access until ${renewDate}` : isTrial ? `Trial ends ${renewDate}` : `Renews ${renewDate}`}
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => { setBillingChoice(data.billing); setModal('change-billing') }}
+                  <button
+                    onClick={() => {
+                      if (plan) {
+                        setChangeTier(plan)
+                        setChangeCycle(billingInterval === 'year' ? 'annual' : 'monthly')
+                      }
+                      setModal('change-plan')
+                    }}
                     style={{ fontSize: 9, padding: '5px 10px', background: 'transparent', border: `1px solid ${T.border2}`, color: T.text3, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all 0.2s' }}>
                     Change
                   </button>
@@ -237,74 +406,48 @@ export default function BillingPage() {
             </div>
           )}
 
+          {/* What's included */}
           {card(
             <div style={{ padding: '20px' }}>
-              {sectionHead('Daily usage')}
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 8 }}>
-                <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 36, fontWeight: 700, color: T.gold, lineHeight: 1, transition: 'color 0.3s' }}>{data.repliesUsed}</span>
-                <span style={{ fontSize: 14, color: T.text3, transition: 'color 0.3s' }}>/ {data.repliesLimit} replies used</span>
+              {sectionHead("What's included")}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                {planFeatures.length === 0 && (
+                  <div style={{ fontSize: 11, color: T.text3 }}>No plan detected — contact support.</div>
+                )}
+                {planFeatures.map((f, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <CheckIcon color={T.gold} />
+                    <span style={{ fontSize: 11, color: T.text, lineHeight: 1.4 }}>{f}</span>
+                  </div>
+                ))}
               </div>
-              <div style={{ height: 4, background: T.border2, borderRadius: 2, marginBottom: 8, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${(data.repliesUsed / data.repliesLimit) * 100}%`, background: data.repliesUsed >= data.repliesLimit ? T.red : T.gold, borderRadius: 2, transition: 'width 0.4s ease, background 0.3s' }} />
-              </div>
-              <div style={{ fontSize: 10, color: T.text3, lineHeight: 1.6, transition: 'color 0.3s' }}>
-                {data.repliesUsed >= data.repliesLimit
-                  ? <span style={{ color: T.red }}>Daily limit reached — resets at {data.repliesResetAt}</span>
-                  : <>{data.repliesLimit - data.repliesUsed} replies remaining today · Resets at {data.repliesResetAt}</>
-                }
-              </div>
-              {isTrial && (
-                <div style={{ marginTop: 12, background: T.badgeBg, border: `1px solid ${T.badgeBorder}`, padding: '8px 10px', fontSize: 10, color: T.gold, transition: 'all 0.3s' }}>
-                  Upgrade for unlimited replies after trial
-                </div>
-              )}
             </div>
           )}
         </div>
 
+        {/* Payment method + Invoice history */}
         {card(
           <div style={{ padding: '20px' }}>
-            {sectionHead('Payment method')}
+            {sectionHead('Payment & invoices')}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                 <div style={{ width: 44, height: 30, background: T.bg3, border: `1px solid ${T.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.3s' }}>
                   <CardIcon color={T.text2} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: T.heading, marginBottom: 2, transition: 'color 0.3s' }}>{data.card.brand} ending in {data.card.last4}</div>
-                  <div style={{ fontSize: 10, color: T.text3, transition: 'color 0.3s' }}>Expires {data.card.expMonth}/{data.card.expYear}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.heading, marginBottom: 2, transition: 'color 0.3s' }}>Card & invoice management</div>
+                  <div style={{ fontSize: 10, color: T.text3, transition: 'color 0.3s' }}>Update payment method, download invoices, and view billing history in the Stripe portal.</div>
                 </div>
               </div>
-              <button onClick={() => setModal('update-card')}
-                style={{ fontSize: 9, padding: '7px 14px', background: 'transparent', border: `1px solid ${T.border2}`, color: T.text2, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", letterSpacing: '0.1em', textTransform: 'uppercase', transition: 'all 0.2s' }}>
-                Update Card
+              <button
+                onClick={openPortal}
+                disabled={actionLoading}
+                style={{ fontSize: 9, padding: '7px 14px', background: 'transparent', border: `1px solid ${T.border2}`, color: T.text2, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", letterSpacing: '0.1em', textTransform: 'uppercase', transition: 'all 0.2s', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {actionLoading ? spinner(T.text2) : 'Open Portal →'}
               </button>
             </div>
           </div>,
           { marginBottom: 16 }
-        )}
-
-        {card(
-          <div style={{ padding: '20px' }}>
-            {sectionHead('Invoice history')}
-            {data.invoices.map((inv, i) => (
-              <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '11px 0', borderBottom: i < data.invoices.length - 1 ? `1px solid ${T.border}` : 'none' }}>
-                <div style={{ fontSize: 10, color: T.text3, width: 90, flexShrink: 0, transition: 'color 0.3s' }}>
-                  {new Date(inv.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                </div>
-                <div style={{ flex: 1, fontSize: 12, color: T.text, transition: 'color 0.3s' }}>{inv.description}</div>
-                <div style={{ fontSize: 8, padding: '2px 7px', background: T.successBg, border: `1px solid ${T.successBorder}`, color: T.green, letterSpacing: '0.1em', textTransform: 'uppercase' as const, flexShrink: 0 }}>
-                  {inv.status}
-                </div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: T.heading, width: 56, textAlign: 'right', flexShrink: 0, transition: 'color 0.3s' }}>
-                  ${inv.amount.toFixed(2)}
-                </div>
-                <button style={{ fontSize: 9, padding: '4px 10px', background: 'transparent', border: `1px solid ${T.border2}`, color: T.text3, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", letterSpacing: '0.06em', flexShrink: 0 }}>
-                  PDF
-                </button>
-              </div>
-            ))}
-          </div>
         )}
 
         <div style={{ marginTop: 32, borderTop: `1px solid ${T.border}`, paddingTop: 28 }}>
@@ -321,83 +464,112 @@ export default function BillingPage() {
         </div>
       </div>
 
+      {/* MODALS */}
       {modal && (
-        <div className="fade" onClick={() => { if (!loading) setModal(null) }}
+        <div className="fade" onClick={() => { if (!actionLoading) setModal(null) }}
           style={{ position: 'fixed', inset: 0, background: T.modalOverlay, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
           <div className="slide" onClick={e => e.stopPropagation()}
-            style={{ background: T.cardBg, border: `1px solid ${T.border2}`, width: '100%', maxWidth: 440, overflow: 'hidden', transition: 'background 0.3s, border-color 0.3s' }}>
+            style={{ background: T.cardBg, border: `1px solid ${T.border2}`, width: '100%', maxWidth: modal === 'change-plan' ? 520 : 440, overflow: 'hidden', transition: 'background 0.3s, border-color 0.3s' }}>
             <div style={{ height: 2, background: `linear-gradient(90deg, transparent, ${modal === 'cancel' ? T.red : T.gold}, transparent)` }} />
             <div style={{ padding: '24px' }}>
+
+              {/* ── Cancel ── */}
               {modal === 'cancel' && (
                 <>
                   <div style={{ fontSize: 16, fontWeight: 700, color: T.heading, marginBottom: 6 }}>Cancel subscription?</div>
                   <div style={{ fontSize: 12, color: T.text2, lineHeight: 1.7, marginBottom: 20 }}>
-                    You'll keep full access until <strong style={{ color: T.gold }}>{renewDate}</strong>. After that, your account will downgrade — no further charges.
+                    You'll keep full access until <strong style={{ color: T.gold }}>{renewDate}</strong>. After that, no further charges.
                   </div>
                   <div style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, padding: '10px 14px', fontSize: 11, color: T.text2, lineHeight: 1.6, marginBottom: 20 }}>
                     You'll lose: unlimited voice replies, live briefings, order flow, and news feed access.
                   </div>
                   <div style={{ display: 'flex', gap: 10 }}>
                     <button onClick={() => setModal(null)} style={{ flex: 1, padding: '11px', background: 'transparent', border: `1px solid ${T.border2}`, color: T.text2, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Keep Plan</button>
-                    <button onClick={handleCancel} disabled={loading} style={{ flex: 1, padding: '11px', background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, color: T.red, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                      {loading ? spinner(T.red) : 'Confirm Cancel'}
+                    <button onClick={handleCancel} disabled={actionLoading} style={{ flex: 1, padding: '11px', background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, color: T.red, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      {actionLoading ? spinner(T.red) : 'Confirm Cancel'}
                     </button>
                   </div>
                 </>
               )}
+
+              {/* ── Reactivate ── */}
               {modal === 'reactivate' && (
                 <>
                   <div style={{ fontSize: 16, fontWeight: 700, color: T.heading, marginBottom: 6 }}>Reactivate subscription?</div>
                   <div style={{ fontSize: 12, color: T.text2, lineHeight: 1.7, marginBottom: 20 }}>
-                    Your plan will continue and you'll be billed <strong style={{ color: T.gold }}>${data.price.toFixed(2)}/{data.billing === 'annual' ? 'mo' : 'month'}</strong> starting <strong style={{ color: T.gold }}>{renewDate}</strong>.
+                    Your plan will continue and you'll be billed starting <strong style={{ color: T.gold }}>{renewDate}</strong>.
                   </div>
                   <div style={{ display: 'flex', gap: 10 }}>
                     <button onClick={() => setModal(null)} style={{ flex: 1, padding: '11px', background: 'transparent', border: `1px solid ${T.border2}`, color: T.text2, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Back</button>
-                    <button onClick={handleReactivate} disabled={loading} style={{ flex: 1, padding: '11px', background: T.gold, border: 'none', color: T.btnText, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                      {loading ? spinner(T.btnText) : 'Reactivate →'}
+                    <button onClick={handleReactivate} disabled={actionLoading} style={{ flex: 1, padding: '11px', background: T.gold, border: 'none', color: T.btnText, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      {actionLoading ? spinner(T.btnText) : 'Reactivate →'}
                     </button>
                   </div>
                 </>
               )}
-              {modal === 'change-billing' && (
+
+              {/* ── Change plan ── */}
+              {modal === 'change-plan' && (
                 <>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: T.heading, marginBottom: 6 }}>Change billing cycle</div>
-                  <div style={{ fontSize: 12, color: T.text2, lineHeight: 1.7, marginBottom: 20 }}>The change takes effect at your next billing date.</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-                    {(['monthly', 'annual'] as const).map(b => (
-                      <div key={b} onClick={() => setBillingChoice(b)} style={{ padding: '14px 16px', border: `1px solid ${billingChoice === b ? T.gold : T.border2}`, background: billingChoice === b ? T.badgeBg : 'transparent', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'all 0.15s' }}>
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: billingChoice === b ? T.gold : T.heading, marginBottom: 2, textTransform: 'capitalize' }}>{b}</div>
-                          <div style={{ fontSize: 10, color: T.text3 }}>{b === 'annual' ? 'Billed as $799.92/year' : 'Billed each month'}</div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 22, fontWeight: 700, color: billingChoice === b ? T.gold : T.text2 }}>${b === 'annual' ? '66.66' : '79.99'}</div>
-                          <div style={{ fontSize: 9, color: T.text3 }}>/mo</div>
-                        </div>
-                      </div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: T.heading, marginBottom: 4 }}>Change plan</div>
+                  <div style={{ fontSize: 12, color: T.text3, marginBottom: 20 }}>Select a plan and billing cycle. Changes are processed via the billing portal.</div>
+
+                  {/* Billing cycle toggle */}
+                  <div style={{ display: 'flex', gap: 0, marginBottom: 16, border: `1px solid ${T.border2}`, overflow: 'hidden' }}>
+                    {(['monthly', 'annual'] as const).map(cycle => (
+                      <button key={cycle} onClick={() => setChangeCycle(cycle)}
+                        style={{ flex: 1, padding: '9px 12px', background: changeCycle === cycle ? T.badgeBg : 'transparent', border: 'none', borderRight: cycle === 'monthly' ? `1px solid ${T.border2}` : 'none', color: changeCycle === cycle ? T.gold : T.text3, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all 0.15s' }}>
+                        {cycle === 'monthly' ? 'Monthly' : 'Annual'}
+                        {cycle === 'annual' && <span style={{ marginLeft: 6, fontSize: 9, color: T.green }}>Save ~17%</span>}
+                      </button>
                     ))}
                   </div>
-                  {billingChoice === 'annual' && <div style={{ marginBottom: 16, fontSize: 11, color: T.gold }}>You save $159.96/year</div>}
+
+                  {/* Plan options */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+                    {(['core', 'edge'] as const).map(tier => {
+                      const selected = changeTier === tier
+                      const isCurrent = tier === plan && (billingInterval === 'year' ? 'annual' : 'monthly') === changeCycle
+                      return (
+                        <div key={tier} onClick={() => setChangeTier(tier)}
+                          style={{ padding: '14px 16px', border: `1px solid ${selected ? T.gold : T.border2}`, background: selected ? T.badgeBg : 'transparent', cursor: 'pointer', transition: 'all 0.15s' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                            <div>
+                              <div style={{ fontSize: 14, fontWeight: 700, color: selected ? T.gold : T.heading, marginBottom: 2 }}>
+                                {planLabel(tier)}
+                                {isCurrent && <span style={{ marginLeft: 8, fontSize: 9, color: T.text3, fontWeight: 400 }}>Current</span>}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 22, fontWeight: 700, color: selected ? T.gold : T.text2 }}>${planPrice(tier, changeCycle)}</div>
+                              <div style={{ fontSize: 9, color: T.text3 }}>/mo{changeCycle === 'annual' ? ', billed annually' : ''}</div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {PLAN_FEATURES[tier].slice(0, 4).map((f, i) => (
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <CheckIcon color={selected ? T.gold : T.goldDim} />
+                                <span style={{ fontSize: 10, color: selected ? T.text : T.text3 }}>{f}</span>
+                              </div>
+                            ))}
+                            {PLAN_FEATURES[tier].length > 4 && (
+                              <div style={{ fontSize: 10, color: T.text3, paddingLeft: 17 }}>+{PLAN_FEATURES[tier].length - 4} more</div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <div style={{ fontSize: 10, color: T.text3, marginBottom: 16, lineHeight: 1.6 }}>
+                    Clicking Continue opens the Stripe billing portal where the plan change is applied.
+                  </div>
+
                   <div style={{ display: 'flex', gap: 10 }}>
                     <button onClick={() => setModal(null)} style={{ flex: 1, padding: '11px', background: 'transparent', border: `1px solid ${T.border2}`, color: T.text2, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Cancel</button>
-                    <button onClick={handleChangeBilling} disabled={loading || billingChoice === data.billing} style={{ flex: 1, padding: '11px', background: billingChoice === data.billing ? T.bg3 : T.gold, border: 'none', color: billingChoice === data.billing ? T.text3 : T.btnText, cursor: billingChoice === data.billing ? 'default' : 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                      {loading ? spinner(T.btnText) : 'Confirm Change →'}
+                    <button onClick={openPortal} disabled={actionLoading} style={{ flex: 1, padding: '11px', background: T.gold, border: 'none', color: T.btnText, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      {actionLoading ? spinner(T.btnText) : 'Continue to Portal →'}
                     </button>
-                  </div>
-                </>
-              )}
-              {modal === 'update-card' && (
-                <>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: T.heading, marginBottom: 6 }}>Update payment method</div>
-                  <div style={{ fontSize: 12, color: T.text2, lineHeight: 1.7, marginBottom: 20 }}>Enter your new card details below.</div>
-                  <div style={{ background: T.bg2, border: `1px solid ${T.border2}`, padding: '20px 16px', marginBottom: 20, fontSize: 12, color: T.text3, textAlign: 'center', lineHeight: 1.7 }}>
-                    <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'center' }}><CardIcon color={T.goldDim} /></div>
-                    Stripe payment form goes here.<br />
-                    <span style={{ fontSize: 10 }}>Use <code style={{ color: T.gold }}>{'<CardElement />'}</code> from <code style={{ color: T.gold }}>@stripe/react-stripe-js</code></span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    <button onClick={() => setModal(null)} style={{ flex: 1, padding: '11px', background: 'transparent', border: `1px solid ${T.border2}`, color: T.text2, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Cancel</button>
-                    <button style={{ flex: 1, padding: '11px', background: T.gold, border: 'none', color: T.btnText, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Save Card →</button>
                   </div>
                 </>
               )}
