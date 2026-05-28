@@ -623,7 +623,7 @@ export default function MarketingPage() {
                   <div style={{ fontSize:9, letterSpacing:'0.2em', color:T.goldDim, marginBottom:14, textTransform:'uppercase' }}>Monday's Response</div>
                   <div style={{ border:`1px solid ${T.border2}`, background:T.bg2, padding:'14px' }}>
                     <div style={{ background:T.chatMonday, border:`1px solid ${T.chatMondayBorder}`, padding:'11px 12px', fontSize:'clamp(11px,2.5vw,12px)', color:T.text, lineHeight:1.7, fontStyle:'italic', fontFamily:"'Cormorant Garamond',serif", marginBottom:10 }}>
-                      "NVDA is down 0.84% on moderate volume. AMD is outperforming at +1.60%. 10Y yields at 4.21% are compressing growth multiples across your watchlist."
+                      "AMD is breaking out of a 3-week consolidation on 2.4 times average volume. The catalyst: OneQode just announced they're deploying AMD Instinct GPUs at scale. Options flow confirms conviction — 3,400 call contracts hit the $205 strike expiring Friday, 80% bought on the ask. NVDA is lagging the move despite the same AI infrastructure tailwind, which is unusual — watch for catch-up or rotation. CPI prints tomorrow at 8:30, which touches everything on your watchlist."
                     </div>
                     <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.08em' }}>Claude AI · ElevenLabs voice · ~3 seconds end-to-end</div>
                   </div>
@@ -777,36 +777,6 @@ export default function MarketingPage() {
         </div>
       </section>
 
-      {/* ── TESTIMONIALS ── */}
-      <section className="section-pad-sm" style={{ padding:'72px 24px', background:T.bg2, borderTop:`1px solid ${T.border}` }}>
-        <div style={{ maxWidth:960, margin:'0 auto' }}>
-          <div style={{ textAlign:'center', marginBottom:44 }}>
-            <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:12, textTransform:'uppercase' }}>From traders like you</div>
-            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(22px,4vw,42px)', fontStyle:'italic', fontWeight:600, color:T.heading }}>They never trade without it.</h2>
-          </div>
-          <div className="testimonials-grid" style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:1, background:T.border }}>
-            {[
-              { name:'Marcus T.', role:'Day Trader, 9 years', hi:'3-minute briefing', text:"I used to spend 45 minutes every morning reading headlines. Monday condenses all of it into a 3-minute briefing. It's like having a Bloomberg terminal that actually talks back." },
-              { name:'Sarah K.',  role:'Options Trader',      hi:'real time',         text:'The second CPI dropped, Monday had the actual vs forecast, explained the impact on my positions, and told me which sector was rotating. In real time. Before I opened a chart.' },
-              { name:'James L.',  role:'Retail Investor',     hi:'like a friend',     text:"I'm not a professional. I just wanted to understand what was happening to my portfolio. Monday explains it like a friend who happens to know everything about markets." },
-            ].map((tst,i)=>(
-              <div key={i} style={{ background:T.testimonialBg, padding:'22px 18px' }}>
-                <div style={{ fontSize:'clamp(11px,2.5vw,12px)', color:T.text2, lineHeight:1.8, marginBottom:16 }}>
-                  "{tst.text.split(tst.hi)[0]}<span style={{ color:T.gold, fontStyle:'italic', fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(13px,3vw,14px)' }}>{tst.hi}</span>{tst.text.split(tst.hi)[1]}"
-                </div>
-                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                  <div style={{ width:24, height:24, borderRadius:'50%', background:T.bg4, border:`1px solid ${T.border2}`, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:"'Cormorant Garamond',serif", fontSize:13, fontStyle:'italic', color:T.gold, flexShrink:0 }}>{tst.name[0]}</div>
-                  <div>
-                    <div style={{ fontSize:12, fontWeight:600, color:T.heading }}>{tst.name}</div>
-                    <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.1em', marginTop:1 }}>{tst.role}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ── PRICING ── */}
       <section id="pricing" ref={el=>{sectionRefs.current['pricing']=el}} className="section-pad" style={{ padding:'88px 24px', borderTop:`1px solid ${T.border}` }}>
         <div style={{ maxWidth:860, margin:'0 auto' }}>
@@ -936,6 +906,36 @@ export default function MarketingPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── TESTIMONIALS ── */}
+      <section className="section-pad-sm" style={{ padding:'72px 24px', background:T.bg2, borderTop:`1px solid ${T.border}` }}>
+        <div style={{ maxWidth:960, margin:'0 auto' }}>
+          <div style={{ textAlign:'center', marginBottom:44 }}>
+            <div style={{ fontSize:9, letterSpacing:'0.25em', color:T.goldDim, marginBottom:12, textTransform:'uppercase' }}>From traders like you</div>
+            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(22px,4vw,42px)', fontStyle:'italic', fontWeight:600, color:T.heading }}>They never trade without it.</h2>
+          </div>
+          <div className="testimonials-grid" style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:1, background:T.border }}>
+            {[
+              { name:'Marcus T.', role:'Day Trader, 9 years', hi:'3-minute briefing', text:"I used to spend 45 minutes every morning reading headlines. Monday condenses all of it into a 3-minute briefing. It's like having a Bloomberg terminal that actually talks back." },
+              { name:'Sarah K.',  role:'Options Trader',      hi:'real time',         text:'The second CPI dropped, Monday had the actual vs forecast, explained the impact on my positions, and told me which sector was rotating. In real time. Before I opened a chart.' },
+              { name:'James L.',  role:'Retail Investor',     hi:'like a friend',     text:"I'm not a professional. I just wanted to understand what was happening to my portfolio. Monday explains it like a friend who happens to know everything about markets." },
+            ].map((tst,i)=>(
+              <div key={i} style={{ background:T.testimonialBg, padding:'22px 18px' }}>
+                <div style={{ fontSize:'clamp(11px,2.5vw,12px)', color:T.text2, lineHeight:1.8, marginBottom:16 }}>
+                  "{tst.text.split(tst.hi)[0]}<span style={{ color:T.gold, fontStyle:'italic', fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(13px,3vw,14px)' }}>{tst.hi}</span>{tst.text.split(tst.hi)[1]}"
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <div style={{ width:24, height:24, borderRadius:'50%', background:T.bg4, border:`1px solid ${T.border2}`, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:"'Cormorant Garamond',serif", fontSize:13, fontStyle:'italic', color:T.gold, flexShrink:0 }}>{tst.name[0]}</div>
+                  <div>
+                    <div style={{ fontSize:12, fontWeight:600, color:T.heading }}>{tst.name}</div>
+                    <div style={{ fontSize:9, color:T.text3, letterSpacing:'0.1em', marginTop:1 }}>{tst.role}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
