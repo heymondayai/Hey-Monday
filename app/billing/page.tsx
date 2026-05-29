@@ -159,6 +159,8 @@ export default function BillingPage() {
   const [changeTier, setChangeTier] = useState<'core' | 'edge'>('core')
   const [changeCycle, setChangeCycle] = useState<'monthly' | 'annual'>('monthly')
   const [switchLoading, setSwitchLoading] = useState(false)
+  const [promoCode, setPromoCode] = useState('')
+  const [showPromo, setShowPromo] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -286,12 +288,13 @@ export default function BillingPage() {
       const res = await fetch('/api/billing/switch-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ priceId }),
+        body: JSON.stringify({ priceId, promoCode: promoCode.trim() || undefined }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not switch plan.')
       if (data.alreadyCurrent) {
         setModal(null)
+        setPromoCode(''); setShowPromo(false)
         showToast('You are already on that plan.')
         return
       }
@@ -305,6 +308,7 @@ export default function BillingPage() {
         cancel_at_period_end: data.cancel_at_period_end ?? prev.cancel_at_period_end,
       } : prev)
       setModal(null)
+      setPromoCode(''); setShowPromo(false)
       const newPlanName = changeTier === 'edge' ? 'Advantage' : 'Essential'
       showToast(`Switched to ${newPlanName} (${changeCycle}). Changes take effect immediately.`)
     } catch (err: any) {
@@ -443,6 +447,7 @@ export default function BillingPage() {
                         setChangeTier(plan)
                         setChangeCycle(billingInterval === 'year' ? 'annual' : 'monthly')
                       }
+                      setPromoCode(''); setShowPromo(false)
                       setModal('change-plan')
                     }}
                     style={{ fontSize: 9, padding: '5px 10px', background: 'transparent', border: `1px solid ${T.border2}`, color: T.text3, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all 0.2s' }}>
@@ -610,6 +615,25 @@ export default function BillingPage() {
                         </div>
                       )
                     })}
+                  </div>
+
+                  {/* Promo code */}
+                  <div style={{ marginBottom: 16 }}>
+                    <button
+                      onClick={() => setShowPromo(p => !p)}
+                      style={{ background: 'none', border: 'none', color: T.gold, fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.08em', cursor: 'pointer', padding: 0 }}>
+                      {showPromo ? '− Hide promo code' : '+ Have a promo code?'}
+                    </button>
+                    {showPromo && (
+                      <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+                        <input
+                          value={promoCode}
+                          onChange={e => setPromoCode(e.target.value.toUpperCase())}
+                          placeholder="PROMO CODE"
+                          style={{ flex: 1, background: T.bg2, border: `1px solid ${T.border2}`, color: T.heading, padding: '9px 12px', fontFamily: "'JetBrains Mono',monospace", fontSize: 12, letterSpacing: '0.1em', outline: 'none' }}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {(() => {

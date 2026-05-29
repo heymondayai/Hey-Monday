@@ -58,10 +58,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, alreadyCurrent: true })
     }
 
-    const updated = await stripe.subscriptions.update(profile.stripe_subscription_id, {
+    // Resolve promo code string → Stripe promotion_code ID
+    const promoCodeStr: string | undefined = typeof body.promoCode === 'string' ? body.promoCode.trim() : undefined
+    let promotionCodeId: string | undefined
+    if (promoCodeStr) {
+      const promoCodes = await stripe.promotionCodes.list({ code: promoCodeStr, active: true, limit: 1 })
+      if (promoCodes.data.length === 0) {
+        return NextResponse.json({ error: 'Invalid or expired promo code.' }, { status: 400 })
+      }
+      promotionCodeId = promoCodes.data[0].id
+    }
+
+    const updateParams: Stripe.SubscriptionUpdateParams & { promotion_code?: string } = {
       items: [{ id: itemId, price: newPriceId }],
       proration_behavior: 'create_prorations',
-    }) as any
+    }
+    if (promotionCodeId) updateParams.promotion_code = promotionCodeId
+
+    const updated = await stripe.subscriptions.update(profile.stripe_subscription_id, updateParams) as any
 
     const newPriceObj = updated.items?.data?.[0]?.price
     const updates = {
