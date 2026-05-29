@@ -158,6 +158,7 @@ export default function BillingPage() {
   // Plan change modal state
   const [changeTier, setChangeTier] = useState<'core' | 'edge'>('core')
   const [changeCycle, setChangeCycle] = useState<'monthly' | 'annual'>('monthly')
+  const [switchLoading, setSwitchLoading] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -260,6 +261,56 @@ export default function BillingPage() {
       showToast(err.message || 'Could not reactivate.', 'error')
     } finally {
       setActionLoading(false)
+    }
+  }
+
+  function resolvePriceId(tier: 'core' | 'edge', cycle: 'monthly' | 'annual'): string | null {
+    if (tier === 'edge') {
+      return cycle === 'annual'
+        ? (process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_ANNUAL ?? null)
+        : (process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_MONTHLY ?? null)
+    }
+    return cycle === 'annual'
+      ? (process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_ANNUAL ?? process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL ?? null)
+      : (process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_MONTHLY ?? process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY ?? null)
+  }
+
+  async function handleSwitchPlan() {
+    const priceId = resolvePriceId(changeTier, changeCycle)
+    if (!priceId) {
+      showToast('Plan price not configured — contact support.', 'error')
+      return
+    }
+    setSwitchLoading(true)
+    try {
+      const res = await fetch('/api/billing/switch-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priceId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not switch plan.')
+      if (data.alreadyCurrent) {
+        setModal(null)
+        showToast('You are already on that plan.')
+        return
+      }
+      setProfile(prev => prev ? {
+        ...prev,
+        stripe_price_id: data.stripe_price_id ?? prev.stripe_price_id,
+        billing_interval: data.billing_interval ?? prev.billing_interval,
+        subscription_status: data.subscription_status ?? prev.subscription_status,
+        current_period_end: data.current_period_end ?? prev.current_period_end,
+        trial_ends_at: data.trial_ends_at ?? prev.trial_ends_at,
+        cancel_at_period_end: data.cancel_at_period_end ?? prev.cancel_at_period_end,
+      } : prev)
+      setModal(null)
+      const newPlanName = changeTier === 'edge' ? 'Advantage' : 'Essential'
+      showToast(`Switched to ${newPlanName} (${changeCycle}). Changes take effect immediately.`)
+    } catch (err: any) {
+      showToast(err.message || 'Could not switch plan.', 'error')
+    } finally {
+      setSwitchLoading(false)
     }
   }
 
@@ -561,16 +612,27 @@ export default function BillingPage() {
                     })}
                   </div>
 
-                  <div style={{ fontSize: 10, color: T.text3, marginBottom: 16, lineHeight: 1.6 }}>
-                    Clicking Continue opens the Stripe billing portal where the plan change is applied.
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    <button onClick={() => setModal(null)} style={{ flex: 1, padding: '11px', background: 'transparent', border: `1px solid ${T.border2}`, color: T.text2, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Cancel</button>
-                    <button onClick={openPortal} disabled={actionLoading} style={{ flex: 1, padding: '11px', background: T.gold, border: 'none', color: T.btnText, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                      {actionLoading ? spinner(T.btnText) : 'Continue to Portal →'}
-                    </button>
-                  </div>
+                  {(() => {
+                    const isCurrent = changeTier === plan && changeCycle === (billingInterval === 'year' ? 'annual' : 'monthly')
+                    return (
+                      <>
+                        {isCurrent && (
+                          <div style={{ fontSize: 10, color: T.text3, marginBottom: 12 }}>
+                            This is your current plan. Select a different plan or billing cycle to switch.
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: 10 }}>
+                          <button onClick={() => setModal(null)} style={{ flex: 1, padding: '11px', background: 'transparent', border: `1px solid ${T.border2}`, color: T.text2, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Cancel</button>
+                          <button
+                            onClick={handleSwitchPlan}
+                            disabled={switchLoading || isCurrent}
+                            style={{ flex: 1, padding: '11px', background: isCurrent ? T.bg3 : T.gold, border: 'none', color: isCurrent ? T.text3 : T.btnText, cursor: isCurrent ? 'default' : 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                            {switchLoading ? spinner(isCurrent ? T.text3 : T.btnText) : 'Confirm Change →'}
+                          </button>
+                        </div>
+                      </>
+                    )
+                  })()}
                 </>
               )}
             </div>
