@@ -155,7 +155,7 @@ export async function fetchIntraday(
     if (endDate) params.set('end_date', endDate)
 
     const url = `https://api.twelvedata.com/time_series?${params.toString()}`
-    const res = await fetch(url, { next: { revalidate: 60 } })
+    const res = await fetch(url, { cache: 'no-store' })
 
     if (!res.ok) {
       debug.push(`Twelve Data HTTP ${res.status}`)
