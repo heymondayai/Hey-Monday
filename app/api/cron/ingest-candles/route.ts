@@ -52,12 +52,17 @@ export async function GET(req: NextRequest) {
 
   const tickers = [...new Set(rows.map((r: { ticker: string }) => r.ticker))]
 
-  // Fetch the last 5 bars per ticker so we catch up on any missed ticks
-  // without blowing through API rate limits on every call.
-  const { data: candleData } = await fetchIntraday(tickers, {
+  // Fetch the last 6 bars per ticker (cron fires every 5 min, 6 bars = safe overlap).
+  // One batched call = 1 credit per ticker = 3 total credits per fire.
+  // At */5 schedule: 192 fires/day × 3 credits = 576/day (Basic plan: 800/day).
+  const { data: candleData, debug } = await fetchIntraday(tickers, {
     interval: '1min',
-    outputsize: 5,
+    outputsize: 6,
   })
+
+  if (debug.some(d => d.toLowerCase().includes('error') || d.toLowerCase().includes('limit') || d.toLowerCase().includes('no data'))) {
+    console.warn('[ingest-candles] Twelve Data warnings:', debug.join(' | '))
+  }
 
   const candles: CandleRow[] = []
   for (const [ticker, bars] of Object.entries(candleData)) {
@@ -77,10 +82,13 @@ export async function GET(req: NextRequest) {
 
   await upsertCandles(candles)
 
+  console.log(`[ingest-candles] ingested=${candles.length} tickers=${tickers.join(',')} session=${session}`)
+
   return NextResponse.json({
     ok:      true,
     ingested: candles.length,
     tickers: tickers.length,
     session,
+    debug,
   })
 }
