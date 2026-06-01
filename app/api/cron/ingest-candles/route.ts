@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
   // One batched call = 1 credit per ticker = 3 total credits per fire.
   // At */5 schedule: 192 fires/day × 3 credits = 576/day (Basic plan: 800/day).
   const { data: candleData, debug } = await fetchIntraday(tickers, {
-    interval: '1min',
+    interval: '5min',
     outputsize: 6,
   })
 
