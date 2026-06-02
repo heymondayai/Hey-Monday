@@ -147,7 +147,6 @@ export async function fetchIntraday(
       symbol: syms,
       interval,
       outputsize: String(outputsize),
-      extended_hours: 'true',
       apikey: key,
     })
 
@@ -164,6 +163,12 @@ export async function fetchIntraday(
 
     const raw = await res.json()
     const result: Record<string, Candle[]> = {}
+
+    // Log top-level error (e.g. plan restriction)
+    if (raw?.status === 'error') {
+      debug.push(`API error ${raw.code ?? ''}: ${raw.message ?? JSON.stringify(raw)}`)
+      return { data: {}, debug }
+    }
 
     for (const sym of symbols) {
       const entry = raw[sym] ?? raw
