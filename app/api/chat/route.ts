@@ -1,42 +1,19 @@
 import { NextResponse } from 'next/server'
-import {
-  computeSignals,
-  formatSignals,
-  fetchLivePrices,
-  fetchIntraday,
-  fetchEconomicCalendar,
-  fetchInsiderTransactions,
-  fetchAnalystRatings,
-  fetchOptionsFlow,
-  fetchMacroData,
-  fetchEarningsCalendar,
-  fetchSectorPerformance,
-  formatIntradayContext,
-  formatEconomicCalendar,
-  formatInsiderTransactions,
-  formatAnalystRatings,
-  formatOptionsFlow,
-  formatMacroData,
-  formatEarningsCalendar,
-  formatSectorPerformance,
-  buildIntradayQuestionContext,
-} from '@/lib/market-data'
-import { buildMarketState, MarketStateSnapshot } from '@/lib/market-state'
 import { getNyseEquitiesStatus } from '@/lib/market-hours'
-import { buildHistoricalContext } from '@/lib/context-builder'
 import { createAdminSupabaseClient } from '@/lib/supabase-admin'
-import { getRecentCandlesMulti, CandleRow } from '@/lib/candle-store'
+import { planQuery, buildFallbackPlan } from '@/lib/query-planner'
+import { compileContext, buildOutputInstructions } from '@/lib/data-compiler'
+
 
 // ── SONNET DAILY CAP ─────────────────────────────────────────────────────────
+
 const sonnetUsage = new Map<string, { count: number; dateET: string }>()
 const SONNET_DAILY_CAP = 20
 
 function getTodayET(): string {
   return new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
+    year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date())
 }
 
@@ -65,552 +42,35 @@ function getSonnetRemaining(userId: string): number {
   return Math.max(0, SONNET_DAILY_CAP - entry.count)
 }
 
-// ── TYPES ────────────────────────────────────────────────────────────────────
-
-interface QuestionIntent {
-  requestType: 'briefing' | 'analysis' | 'simple'
-  needsInsider: boolean
-  needsAnalyst: boolean
-  needsOptions: boolean
-  needsMacro: boolean
-  needsSector: boolean
-  needsFilings: boolean
-  needsNews: boolean
-  needsLevel2: boolean
-  mentionsBreaking: boolean
-  mentionsExactTimestamp: boolean
-  focusSymbol: string | null
-  offWatchlistSymbol: string | null
-  isCasualConversation: boolean
-  isOpenEndedWhyQuestion: boolean
-}
-
-interface DataQualityInput {
-  message: string
-  intent: QuestionIntent
-  watchlistTickers: string[]
-  prices?: any[]
-  news?: any[]
-  level2?: any
-  intradayData?: any
-  marketState?: MarketStateSnapshot | null
-  sectorFetched: boolean
-  insiderFetched: boolean
-  analystFetched: boolean
-  optionsFetched: boolean
-  signals?: any[]
-}
-
-type RoutingDecision = 'confident' | 'limited' | 'research'
-
-function extractUppercaseTickerCandidates(message: string): string[] {
-  const matches = message.match(/\b[A-Z]{2,6}\b/g) ?? []
-  return [...new Set(matches)]
-}
-
-function normalizeTimeReference(text: string): string {
-  return text
-    .replace(/\bthis morning\b/gi, 'earlier in the session')
-    .replace(/\bthis afternoon\b/gi, 'later in the session')
-    .replace(/\bthis evening\b/gi, 'later')
-}
-
-interface IntradayDateRequest {
-  startDate?: string
-  endDate?: string
-  targetDate?: string | null
-  isHistorical: boolean
-}
-
-function getTodayEtIsoDate(): string {
-  return new Date().toLocaleDateString('en-CA', {
-    timeZone: 'America/New_York',
-  })
-}
-
-function shiftEtDate(isoDate: string, days: number): string {
-  const d = new Date(`${isoDate}T12:00:00`)
-  d.setDate(d.getDate() + days)
-  return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-}
-
-function normalizeMonthNameToNumber(month: string): string {
-  const map: Record<string, string> = {
-    january: '01',
-    february: '02',
-    march: '03',
-    april: '04',
-    may: '05',
-    june: '06',
-    july: '07',
-    august: '08',
-    september: '09',
-    october: '10',
-    november: '11',
-    december: '12',
-  }
-
-  return map[month.toLowerCase()]
-}
-
-function parseExplicitEtDate(message: string): string | null {
-  const lower = message.toLowerCase()
-  const today = getTodayEtIsoDate()
-  const currentYear = today.slice(0, 4)
-
-  const match = lower.match(
-    /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)?\s*(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b/i
-  )
-
-  if (!match) return null
-
-  const [, monthName, dayRaw, yearRaw] = match
-  const month = normalizeMonthNameToNumber(monthName)
-  const day = dayRaw.padStart(2, '0')
-  const year = yearRaw ?? currentYear
-
-  if (!month) return null
-
-  return `${year}-${month}-${day}`
-}
-
-// Convert a stored CandleRow (UTC timestamptz) to the Candle format expected by
-// computeSignals / formatIntradayContext (ET local datetime string).
-function candleRowToApiFormat(row: CandleRow): { datetime: string; open: string; high: string; low: string; close: string; volume: string } {
-  const d = new Date(row.ts)
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false,
-  }).formatToParts(d)
-  const get = (type: string) => parts.find(p => p.type === type)?.value ?? '00'
-  return {
-    datetime: `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`,
-    open:   row.open.toString(),
-    high:   row.high.toString(),
-    low:    row.low.toString(),
-    close:  row.close.toString(),
-    volume: row.volume.toString(),
-  }
-}
-
-// Fetch intraday candles: Supabase first (fast, free), Twelve Data API as fallback.
-// For historical date requests skip Supabase — the table only keeps ~95 days of 5-min bars.
-async function fetchCandlesForChat(
-  tickers: string[],
-  isHistorical: boolean,
-  startDate?: string,
-  endDate?: string,
-): Promise<{ data: Record<string, ReturnType<typeof candleRowToApiFormat>[]>; debug: string[] }> {
-  if (!isHistorical) {
-    // Pull the last 16 hours (covers pre-market + full session + after-hours)
-    const rows = await getRecentCandlesMulti(tickers, 16 * 60)
-    const hasData = tickers.some(t => (rows[t]?.length ?? 0) >= 3)
-    if (hasData) {
-      const data: Record<string, ReturnType<typeof candleRowToApiFormat>[]> = {}
-      const debug: string[] = []
-      for (const t of tickers) {
-        const converted = (rows[t] ?? []).map(candleRowToApiFormat)
-        if (converted.length) {
-          data[t] = converted
-          debug.push(`${t}: ${converted.length} candles (DB)`)
-        } else {
-          debug.push(`${t}: no data (DB)`)
-        }
-      }
-      return { data, debug }
-    }
-  }
-  // Fall back to Twelve Data API
-  return fetchIntraday(tickers, {
-    interval: '5min',
-    outputsize: isHistorical ? 500 : 100,
-    startDate,
-    endDate,
-  })
-}
-
-function parseHistoricalIntradayRequest(message: string): IntradayDateRequest {
-  const lower = message.toLowerCase()
-  const today = getTodayEtIsoDate()
-
-  if (/\btoday\b/.test(lower)) {
-    return {
-      startDate: today,
-      endDate: today,
-      targetDate: today,
-      isHistorical: false,
-    }
-  }
-
-  if (/\byesterday\b/.test(lower)) {
-    const y = shiftEtDate(today, -1)
-    return {
-      startDate: y,
-      endDate: y,
-      targetDate: y,
-      isHistorical: true,
-    }
-  }
-
-  const explicitDate = parseExplicitEtDate(message)
-  if (explicitDate) {
-    return {
-      startDate: explicitDate,
-      endDate: explicitDate,
-      targetDate: explicitDate,
-      isHistorical: explicitDate !== today,
-    }
-  }
-
-  return {
-    startDate: today,
-    endDate: today,
-    targetDate: today,
-    isHistorical: false,
-  }
-}
-
-function buildSafeFallback(intent: QuestionIntent): string {
-  if (intent.requestType === 'simple') {
-    return "I don't have that exact data in the current feed."
-  }
-  return "I don't have enough verified data in the current feed to answer that confidently."
-}
-
-
-function slimNewsForResearch(news?: any[]): string {
-  if (!news?.length) return ''
-  return news
-    .slice(0, 3)
-    .map((n: any, i: number) => `${i + 1}. [${n.ticker ?? 'MKT'}] ${n.headline}`)
-    .join('\n')
-}
-
-function slimPricesForResearch(prices?: any[], focusSymbol?: string | null): string {
-  if (!prices?.length) return ''
-  const prioritized = focusSymbol
-    ? [
-        ...prices.filter((p: any) => p.sym === focusSymbol),
-        ...prices.filter((p: any) => p.sym !== focusSymbol).slice(0, 2),
-      ]
-    : prices.slice(0, 3)
-
-  return prioritized
-    .slice(0, 3)
-    .map((p: any) => `${p.sym}: $${p.price ?? '—'} ${p.change ?? ''}`)
-    .join('\n')
-}
-
-function buildResearchContext(params: {
-  focusSymbol: string | null
-  prices?: any[]
-  news?: any[]
-  intradayContext: string
-  calendarContext: string
-  macroContext: string
-  sectorContext: string
-  insiderContext: string
-  analystContext: string
-  optionsContext: string
-  level2Context: string
-}): string {
-  const {
-    focusSymbol,
-    prices,
-    news,
-    intradayContext,
-    calendarContext,
-    macroContext,
-    sectorContext,
-    insiderContext,
-    analystContext,
-    optionsContext,
-    level2Context,
-  } = params
-
-  const chunks = [
-    focusSymbol ? `FOCUS SYMBOL:\n${focusSymbol}` : '',
-    slimPricesForResearch(prices, focusSymbol) ? `KEY PRICES:\n${slimPricesForResearch(prices, focusSymbol)}` : '',
-    slimNewsForResearch(news) ? `TOP NEWS:\n${slimNewsForResearch(news)}` : '',
-    calendarContext ? `TODAY'S CALENDAR:\n${calendarContext.slice(0, 900)}` : '',
-    macroContext ? `MACRO SNAPSHOT:\n${macroContext.slice(0, 700)}` : '',
-    sectorContext ? `SECTOR SNAPSHOT:\n${sectorContext.slice(0, 700)}` : '',
-    intradayContext ? `INTRADAY SNAPSHOT:\n${intradayContext.slice(0, 1200)}` : '',
-    insiderContext ? `INSIDER DATA:\n${insiderContext.slice(0, 600)}` : '',
-    analystContext ? `ANALYST DATA:\n${analystContext.slice(0, 600)}` : '',
-    optionsContext ? `OPTIONS DATA:\n${optionsContext.slice(0, 700)}` : '',
-    level2Context ? `LEVEL 2 DATA:\n${level2Context.slice(0, 700)}` : '',
-  ]
-
-  return chunks.filter(Boolean).join('\n\n')
-}
-
-// ── QUESTION INTENT CLASSIFIER ───────────────────────────────────────────────
-
-function classifyIntent(
-  message: string,
-  watchlist: string[],
-  priceSymbols: string[]
-): QuestionIntent {
-  const lower = message.toLowerCase().trim()
-
-  const briefingKw = [
-    'briefing', 'summary', 'recap', 'rundown', 'overview', 'update me',
-    'catch me up', 'what happened', 'how did', 'end of day', 'eod',
-    'closing', 'pre-market', 'post-market', 'morning', 'afternoon',
-    'today overall', 'full picture', 'post market',
-  ]
-
-  const simpleKw = [
-    'what is the price', "what's the price", 'how much is', 'market open',
-    'market closed', 'what time', 'price of', 'where is', 'is nvda up', 'is spy up',
-    'what did', 'what was', 'close at', 'closed at', 'open at', 'opened at',
-    'how much did', 'what price',
-  ]
-
-  const casualConversationPatterns = [
-    /^hey monday[!.?]*$/i,
-    /^hi monday[!.?]*$/i,
-    /^hello monday[!.?]*$/i,
-    /^hey[!.?]*$/i,
-    /^hi[!.?]*$/i,
-    /^hello[!.?]*$/i,
-    /^how are you[?.!]*$/i,
-    /^hey monday,?\s*how are you[?.!]*$/i,
-    /^what's up[?.!]*$/i,
-    /^yo[!.?]*$/i,
-    /^thanks[!.?]*$/i,
-    /^thank you[!.?]*$/i,
-    /^good morning[!.?]*$/i,
-    /^good afternoon[!.?]*$/i,
-  ]
-
-  const isCasualConversation = casualConversationPatterns.some((re) => re.test(lower))
-  const isOpenEndedWhyQuestion =
-    /^(why|how)\b/.test(lower) ||
-    /\bwhy did\b/.test(lower) ||
-    /\bwhy is\b/.test(lower) ||
-    /\bwhy are\b/.test(lower) ||
-    /\bwhat changed\b/.test(lower) ||
-    /\bwhat caused\b/.test(lower) ||
-    /\bwhat drove\b/.test(lower)
-
-  let requestType: 'briefing' | 'analysis' | 'simple' = 'analysis'
-
-  if (isCasualConversation) {
-    requestType = 'simple'
-  } else if (briefingKw.some((k) => lower.includes(k))) {
-    requestType = 'briefing'
-  } else if (
-    simpleKw.some((k) => lower.includes(k)) &&
-    lower.split(/\s+/).length <= 12 &&
-    !isOpenEndedWhyQuestion
-  ) {
-    requestType = 'simple'
-  }
-
-  const needsInsider = /insider|bought|sold|selling|buying|executive|ceo|cfo|officer|director/.test(lower)
-  const needsAnalyst = /analyst|rating|price target|upgrade|downgrade|wall street|goldman|morgan|jpmorgan|ubs|citi|bank of america/.test(lower)
-  const needsOptions = /option|call|put|unusual|flow|iv|implied vol|gamma|open interest|oi|strike|expir|contracts|derivatives/.test(lower)
-  const needsMacro = /macro|fed|fomc|cpi|inflation|yield|treasury|rate|unemployment|gdp|interest rate|10-year|2-year|jobs|payroll|pce|calendar|events|tomorrow|today|scheduled|this week|economic|release|data|high impact|news event/.test(lower)
-  const needsSector = /sector|rotation|energy|tech|financials|healthcare|real estate|industrials|utilities|materials|consumer|xlk|xle|xlf|xlv|xlre|xli|xlu|xlb|xly|xlp/.test(lower)
-  const needsFilings = /filing|8-k|10-q|10-k|sec|reported|disclosed|announced/.test(lower)
-  const needsNews = /news|headline|headlines|why is|why did|why are|catalyst|what happened|what caused|what moved|driver|drivers|what's going on|going on|just dropped|just spiked|just crashed|just moved|dropped fast|spiked fast/.test(lower)
-  const needsLevel2 = /level 2|l2|order flow|book|depth|bid stack|ask stack|liquidity|tape|prints|dom/.test(lower)
-
-  const mentionsBreaking = /just|right now|latest|breaking|current|live|today's|just happened|just reported|just announced|news on|what's going on/.test(lower)
-  const mentionsExactTimestamp =
-  /\bwhen\b|\btime\b|\bwhat time\b|\btimestamp\b|\bexactly when\b|\bat \d/.test(lower) ||
-  /\b\d{1,2}:\d{2}\s?(am|pm)\b/.test(lower)
-
-  const knownSymbols = [
-    ...watchlist, ...priceSymbols,
-    'SPY', 'QQQ', 'IWM', 'DIA', 'AAPL', 'NVDA', 'TSLA', 'META', 'AMD',
-    'AMZN', 'MSFT', 'GOOGL', 'BTC', 'ETH', 'GC', 'CL', 'NQ', 'ES',
-  ]
-
-  const dedupedKnownSymbols = [...new Set(knownSymbols)]
-  const focusSymbol = dedupedKnownSymbols.find((s) => lower.includes(s.toLowerCase())) ?? null
-
-  const stopWords = new Set([
-    'THE', 'AND', 'FOR', 'BUT', 'NOT', 'ARE', 'WAS', 'HAS', 'HAD', 'ITS',
-    'FROM', 'WITH', 'THIS', 'THAT', 'THEY', 'HAVE', 'WILL', 'BEEN', 'WHAT',
-    'HOW', 'WHY', 'CAN', 'DID', 'GET', 'GOT', 'DOES', 'IS', 'IN', 'OF', 'TO',
-    'A', 'I', 'AM', 'AT', 'BY', 'DO', 'UP', 'SO', 'ON', 'IF', 'OR', 'BE', 'MY',
-    'IT', 'AN', 'AS', 'WE', 'NO', 'US', 'ME', 'HE', 'HIM', 'HER', 'SHE', 'HIS',
-    'WHO', 'ALL', 'ANY', 'NOW', 'NEW', 'TOP', 'SET', 'RUN', 'CPI', 'FED', 'GDP',
-    'ETF', 'IPO', 'CEO', 'CFO', 'COO', 'SEC', 'USD', 'EUR', 'YTD', 'EOD', 'EOW',
-    'AM', 'PM', 'ET', 'EST', 'EDT',
-  ])
-
-  const offWatchlistSymbol =
-    extractUppercaseTickerCandidates(message).find(
-      (sym) => !dedupedKnownSymbols.includes(sym) && !stopWords.has(sym)
-    ) ?? null
-
-  return {
-    requestType,
-    needsInsider,
-    needsAnalyst,
-    needsOptions,
-    needsMacro: needsMacro || requestType === 'briefing',
-    needsSector: needsSector || requestType === 'briefing',
-    needsFilings,
-    needsNews,
-    needsLevel2,
-    mentionsBreaking,
-    mentionsExactTimestamp,
-    focusSymbol,
-    offWatchlistSymbol,
-    isCasualConversation,
-    isOpenEndedWhyQuestion,
-  }
-}
-
-// ── ROUTING DECISION: CAN CURRENT DATA ANSWER THIS? ──────────────────────────
-
-function scoreDataQuality(input: DataQualityInput): { score: number; decision: RoutingDecision; reasons: string[] } {
-  const {
-    message, intent, watchlistTickers, prices, news,
-    level2, intradayData, marketState,
-    sectorFetched, insiderFetched, analystFetched, optionsFetched, signals,
-  } = input
-
-  let score = 0
-  const reasons: string[] = []
-  const lower = message.toLowerCase()
-
-  // ── HARD DISQUALIFIERS ────────────────────────────────────────────────────
-  // User explicitly asked to search the web
-  if (/\b(research\s+online|search\s+online|search\s+the\s+web|search\s+the\s+internet|look\s+up\s+online|google\s+this|google\s+it|find\s+online)\b/.test(lower)) {
-    return { score: -10, decision: 'research', reasons: ['user explicitly requested web search'] }
-  }
-  if (intent.offWatchlistSymbol) {
-    return { score: -10, decision: 'research', reasons: ['off-watchlist symbol with no data'] }
-  }
-  if (/\b(powell|yellen|jerome|gensler|trump|biden|elon|musk|cook|jensen|huang|zuckerberg|pichai|bezos|dimon)\b/.test(lower)) {
-    return { score: -10, decision: 'research', reasons: ['mentions named public figure'] }
-  }
-  if (/\b(merger|acquisition|buyout|bankruptcy|lawsuit|fda|press release|conference call|earnings call)\b/.test(lower)) {
-    return { score: -10, decision: 'research', reasons: ['mentions corporate event'] }
-  }
-  if (
-    /\b(tomorrow|next week|going into|ahead of|before market|pre-market prep)\b/.test(lower) &&
-    /\b(look for|watch for|watch out|expect|setup|set up|catalyst|catalysts|key level|play|trade|prepare|should i|what to)\b/.test(lower)
-  ) {
-    return { score: -10, decision: 'research', reasons: ['forward-looking analysis question'] }
-  }
-  if (intent.isCasualConversation) {
-    return { score: 10, decision: 'confident', reasons: ['casual conversation'] }
-  }
-
-  // ── POSITIVE SIGNALS ──────────────────────────────────────────────────────
-  const focusPrices = prices?.filter((p: any) =>
-    intent.focusSymbol ? p.sym === intent.focusSymbol : watchlistTickers.includes(p.sym)
-  ) ?? []
-  if (focusPrices.length > 0) { score += 2; reasons.push('+2 live prices present') }
-
-  if (intradayData && Object.keys(intradayData).length > 0) {
-    const hasRelevantCandles = intent.focusSymbol
-      ? !!intradayData[intent.focusSymbol]?.length
-      : Object.values(intradayData).some((c: any) => c?.length > 0)
-    if (hasRelevantCandles) { score += 2; reasons.push('+2 intraday candles available') }
-  }
-
-  if (signals && signals.length > 0) { score += 1; reasons.push('+1 pre-computed signals available') }
-
-  if (news && news.length > 0) {
-    const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000
-    const recentNews = news.filter((n: any) => !n.publishedAt || new Date(n.publishedAt).getTime() > twoHoursAgo)
-    if (recentNews.length > 0) { score += 2; reasons.push('+2 recent news present') }
-    else { score += 1; reasons.push('+1 older news present') }
-  }
-
-  if (marketState) {
-    const hasCalendar = Array.isArray(marketState.calendarEvents) && marketState.calendarEvents.length > 0
-    const hasMacro = Array.isArray(marketState.macroContext) && marketState.macroContext.length > 0
-    if ((intent.needsMacro || intent.requestType === 'briefing') && (hasCalendar || hasMacro)) {
-      score += 1; reasons.push('+1 macro/calendar data present')
-    }
-  }
-
-  if (intent.needsSector && sectorFetched) { score += 1; reasons.push('+1 sector data') }
-  if (intent.needsInsider && insiderFetched) { score += 1; reasons.push('+1 insider data') }
-  if (intent.needsAnalyst && analystFetched) { score += 1; reasons.push('+1 analyst data') }
-  if (intent.needsOptions && optionsFetched) { score += 1; reasons.push('+1 options data') }
-  if (intent.needsLevel2 && level2) { score += 2; reasons.push('+2 level 2 data') }
-
-  // ── NEGATIVE SIGNALS ──────────────────────────────────────────────────────
-  if (intent.mentionsBreaking) { score -= 3; reasons.push('-3 mentions breaking/realtime event') }
-  if (intent.mentionsExactTimestamp && !intradayData) { score -= 3; reasons.push('-3 exact timestamp but no intraday data') }
-  if (intent.needsNews && (!news || news.length === 0)) { score -= 2; reasons.push('-2 needs news but feed empty') }
-  if (intent.needsLevel2 && !level2) { score -= 2; reasons.push('-2 needs L2 but unavailable') }
-
-  const mentionsKnownWatchlist = watchlistTickers.some((t) => lower.includes(t.toLowerCase()))
-  if (!mentionsKnownWatchlist && !intent.focusSymbol && lower.split(' ').length > 6 && /(market|stock|sector|economy|crypto|futures)/.test(lower)) {
-    score -= 1; reasons.push('-1 broad market question with no known ticker')
-  }
-
-  // ── ROUTING DECISION ──────────────────────────────────────────────────────
-  const decision: RoutingDecision = score >= 5 ? 'confident' : score >= 2 ? 'limited' : 'research'
-  return { score, decision, reasons }
-}
-
 // ── MAIN HANDLER ─────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
   try {
     const {
-  message,
-  watchlist = [],
-  traderType,
-  prices = [],
-  news = [],
-  level2,
-  history = [],
-  marketState,
-  userId,
-  mode = 'chat',
-} = await req.json() as {
-  message: string
-  watchlist?: any[]
-  traderType?: string
-  prices?: any[]
-  news?: any[]
-  level2?: any
-  history?: { role: string; content: string }[]
-  marketState?: MarketStateSnapshot | null
-  userId?: string
-  mode?: 'chat' | 'summary'
-}
+      message,
+      watchlist = [],
+      traderType,
+      prices = [],
+      news = [],
+      history = [],
+      userId,
+      mode = 'chat',
+    } = await req.json() as {
+      message: string
+      watchlist?: any[]
+      traderType?: string
+      prices?: any[]
+      news?: any[]
+      history?: { role: string; content: string }[]
+      userId?: string
+      mode?: 'chat' | 'summary'
+    }
 
     const watchlistTickers: string[] = watchlist?.map((s: any) => s.ticker) ?? []
-const priceSymbols: string[] = prices?.map((p: any) => p.sym).filter(Boolean) ?? []
-
-const canonicalMarketState =
-  marketState ??
-  await buildMarketState({
-    watchlistTickers: watchlistTickers.length
-      ? watchlistTickers
-      : priceSymbols.length
-        ? priceSymbols
-        : ['SPY', 'QQQ', 'NVDA', 'AAPL', 'TSLA', 'META', 'AMD'],
-    keyNews: (news ?? []).slice(0, 12).map((n: any) => ({
-      symbol: n.ticker,
-      headline: n.headline,
-      source: n.source,
-      publishedAt: n.publishedAt,
-    })),
-  })
-
-const intent = classifyIntent(message, watchlistTickers, priceSymbols)
-
     const userKey = userId ?? 'anonymous'
     const sonnetAllowed = canUseSonnet(userKey)
 
-    // ── TIME & MARKET STATUS ────────────────────────────────────────────────
+    // ── DATE / TIME / MARKET STATUS ──────────────────────────────────────────
     const now = new Date()
     const nyseStatus = getNyseEquitiesStatus(now)
     const marketStatus = nyseStatus.label
@@ -622,314 +82,85 @@ const intent = classifyIntent(message, watchlistTickers, priceSymbols)
       weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     }).formatToParts(now)
 
-    const etTime = `${etParts.find((p) => p.type === 'hour')?.value}:${etParts.find((p) => p.type === 'minute')?.value} ${(etParts.find((p) => p.type === 'dayPeriod')?.value ?? '').toUpperCase().split('').join(' ')} ET`
-    const etDate = `${etParts.find((p) => p.type === 'weekday')?.value}, ${etParts.find((p) => p.type === 'month')?.value} ${etParts.find((p) => p.type === 'day')?.value}, ${etParts.find((p) => p.type === 'year')?.value}`
+    const etTime = `${etParts.find(p => p.type === 'hour')?.value}:${etParts.find(p => p.type === 'minute')?.value} ${(etParts.find(p => p.type === 'dayPeriod')?.value ?? '').toUpperCase().split('').join(' ')} ET`
+    const etDate = `${etParts.find(p => p.type === 'weekday')?.value}, ${etParts.find(p => p.type === 'month')?.value} ${etParts.find(p => p.type === 'day')?.value}, ${etParts.find(p => p.type === 'year')?.value}`
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
-    // Compute which weekday the most recent market close belongs to
-    const etHour = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }).format(now), 10)
-    const etWeekday = etParts.find((p) => p.type === 'weekday')?.value ?? ''
+    // Last-close day label (before 4 PM ET the current session hasn't closed)
+    const etHour = parseInt(
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York', hour: 'numeric', hourCycle: 'h23',
+      }).format(now),
+      10,
+    )
+    const etWeekday = etParts.find(p => p.type === 'weekday')?.value ?? ''
     const PREV_TRADING: Record<string, string> = {
       Sunday: 'Friday', Monday: 'Friday',
       Tuesday: 'Monday', Wednesday: 'Tuesday',
       Thursday: 'Wednesday', Friday: 'Thursday', Saturday: 'Friday',
     }
-    // Before 4 PM ET the current session hasn't closed yet → last close was the prior trading day
     const marketHasClosed = etHour >= 16
-    const lastCloseDayName = (etWeekday === 'Saturday' || etWeekday === 'Sunday' || !marketHasClosed)
-      ? PREV_TRADING[etWeekday] ?? etWeekday
-      : etWeekday
+    const lastCloseDayName =
+      etWeekday === 'Saturday' || etWeekday === 'Sunday' || !marketHasClosed
+        ? PREV_TRADING[etWeekday] ?? etWeekday
+        : etWeekday
 
-    // ── UNIVERSAL FETCHES ────────────────────────────────────────────────────
-    const intradaySymbols = watchlistTickers.length
-  ? watchlistTickers
-  : ['SPY', 'QQQ', 'NVDA', 'AAPL', 'TSLA', 'META', 'AMD']
+    // ── RESOLVE USER PLAN ────────────────────────────────────────────────────
+    const userPlan = await (async (): Promise<'core' | 'edge' | null> => {
+      if (!userId) return null
+      const admin = createAdminSupabaseClient()
+      const { data } = await admin.from('profiles').select('stripe_price_id').eq('id', userId).single()
+      const pid = (data as any)?.stripe_price_id ?? null
+      const coreIds = [process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_MONTHLY, process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_ANNUAL]
+      const edgeIds = [process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_MONTHLY, process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_ANNUAL]
+      if (coreIds.includes(pid)) return 'core'
+      if (edgeIds.includes(pid)) return 'edge'
+      return null
+    })()
 
-const intradayDateRequest = parseHistoricalIntradayRequest(message)
+    // ── STAGE 1: PLAN ────────────────────────────────────────────────────────
+    // Summary mode gets a fixed plan — no planner call needed.
+    const plan = mode === 'summary'
+      ? {
+          topic: 'briefing' as const,
+          symbols: watchlistTickers,
+          timeRange: { type: 'session' as const, startDate: todayStr, endDate: todayStr },
+          fetch: ['candles', 'live_prices', 'news', 'macro', 'calendar', 'sector', 'market_state'] as any,
+          compile: ['session_summary', 'biggest_move'] as any,
+          outputFormat: 'briefing' as const,
+          detailLevel: 'detailed' as const,
+          maxTokens: 350,
+          isHistorical: false,
+          requiresSearch: false,
+        }
+      : (await planQuery(message, watchlistTickers, todayStr, marketStatus))
+        ?? buildFallbackPlan(message, watchlistTickers, todayStr)
 
-// ── FRESH PRICE FETCH AT QUESTION TIME ───────────────────────────────────────
-// Only fetch fresh prices for realtime/breaking questions, not historical or casual
-const needsFreshPrices =
-  !intent.isCasualConversation &&
-  !intradayDateRequest.isHistorical &&
-  (intent.mentionsBreaking || intent.needsNews || intent.focusSymbol != null)
+    console.log('[chat] plan:', JSON.stringify(plan))
 
-const freshPrices = needsFreshPrices
-  ? await fetchLivePrices(
-      intent.focusSymbol
-        ? [intent.focusSymbol, ...watchlistTickers.filter(t => t !== intent.focusSymbol).slice(0, 4)]
-        : watchlistTickers.slice(0, 6)
-    )
-  : []
-
-const effectivePrices = freshPrices.length ? freshPrices : prices
-
-console.log('[chat intraday date request]', {
-  message,
-  intradayDateRequest,
-})
-
-const calendarToDate = new Date(`${todayStr}T12:00:00`)
-calendarToDate.setDate(calendarToDate.getDate() + 45)
-const calendarTo = calendarToDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-
-const userPlan = await (async (): Promise<'core' | 'edge' | null> => {
-  if (!userId) return null
-  const admin = createAdminSupabaseClient()
-  const { data } = await admin.from('profiles').select('stripe_price_id').eq('id', userId).single()
-  const pid = (data as any)?.stripe_price_id ?? null
-  const coreIds = [process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_MONTHLY, process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_ANNUAL]
-  const edgeIds = [process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_MONTHLY, process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_ANNUAL]
-  if (coreIds.includes(pid)) return 'core'
-  if (edgeIds.includes(pid)) return 'edge'
-  return null
-})()
-
-const [intradayResult, economicEvents, earningsEvents, macroData, sectorData, historicalContext] = await Promise.all([
-  fetchCandlesForChat(
-    intradaySymbols,
-    intradayDateRequest.isHistorical,
-    intradayDateRequest.startDate,
-    intradayDateRequest.endDate,
-  ),
-  fetchEconomicCalendar(todayStr, calendarTo),
-  fetchEarningsCalendar(intradaySymbols, todayStr, calendarTo),
-  fetchMacroData(),
-  fetchSectorPerformance(),
-  buildHistoricalContext(message, watchlistTickers, intent.focusSymbol, userPlan),
-])
-
-console.log('[chat intraday fetch result]', {
-  requestedDate: intradayDateRequest.targetDate,
-  symbols: intradaySymbols,
-  debug: intradayResult.debug,
-  sampleKeys: Object.keys(intradayResult.data ?? {}),
-  firstNvdaCandle: intradayResult.data?.NVDA?.[0] ?? null,
-  lastNvdaCandle:
-    intradayResult.data?.NVDA?.length
-      ? intradayResult.data.NVDA[intradayResult.data.NVDA.length - 1]
-      : null,
-  economicEventsCount: economicEvents?.length ?? 0,
-  earningsEventsCount: earningsEvents?.length ?? 0,
-  macroDataKeys: macroData ? Object.keys(macroData) : [],
-  sectorDataCount: sectorData?.length ?? 0,
-})
-
-    // ── CONDITIONAL SYMBOL-SPECIFIC FETCHES ─────────────────────────────────
-    const tier2Promises: Promise<any>[] = []
-    const tier2Keys: string[] = []
-
-    if (intent.focusSymbol && intent.needsInsider) { tier2Promises.push(fetchInsiderTransactions(intent.focusSymbol)); tier2Keys.push('insider') }
-    if (intent.focusSymbol && intent.needsAnalyst)  { tier2Promises.push(fetchAnalystRatings(intent.focusSymbol)); tier2Keys.push('analyst') }
-    if (intent.focusSymbol && intent.needsOptions)  { tier2Promises.push(fetchOptionsFlow(intent.focusSymbol)); tier2Keys.push('options') }
-
-    const tier2Results = await Promise.all(tier2Promises)
-    const tier2: Record<string, any> = {}
-    tier2Keys.forEach((k, i) => { tier2[k] = tier2Results[i] })
-
-    // ── SIGNAL PRE-COMPUTATION ───────────────────────────────────────────────
-    const spyCandles = intradayResult.data['SPY'] ?? []
-    const symbolsToSignal = intent.focusSymbol
-      ? [intent.focusSymbol]
-      : intent.requestType === 'briefing' ? intradaySymbols : [intradaySymbols[0]].filter(Boolean)
-
-    const signals = symbolsToSignal
-      .map(sym => computeSignals(sym, intradayResult.data[sym] ?? [], spyCandles))
-      .filter((s): s is NonNullable<typeof s> => s !== null)
-
-    const signalsContext = formatSignals(signals)
-
-    // ── ANSWERABILITY DECISION ───────────────────────────────────────────────
-    const { score: dataScore, decision: dataDecision, reasons: scoreReasons } = scoreDataQuality({
-      message,
-      intent,
+    // ── STAGE 2: COMPILE ─────────────────────────────────────────────────────
+    const compiledContext = await compileContext(plan, {
       watchlistTickers,
-      prices: effectivePrices,
-      news,
-      level2,
-      intradayData: intradayResult?.data,
-      marketState: canonicalMarketState,
-      sectorFetched: !!sectorData,
-      insiderFetched: !!tier2.insider,
-      analystFetched: !!tier2.analyst,
-      optionsFetched: !!tier2.options,
-      signals,
+      passedPrices: prices,
+      passedNews: news,
+      todayStr,
+      message,
+      userId,
+      userPlan,
+      traderType,
     })
 
-    console.log(`[chat] data quality score=${dataScore} decision=${dataDecision}`, scoreReasons)
+    // ── MODEL + SEARCH ROUTING ────────────────────────────────────────────────
+    const useSearch = plan.requiresSearch
+    const useSonnet = useSearch && sonnetAllowed
+    const model     = useSonnet ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001'
+    const maxTokens   = plan.maxTokens
 
-    const currentDataEnough = dataDecision === 'confident' || dataDecision === 'limited'
-    const useLiveSearch = dataDecision === 'research' && sonnetAllowed
-    const useHaikuSearch = dataDecision === 'research' && !sonnetAllowed
-    const useSearch = useLiveSearch || useHaikuSearch
-
-    // ── CONTEXT BLOCKS ───────────────────────────────────────────────────────
-    const watchlistContext = watchlist.length
-      ? `USER WATCHLIST WITH CURRENT PRICES:\n${watchlist.map((s: any) => `  ${s.ticker}: $${s.price ?? '—'} ${s.change ?? ''} ${s.up !== undefined ? (s.up ? '▲ UP' : '▼ DOWN') : ''}`).join('\n')}`
-      : ''
-
-    const marketDataContext = prices.length
-      ? `LIVE TICKER DATA:\n${prices.map((t: any) => `  ${t.sym}: $${t.price ?? '—'} ${t.change ?? ''}`).join('\n')}`
-      : ''
-
-    const newsContext = news.length
-      ? `LATEST NEWS FEED:\n${news.slice(0, 10).map((n: any, i: number) => `  ${i + 1}. [${n.ticker ?? 'MKT'}] ${n.headline}${n.ai ? ' | AI Take: ' + n.ai : ''}`).join('\n')}`
-      : ''
-
-    const level2Context = level2
-      ? `LEVEL 2 / ORDER FLOW DATA:\n${typeof level2 === 'string' ? level2 : JSON.stringify(level2, null, 2)}`
-      : ''
-
-    const intradayContext = formatIntradayContext(intradayResult.data)
-const exactIntradayQuestionContext = buildIntradayQuestionContext(
-  intradayResult.data,
-  message,
-  intent.focusSymbol,
-  intradayDateRequest.targetDate
-)
-const calendarContext = formatEconomicCalendar(economicEvents, todayStr)
-const earningsContext = formatEarningsCalendar(earningsEvents)
-const macroContext = formatMacroData(macroData)
-const sectorContext = formatSectorPerformance(sectorData)
-const insiderContext = tier2.insider ? formatInsiderTransactions(tier2.insider, intent.focusSymbol ?? '') : ''
-const analystContext = tier2.analyst ? formatAnalystRatings(tier2.analyst, intent.focusSymbol ?? '') : ''
-const optionsContext = tier2.options ? formatOptionsFlow(tier2.options, intent.focusSymbol ?? '') : ''
-
-const marketStateContext = [
-  `CANONICAL MARKET SNAPSHOT (${canonicalMarketState.snapshotTime}):`,
-  `Market status: ${canonicalMarketState.marketStatus}`,
-  canonicalMarketState.summary ? `Summary: ${canonicalMarketState.summary}` : '',
-  canonicalMarketState.watchlistSummary?.length
-    ? `Watchlist summary:\n${canonicalMarketState.watchlistSummary
-        .slice(0, 10)
-        .map((w: any) => `  ${w.symbol}: ${w.price ?? '—'} (${w.changePct ?? '—'}%)`)
-        .join('\n')}`
-    : '',
-  canonicalMarketState.calendarEvents?.length
-    ? `Economic calendar:\n${canonicalMarketState.calendarEvents
-        .slice(0, 40)
-        .map((e: any) => `  ${e.name}${e.time ? ` — ${e.time}` : ''}${e.impact ? ` — ${e.impact}` : ''}`)
-        .join('\n')}`
-    : '',
-  canonicalMarketState.earningsEvents?.length
-    ? `Earnings calendar:\n${canonicalMarketState.earningsEvents
-        .slice(0, 20)
-        .map((e: any) => `  ${e.symbol}${e.timing ? ` — ${e.timing}` : ''}`)
-        .join('\n')}`
-    : '',
-  canonicalMarketState.macroContext?.length
-    ? `Macro context:\n${canonicalMarketState.macroContext
-        .slice(0, 12)
-        .map((m: any) => `  ${m.label}: ${m.value}${m.implication ? ` (${m.implication})` : ''}`)
-        .join('\n')}`
-    : '',
-  canonicalMarketState.keyNews?.length
-    ? `Key news:\n${canonicalMarketState.keyNews
-        .slice(0, 12)
-        .map((n: any, i: number) => `  ${i + 1}. [${n.symbol ?? 'MKT'}] ${n.headline}`)
-        .join('\n')}`
-    : '',
-].filter(Boolean).join('\n\n')
-
-const fullContextBlocks = [
-  marketStateContext,
-  watchlistContext,
-  marketDataContext,
-  newsContext,
-  intradayContext,
-  signalsContext,
-  exactIntradayQuestionContext,
-  calendarContext,
-  earningsContext,
-  macroContext,
-  sectorContext,
-  level2Context,
-  insiderContext,
-  analystContext,
-  optionsContext,
-  historicalContext,
-].filter(Boolean).join('\n\n')
-
-    const researchContextBlocks = buildResearchContext({
-      focusSymbol: intent.focusSymbol, prices, news,
-      intradayContext, calendarContext, macroContext, sectorContext,
-      insiderContext, analystContext, optionsContext, level2Context,
-    })
-
-    const traderLens =
-      traderType === 'day'
-        ? 'USER IS A DAY TRADER: Focus intraday. Mention momentum, VWAP, HOD/LOD, liquidity, same-day catalysts, and session context.'
-        : traderType === 'longterm'
-          ? 'USER IS A LONG-TERM INVESTOR: Focus on fundamentals, macro, earnings, and longer-term thesis.'
-          : 'USER IS A SWING TRADER: Focus on 3-day to 3-month setups, catalysts, sector rotation, and key technical context.'
-
-    // ── LENGTH RULES ─────────────────────────────────────────────────────────
-    // IMPORTANT: These are hard limits. Do not exceed them under any circumstances.
-    const lengthRules = mode === 'summary'
-      ? `
-SUMMARY RESPONSE RULES (HARD LIMITS):
-- Tone: casual and direct, like a trader texting another trader. Plain English only. No formal language.
-- Each sentence must be short — one idea, one number, done. Never combine two thoughts into one sentence.
-- Cover these in order, one sentence each. Skip a section only if there is genuinely nothing to say:
-  1. Top mover or dominant theme with its exact number.
-  2. Second notable mover, catalyst, or macro point driving the action.
-  3. Key risk or the one thing to watch right now.
-  4. One forward-looking note (upcoming event, level to watch) — only include if it is concrete and actionable.
-- Hard stop after 4 sentences. Never write a 5th.
-- Forbidden in every sentence: intraday ranges, volume, analyst commentary, multiple news items, filler words ("overall", "keep in mind", "it's worth noting"), sign-offs or greetings.
-`
-      : intent.isCasualConversation
-        ? `
-RESPONSE RULES: Reply in 1 short sentence. Warm and brief. No market data unless asked.
-`
-        : intent.requestType === 'simple'
-          ? `
-RESPONSE RULES (HARD LIMITS):
-- Answer in exactly 1 sentence with the specific number or fact asked for.
-- Add a 2nd sentence ONLY if it directly changes how the user should interpret the first (e.g. "That's down 3.2% on the day.").
-- Do NOT add: intraday range, volume, news context, analyst commentary, macro color, or any other unsolicited detail.
-- The user asked a simple question. Give a simple answer. Stop.
-`
-          : useSearch
-              ? `
-RESPONSE RULES:
-- 2–3 sentences maximum.
-- Use the web_search tool to research this question. You have it — use it.
-- Answer first, then one supporting fact only if it changes the answer.
-- No filler, no restating the question, no extra color.
-- Only report facts returned by actual search results. If search returns no clear result, say the search didn't surface a clear catalyst. Never fabricate. Never say "I don't have web search capability."
-`
-            : intent.isOpenEndedWhyQuestion || intent.mentionsExactTimestamp
-  ? `
-RESPONSE RULES:
-- Answer in 2-3 sentences maximum.
-- If the user asked about an exact time or candle, first identify the 5-minute candle interval that contains that ET timestamp on the requested ET date.
-- If the user specified a past date and candles for that date are present, answer from that historical session instead of saying only today's candles are available.
-- State the containing interval clearly, for example "12:35pm on 2026-03-31 falls inside the 12:35pm-12:40pm ET candle."
-- Then give the OHLC result in plain English and describe whether that candle was up, down, or roughly neutral.
-- If the requested ET date is not present in the current feed, say that exact date is not available in the current intraday dataset.
-- If the user asked "why did it drop" or "what happened," analyze the broader move window, not a single candle in isolation.
-- Do not say a stock rallied just because one candle was green if the surrounding move was down.
-- If no specific catalyst is visible in the candle data, explain the move using price action, sector context, macro data, or news — never just say "no catalyst found."
-- Stop after the direct answer.
-`
-              : intent.requestType === 'briefing'
-                ? `
-RESPONSE RULES (HARD LIMITS):
-- Maximum 3 sentences.
-- Sentence 1: Biggest theme with a number.
-- Sentence 2: Top mover or catalyst.
-- Sentence 3: One key risk or forward note. Then stop.
-`
-                : `
-RESPONSE RULES:
-- 1–2 sentences. Answer the question. Stop.
-- Include only facts that directly answer what was asked.
-`
-
-    const contextBlocks = useSearch ? researchContextBlocks : fullContextBlocks
+    console.log(`[chat] model=${model} maxTokens=${maxTokens} search=${useSearch} topic=${plan.topic}`)
 
     // ── SYSTEM PROMPT ────────────────────────────────────────────────────────
+    const outputInstructions = buildOutputInstructions(plan)
+
     const systemPrompt = `You are Monday, an elite AI market intelligence assistant inside a professional trading dashboard.
 
 Current time: ${etTime}
@@ -937,66 +168,39 @@ Current date: ${etDate}
 Market status: ${marketStatus}${minutesToClose !== null ? `\nMinutes until market close: ${minutesToClose}` : ''}
 Last trading session close: ${lastCloseDayName}
 
-${contextBlocks}
-
-${traderLens}
+${compiledContext}
 
 IDENTITY:
-- Be direct, fast, and precise. You are a terminal, not a newsletter.
-- Simple questions get one-sentence answers. Period.
-- Never volunteer information the user did not ask for.
+- Direct, fast, precise. You are a terminal, not a newsletter.
 - No markdown, no bullets, no headers.
 - Stop the moment the answer is complete.
 
-CLOSING PRICE DAY RULE (NO EXCEPTIONS):
-Every time you state a closing price, you MUST name the day. Use only the weekday name from "Last trading session close" above. Never say "yesterday" or "today". Correct: "GLD closed at $423.18 on Friday." Wrong: "GLD closed at $423.18."
+CLOSING PRICE DAY RULE:
+Every closing price you state must name the weekday. Use only the name from "Last trading session close" above. Never say "yesterday" or "today". Correct: "TSLA closed at $423.74 on Tuesday." Wrong: "TSLA closed at $423.74."
 
 CORE RULES:
-1. Use only facts in the supplied data or web search results. Never invent prices, events, or timestamps.
+1. Use only facts in the compiled context or web search results. Never invent prices, events, or timestamps.
 2. Do not restate the question.
-3. Do not add unsolicited macro color, volume commentary, or analyst context to simple factual questions.
-4. Frame bullish/bearish views as scenario analysis, never as advice.
-5. Never tell the user to buy, sell, or size a position.
-6. ${useSearch ? 'You have the web_search tool available — use it proactively to answer this question. Never say "I don\'t have web search capability" or "I can\'t search the web." Never fall back to "data unavailable" when a web search can find the answer.' : 'Answer from all available data. Do not volunteer that data is missing or limited unless it is the direct reason the question literally cannot be answered at all. Never say "intraday feed unavailable" — if candles are absent, use price data, news, and macro context instead.'}
-7. For calendar questions, treat HIGH and MEDIUM impact events as market-moving. Do not say "no high impact events" if MEDIUM impact events exist — list them.
-7a. CALENDAR STRICT RULE: When answering any question about upcoming events, scheduled releases, or economic calendar, you MUST list ONLY the events that appear explicitly in the ECONOMIC CALENDAR block above. Do NOT add events from web search results, training knowledge, or any other source. If an event is not in the ECONOMIC CALENDAR block, do not mention it — even if you know it exists. The calendar feed IS the source of truth; web search results about calendar events must be ignored.
-8. Treat the CANONICAL MARKET SNAPSHOT as the primary source of truth for upcoming economic events, calendar timing, macro context, and key headlines.
-9. Do not claim that tomorrow's or future events are unavailable if they appear in the canonical market snapshot.
-10. When asked for the next event, upcoming event, or next high-impact event, answer from the canonical market snapshot first.
-11. For exact intraday timestamp questions, use the matched candle nearest that ET time and state whether it was exact or nearest.
-12. For move questions like "why did it drop" or "what happened from 1:06 to 2:40", analyze the move across the whole requested window, not one candle in isolation.
-13. Never describe the move as bullish or a rally if the broader requested move window was down.
-14. If the current feed does not show a clear catalyst, use web search if available. If web search is also unavailable, answer with the best available context — price action, macro data, news — rather than simply saying no catalyst exists.
-15. When using web search, only report facts from actual search results. If search returns no clear results about a specific real-time event, say the search did not surface a clear catalyst. Never fabricate prices, dates, people, or events.
-16. INTRADAY DATE RULE: The INTRADAY 5-MIN CANDLES block contains a "session date(s):" label — that is the definitive date of every candle in that block. Never state a different date for those candles. If the user asks about a specific date and that date matches the session date label, answer directly from the candles. Never say "I don't have candles loaded" if the INTRADAY block is present and non-empty.
-17. DATE ACCURACY: The current date is stated at the top of this prompt as "Current date". Trust it. Do not derive or guess the date from weekday names, training data, or conversation history.
+3. Frame bullish/bearish views as scenario analysis, never as advice. Never tell the user to buy, sell, or size a position.
+4. For calendar questions, treat HIGH and MEDIUM impact events as market-moving.
+5. CALENDAR STRICT RULE: List only events that appear in the ECONOMIC CALENDAR block. Do not add events from training knowledge.
+6. INTRADAY DATE RULE: The MARKET DATA block shows the session date. Never state a different date for those candles. Never say candles are unavailable if the block is present.
+7. DATE ACCURACY: Trust "Current date" above. Do not derive the date from weekday names or training data.
+8. ${useSearch
+  ? 'You have the web_search tool — use it proactively. Never say "I can\'t search the web." Never fall back to "data unavailable" when a search can find the answer.'
+  : 'Answer from the compiled context. Do not volunteer that data is missing unless it is the direct reason the question cannot be answered at all.'
+}
 
-${lengthRules}`
+${outputInstructions}`
 
     // ── CALL MODEL ───────────────────────────────────────────────────────────
     const historyMessages = (history as { role: string; content: string }[])
       .slice(useSearch ? -4 : -8)
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .map((m) => ({
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => ({
         role: m.role as 'user' | 'assistant',
-        content: useSearch ? m.content.slice(0, 500) : m.content.slice(0, 800),
+        content: m.content.slice(0, 800),
       }))
-
-    const model = useLiveSearch ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001'
-
-    // Token limits — kept tight to enforce brevity
-    const maxTokens = useLiveSearch
-      ? mode === 'summary' ? 350 : 140
-      : useHaikuSearch
-        ? mode === 'summary' ? 350 : 160
-        : mode === 'summary'
-        ? 350
-        : intent.isCasualConversation ? 50
-        : intent.requestType === 'simple' ? 60
-        : intent.isOpenEndedWhyQuestion ? 120
-        : intent.mentionsExactTimestamp ? 220
-        : intent.requestType === 'briefing' ? 130
-        : intent.needsMacro ? 250 : 100
 
     const requestBody: any = {
       model,
@@ -1008,10 +212,6 @@ ${lengthRules}`
     if (useSearch) {
       requestBody.tools = [{ type: 'web_search_20250305', name: 'web_search' }]
     }
-
-    console.log(
-      `[chat] routing → ${useLiveSearch ? `SONNET+search (${getSonnetRemaining(userKey)} left)` : useHaikuSearch ? 'HAIKU+search' : 'HAIKU'} | enough_data=${currentDataEnough} | type=${intent.requestType} | max_tokens=${maxTokens}`
-    )
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -1029,10 +229,9 @@ ${lengthRules}`
       return NextResponse.json({ reply: 'Something went wrong — please try again.' }, { status: 500 })
     }
 
-    if (useLiveSearch) recordSonnetCall(userKey)
+    if (useSonnet) recordSonnetCall(userKey)
 
     const data = await response.json()
-
     const reply = data.content
       ?.filter((b: any) => b.type === 'text')
       .map((b: any) => b.text)
@@ -1042,19 +241,32 @@ ${lengthRules}`
     if (!reply) {
       console.error('[chat] No text block. Types:', data.content?.map((b: any) => b.type))
       return NextResponse.json({
-        reply: currentDataEnough ? 'No response generated — please try again.' : buildSafeFallback(intent),
-        grounded: false, usedResearch: useSearch, currentDataEnough,
+        reply: 'No response generated — please try again.',
+        grounded: false,
+        usedResearch: useSearch,
         sonnetRemaining: getSonnetRemaining(userKey),
       })
     }
 
+    // Normalise casual time references
+    const normalised = reply
+      .replace(/\bthis morning\b/gi, 'earlier in the session')
+      .replace(/\bthis afternoon\b/gi, 'later in the session')
+      .replace(/\bthis evening\b/gi, 'later')
+
     return NextResponse.json({
-      reply: normalizeTimeReference(reply),
-      grounded: true, usedResearch: useSearch, currentDataEnough,
+      reply: normalised,
+      grounded: true,
+      usedResearch: useSearch,
       sonnetRemaining: getSonnetRemaining(userKey),
+      plan: { topic: plan.topic, outputFormat: plan.outputFormat, maxTokens },
     })
+
   } catch (err: any) {
     console.error('[chat] Error:', err.message)
-    return NextResponse.json({ reply: 'Error connecting to Monday. Please try again.' }, { status: 500 })
+    return NextResponse.json(
+      { reply: 'Error connecting to Monday. Please try again.' },
+      { status: 500 },
+    )
   }
 }
