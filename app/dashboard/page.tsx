@@ -834,7 +834,7 @@ const [newsTab, setNewsTab] = useState<'watchlist' | 'general'>(() => {
   const [voiceTriggered, setVoiceTriggered] = useState(false)
 
   const isMobile = useIsMobile(960)
-  const { windows, scheduledOff, addWindow, removeWindow, updateWindow } = useWakeSchedule()
+  const { windows, scheduledOff, scheduledOn, addWindow, removeWindow, updateWindow } = useWakeSchedule()
   const [mobilePanel, setMobilePanel] = useState<PanelId>('pulse')
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
 
@@ -1008,6 +1008,9 @@ const lastWakeDetectionRef = useRef<number>(0)
 const wakePreferredOnRef = useRef(true)
 const speechPreferredOnRef = useRef(true)
 const scheduledOffRef = useRef(false)
+const scheduledOnRef  = useRef(false)
+// 'off' = user overrode during a quiet window (30 min), 'on' = user overrode during active window (10 min)
+const wakeOverrideContextRef = useRef<'off' | 'on' | null>(null)
 
   const supabase = createClient()
   const router = useRouter()
@@ -1056,44 +1059,58 @@ const [micReady, setMicReady] = useState(false)
 const scheduleEffectReadyRef = useRef(false)
 
 useEffect(() => { scheduledOffRef.current = scheduledOff }, [scheduledOff])
+useEffect(() => { scheduledOnRef.current  = scheduledOn  }, [scheduledOn])
 
 useEffect(() => {
   // Don't run until user prefs have loaded from Supabase
   if (!user) return
   scheduleEffectReadyRef.current = true
 
+  // Priority: scheduledOff > scheduledOn > user preference
   if (scheduledOff) {
     if (!wakeManualOverride) setWakeOn(false)
     if (!speechManualOverride) { stopCurrentAudio(); setSpeechOn(false) }
     return
   }
 
-  // Schedule ended: restore both settings to the user's preferences
+  if (scheduledOn) {
+    if (!wakeManualOverride) setWakeOn(true)
+    return
+  }
+
+  // Outside any scheduled window: restore to saved preference
   if (!wakeManualOverride) setWakeOn(wakePreferredOnRef.current)
   if (!speechManualOverride) setSpeechOn(speechPreferredOnRef.current)
 // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [scheduledOff, user, wakeManualOverride, speechManualOverride])
+}, [scheduledOff, scheduledOn, user, wakeManualOverride, speechManualOverride])
 
 useEffect(() => {
   if (!wakeManualOverride) return
   if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
 
+  // Active-window override (user turned OFF): 10 min then resume ON
+  // Quiet-window override (user turned ON): 30 min then revert to OFF
+  const duration = wakeOverrideContextRef.current === 'on' ? 10 * 60 * 1000 : 30 * 60 * 1000
+
   wakeOverrideTimerRef.current = setTimeout(() => {
     setWakeManualOverride(false)
-    if (scheduledOff) {
+    wakeOverrideContextRef.current = null
+    if (scheduledOffRef.current) {
       setWakeOn(false)
       setSpeechOn(false)
       stopCurrentAudio()
+    } else if (scheduledOnRef.current) {
+      setWakeOn(true)
     } else {
       setWakeOn(wakePreferredOnRef.current)
       setSpeechOn(speechPreferredOnRef.current)
     }
-  }, 30 * 60 * 1000)
+  }, duration)
 
   return () => {
     if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
   }
-}, [wakeManualOverride, scheduledOff])
+}, [wakeManualOverride])
 
 // Speech manual override: 30-minute revert when user turns voice on during scheduled-off
 const speechOverrideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -2772,10 +2789,20 @@ const visibleDaySummaries = useMemo(() => {
                     </div>
                     <div onClick={() => {
                       const turningOn = !wakeOn
-                      setWakeOn(turningOn); wakePreferredOnRef.current = turningOn
-                      void supabase.from('profiles').update({ wake_word_enabled: turningOn }).eq('id', user!.id)
-                      if (turningOn && scheduledOff) setWakeManualOverride(true)
-                      else { setWakeManualOverride(false); if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current) }
+                      setWakeOn(turningOn)
+                      if (scheduledOn && !turningOn) {
+                        wakeOverrideContextRef.current = 'on'
+                        setWakeManualOverride(true)
+                      } else if (scheduledOff && turningOn) {
+                        wakeOverrideContextRef.current = 'off'
+                        setWakeManualOverride(true)
+                      } else {
+                        wakePreferredOnRef.current = turningOn
+                        wakeOverrideContextRef.current = null
+                        setWakeManualOverride(false)
+                        if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
+                        void supabase.from('profiles').update({ wake_word_enabled: turningOn }).eq('id', user!.id)
+                      }
                     }} style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.08em', color: wakeOn ? T.green : T.text6, border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`, background: wakeOn ? T.greenFaint3 : 'transparent', padding: '4px 8px', cursor: 'pointer', transition: 'all 0.15s' }}>
                       {wakeOn ? '🎙 Wake' : '🎙 Wake'}
                     </div>
@@ -2848,9 +2875,7 @@ const visibleDaySummaries = useMemo(() => {
                   <div 
                   onClick={() => {
   const turningOn = !wakeOn
-  wakePreferredOnRef.current = turningOn
   setWakeOn(turningOn)
-  void persistWakeOn(turningOn)
 
   if (turningOn) {
     void persistSpeechOn(true)
@@ -2859,11 +2884,18 @@ const visibleDaySummaries = useMemo(() => {
     void persistSpeechOn(false)
   }
 
-  if (turningOn && scheduledOff) {
+  if (scheduledOn && !turningOn) {
+    wakeOverrideContextRef.current = 'on'
+    setWakeManualOverride(true)
+  } else if (scheduledOff && turningOn) {
+    wakeOverrideContextRef.current = 'off'
     setWakeManualOverride(true)
   } else {
+    wakePreferredOnRef.current = turningOn
+    wakeOverrideContextRef.current = null
     setWakeManualOverride(false)
     if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
+    void persistWakeOn(turningOn)
   }
 }}
                   style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: wakeOn ? T.greenFaint3 : T.inputBg, border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`, cursor: 'pointer' }}>
@@ -3102,6 +3134,7 @@ const visibleDaySummaries = useMemo(() => {
               onClose={() => setShowWakeSchedule(false)}
               T={T}
               scheduledOff={scheduledOff}
+              scheduledOn={scheduledOn}
               windows={windows}
               addWindow={addWindow}
               removeWindow={removeWindow}
@@ -3917,10 +3950,19 @@ const visibleDaySummaries = useMemo(() => {
                 <div onClick={() => {
                   const turningOn = !wakeOn
                   setWakeOn(turningOn)
-                  wakePreferredOnRef.current = turningOn
-                  void supabase.from('profiles').update({ wake_word_enabled: turningOn }).eq('id', user!.id)
-                  if (turningOn && scheduledOff) setWakeManualOverride(true)
-                  else { setWakeManualOverride(false); if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current) }
+                  if (scheduledOn && !turningOn) {
+                    wakeOverrideContextRef.current = 'on'
+                    setWakeManualOverride(true)
+                  } else if (scheduledOff && turningOn) {
+                    wakeOverrideContextRef.current = 'off'
+                    setWakeManualOverride(true)
+                  } else {
+                    wakePreferredOnRef.current = turningOn
+                    wakeOverrideContextRef.current = null
+                    setWakeManualOverride(false)
+                    if (wakeOverrideTimerRef.current) clearTimeout(wakeOverrideTimerRef.current)
+                    void supabase.from('profiles').update({ wake_word_enabled: turningOn }).eq('id', user!.id)
+                  }
                 }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: wakeOn ? T.greenFaint2 : T.inputBg, border: `1px solid ${wakeOn ? T.greenBorder : T.borderItem}`, padding: '8px 12px', cursor: 'pointer', transition: 'all 0.2s' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                     <div style={{ fontSize: '10px', fontWeight: 600, color: wakeOn ? T.green : T.text5, letterSpacing: '0.05em' }}>Wake Word</div>
@@ -4332,6 +4374,7 @@ const visibleDaySummaries = useMemo(() => {
             onClose={() => setShowWakeSchedule(false)}
             T={T}
             scheduledOff={scheduledOff}
+            scheduledOn={scheduledOn}
             windows={windows}
             addWindow={addWindow}
             removeWindow={removeWindow}

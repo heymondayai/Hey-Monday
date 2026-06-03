@@ -2,38 +2,43 @@
 
 import { useEffect, useState, useCallback } from 'react'
 
+export type WakeWindowType = 'off' | 'on'
+
 export type WakeWindow = {
   id: string
-  days: number[]        // 0=Sun, 1=Mon ... 6=Sat
-  offHour: number       // 24h
+  type?: WakeWindowType  // 'off' = quiet window, 'on' = active window; defaults 'off' for back-compat
+  days: number[]         // 0=Sun, 1=Mon ... 6=Sat
+  offHour: number        // window START hour (24h) — "off at" for quiet, "on at" for active
   offMin: number
-  onHour: number
+  onHour: number         // window END hour (24h) — "on at" for quiet, "off at" for active
   onMin: number
 }
 
 const STORAGE_KEY = 'heymonday_wake_schedule_v1'
 
-function nowInWindow(window: WakeWindow): boolean {
+function nowInWindow(win: WakeWindow): boolean {
   const now = new Date()
   const day = now.getDay()
-  if (!window.days.includes(day)) return false
+  if (!win.days.includes(day)) return false
 
-  const nowMins = now.getHours() * 60 + now.getMinutes()
-  const offMins = window.offHour * 60 + window.offMin
-  const onMins  = window.onHour  * 60 + window.onMin
+  const nowMins  = now.getHours() * 60 + now.getMinutes()
+  const startMins = win.offHour * 60 + win.offMin
+  const endMins   = win.onHour  * 60 + win.onMin
 
-  if (offMins < onMins) {
-    // same-day window e.g. 22:00 → 07:00 crossed midnight? No — 22 < 7 is false
-    // e.g. 09:00 off → 17:00 on (daytime mute)
-    return nowMins >= offMins && nowMins < onMins
+  if (startMins < endMins) {
+    return nowMins >= startMins && nowMins < endMins
   } else {
-    // crosses midnight: e.g. off at 22:00, on at 07:00
-    return nowMins >= offMins || nowMins < onMins
+    // crosses midnight
+    return nowMins >= startMins || nowMins < endMins
   }
 }
 
 export function isScheduledOff(windows: WakeWindow[]): boolean {
-  return windows.some(nowInWindow)
+  return windows.filter(w => (w.type ?? 'off') === 'off').some(nowInWindow)
+}
+
+export function isScheduledOn(windows: WakeWindow[]): boolean {
+  return windows.filter(w => w.type === 'on').some(nowInWindow)
 }
 
 export function loadWindows(): WakeWindow[] {
@@ -54,16 +59,21 @@ export function saveWindows(windows: WakeWindow[]): void {
 export function useWakeSchedule() {
   const [windows, setWindows] = useState<WakeWindow[]>([])
   const [scheduledOff, setScheduledOff] = useState(false)
+  const [scheduledOn, setScheduledOn]   = useState(false)
 
   useEffect(() => {
     const loaded = loadWindows()
     setWindows(loaded)
     setScheduledOff(isScheduledOff(loaded))
+    setScheduledOn(isScheduledOn(loaded))
   }, [])
 
   // Re-check every 30 seconds
   useEffect(() => {
-    const tick = () => setScheduledOff(isScheduledOff(windows))
+    const tick = () => {
+      setScheduledOff(isScheduledOff(windows))
+      setScheduledOn(isScheduledOn(windows))
+    }
     tick()
     const id = setInterval(tick, 30_000)
     return () => clearInterval(id)
@@ -87,5 +97,5 @@ export function useWakeSchedule() {
     saveWindows(next)
   }, [windows])
 
-  return { windows, scheduledOff, addWindow, removeWindow, updateWindow }
+  return { windows, scheduledOff, scheduledOn, addWindow, removeWindow, updateWindow }
 }
