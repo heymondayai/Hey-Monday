@@ -239,6 +239,14 @@ function correlateNewsToPriceMove(
 
 // ── MAIN EXPORT ───────────────────────────────────────────────────────────────
 
+export type DataSource = 'supabase' | 'api' | 'search' | 'none'
+
+export interface CompilerResult {
+  context: string
+  dataSource: DataSource
+  confidence: 'high' | 'low'
+}
+
 export interface CompilerOptions {
   watchlistTickers: string[]
   passedPrices?: any[]
@@ -253,11 +261,12 @@ export interface CompilerOptions {
 export async function compileContext(
   plan: QueryPlan,
   opts: CompilerOptions,
-): Promise<string> {
+): Promise<CompilerResult> {
   const { watchlistTickers, passedNews, todayStr, message, userPlan, traderType } = opts
 
   const blocks: string[] = []
   const targetSymbols = plan.symbols.length ? plan.symbols : watchlistTickers.slice(0, 8)
+  let dataSource: DataSource = 'none'
 
   // ── CANDLES ────────────────────────────────────────────────────────────────
   if (plan.fetch.includes('candles') && targetSymbols.length) {
@@ -268,6 +277,7 @@ export async function compileContext(
     let candlesBySym: Record<string, EtCandle[]> = {}
 
     if (hasData) {
+      dataSource = 'supabase'
       for (const sym of targetSymbols) {
         const converted = (rows[sym] ?? []).map(candleRowToEt)
         // Filter to the plan's target date
@@ -275,6 +285,7 @@ export async function compileContext(
         candlesBySym[sym] = dateFiltered.length ? dateFiltered : converted
       }
     } else {
+      dataSource = 'api'
       // Supabase empty → fall back to Twelve Data API
       const { data } = await fetchIntraday(targetSymbols, {
         interval: '5min',
@@ -433,7 +444,10 @@ export async function compileContext(
     ? 'USER IS A LONG-TERM INVESTOR: Focus on fundamentals, macro, earnings, longer-term thesis.'
     : 'USER IS A SWING TRADER: Focus on 3-day to 3-month setups, catalysts, sector rotation.'
 
-  return [traderLens, ...blocks].filter(Boolean).join('\n\n')
+  const context = [traderLens, ...blocks].filter(Boolean).join('\n\n')
+  const confidence: CompilerResult['confidence'] = dataSource === 'supabase' ? 'high' : 'low'
+
+  return { context, dataSource, confidence }
 }
 
 // ── OUTPUT FORMAT INSTRUCTIONS ────────────────────────────────────────────────

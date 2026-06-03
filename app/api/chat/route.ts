@@ -139,7 +139,7 @@ export async function POST(req: Request) {
     console.log('[chat] plan:', JSON.stringify(plan))
 
     // ── STAGE 2: COMPILE ─────────────────────────────────────────────────────
-    const compiledContext = await compileContext(plan, {
+    const { context: compiledContext, dataSource, confidence } = await compileContext(plan, {
       watchlistTickers,
       passedPrices: prices,
       passedNews: news,
@@ -154,9 +154,9 @@ export async function POST(req: Request) {
     const useSearch = plan.requiresSearch
     const useSonnet = useSearch && sonnetAllowed
     const model     = useSonnet ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001'
-    const maxTokens   = plan.maxTokens
+    const maxTokens = plan.maxTokens
 
-    console.log(`[chat] model=${model} maxTokens=${maxTokens} search=${useSearch} topic=${plan.topic}`)
+    console.log(`[chat] model=${model} maxTokens=${maxTokens} search=${useSearch} topic=${plan.topic} src=${dataSource}`)
 
     // ── SYSTEM PROMPT ────────────────────────────────────────────────────────
     const outputInstructions = buildOutputInstructions(plan)
@@ -193,14 +193,11 @@ CORE RULES:
 
 ${outputInstructions}`
 
-    // ── CALL MODEL ───────────────────────────────────────────────────────────
+    // ── BUILD REQUEST ─────────────────────────────────────────────────────────
     const historyMessages = (history as { role: string; content: string }[])
       .slice(useSearch ? -4 : -8)
       .filter(m => m.role === 'user' || m.role === 'assistant')
-      .map(m => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content.slice(0, 800),
-      }))
+      .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content.slice(0, 800) }))
 
     const requestBody: any = {
       model,
@@ -208,12 +205,92 @@ ${outputInstructions}`
       system: systemPrompt,
       messages: [...historyMessages, { role: 'user', content: message.slice(0, 1200) }],
     }
+    if (useSearch) requestBody.tools = [{ type: 'web_search_20250305', name: 'web_search' }]
 
-    if (useSearch) {
-      requestBody.tools = [{ type: 'web_search_20250305', name: 'web_search' }]
+    // ── SHARED RESPONSE METADATA ──────────────────────────────────────────────
+    const responseMeta = {
+      plan:      { topic: plan.topic, outputFormat: plan.outputFormat },
+      dataSource: useSearch ? 'search' : dataSource,
+      confidence: useSearch ? 'high' : confidence,
+      sessionDate: plan.timeRange.startDate,
+      sonnetRemaining: getSonnetRemaining(userKey),
     }
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const normalise = (t: string) => t
+      .replace(/\bthis morning\b/gi, 'earlier in the session')
+      .replace(/\bthis afternoon\b/gi, 'later in the session')
+      .replace(/\bthis evening\b/gi, 'later')
+
+    // ── STREAMING PATH (Haiku, no search) ────────────────────────────────────
+    if (!useSearch) {
+      const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY!,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({ ...requestBody, stream: true }),
+      })
+
+      if (!anthropicRes.ok) {
+        const errText = await anthropicRes.text()
+        console.error('[chat] Anthropic error:', anthropicRes.status, errText)
+        return NextResponse.json({ reply: 'Something went wrong — please try again.' }, { status: 500 })
+      }
+
+      const encoder = new TextEncoder()
+      const stream = new ReadableStream({
+        async start(controller) {
+          const reader = anthropicRes.body!.getReader()
+          const decoder = new TextDecoder()
+          let sseBuf = ''
+          let fullText = ''
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+              sseBuf += decoder.decode(value, { stream: true })
+              const lines = sseBuf.split('\n')
+              sseBuf = lines.pop() ?? ''
+
+              for (const line of lines) {
+                if (!line.startsWith('data: ')) continue
+                const json = line.slice(6).trim()
+                if (!json) continue
+                try {
+                  const ev = JSON.parse(json)
+                  if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+                    const chunk = ev.delta.text as string
+                    fullText += chunk
+                    controller.enqueue(encoder.encode(
+                      JSON.stringify({ type: 'text', text: chunk }) + '\n'
+                    ))
+                  }
+                } catch { /* skip malformed SSE */ }
+              }
+            }
+          } finally {
+            controller.enqueue(encoder.encode(
+              JSON.stringify({ type: 'done', fullText: normalise(fullText), ...responseMeta }) + '\n'
+            ))
+            controller.close()
+          }
+        },
+      })
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'application/x-ndjson',
+          'Cache-Control': 'no-cache',
+          'X-Accel-Buffering': 'no',
+        },
+      })
+    }
+
+    // ── NON-STREAMING PATH (Sonnet + search) ─────────────────────────────────
+    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -223,43 +300,34 @@ ${outputInstructions}`
       body: JSON.stringify(requestBody),
     })
 
-    if (!response.ok) {
-      const errText = await response.text()
-      console.error('[chat] Anthropic error:', response.status, errText)
+    if (!anthropicRes.ok) {
+      const errText = await anthropicRes.text()
+      console.error('[chat] Anthropic error:', anthropicRes.status, errText)
       return NextResponse.json({ reply: 'Something went wrong — please try again.' }, { status: 500 })
     }
 
-    if (useSonnet) recordSonnetCall(userKey)
+    recordSonnetCall(userKey)
 
-    const data = await response.json()
+    const data = await anthropicRes.json()
     const reply = data.content
       ?.filter((b: any) => b.type === 'text')
       .map((b: any) => b.text)
       .join('\n')
-      .trim()
+      .trim() ?? ''
 
-    if (!reply) {
-      console.error('[chat] No text block. Types:', data.content?.map((b: any) => b.type))
-      return NextResponse.json({
-        reply: 'No response generated — please try again.',
-        grounded: false,
-        usedResearch: useSearch,
-        sonnetRemaining: getSonnetRemaining(userKey),
-      })
-    }
+    const fullText = normalise(reply)
 
-    // Normalise casual time references
-    const normalised = reply
-      .replace(/\bthis morning\b/gi, 'earlier in the session')
-      .replace(/\bthis afternoon\b/gi, 'later in the session')
-      .replace(/\bthis evening\b/gi, 'later')
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream({
+      start(controller) {
+        if (fullText) controller.enqueue(encoder.encode(JSON.stringify({ type: 'text', text: fullText }) + '\n'))
+        controller.enqueue(encoder.encode(JSON.stringify({ type: 'done', fullText, ...responseMeta }) + '\n'))
+        controller.close()
+      },
+    })
 
-    return NextResponse.json({
-      reply: normalised,
-      grounded: true,
-      usedResearch: useSearch,
-      sonnetRemaining: getSonnetRemaining(userKey),
-      plan: { topic: plan.topic, outputFormat: plan.outputFormat, maxTokens },
+    return new Response(stream, {
+      headers: { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-cache' },
     })
 
   } catch (err: any) {

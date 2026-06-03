@@ -892,7 +892,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [showSettings, setShowSettings] = useState(false)
   const [settingsType, setSettingsType] = useState<string>('swing')
   const [savingType, setSavingType] = useState(false)
-  const [messages, setMessages] = useState<{ role: string; time: string; iso: string; text: string; dbId?: string }[]>([])
+  const [messages, setMessages] = useState<{ role: string; time: string; iso: string; text: string; dbId?: string; meta?: { dataSource: string; confidence: string; topic?: string; sessionDate?: string } }[]>([])
   const [isThinking, setIsThinking] = useState(false)
   const [watchlistNews, setWatchlistNews] = useState<any[]>([])
   const [generalNews, setGeneralNews] = useState<any[]>([])
@@ -1840,41 +1840,79 @@ function startThinkingChimes(): () => void {
     setIsThinking(true)
     stopThinkingChimesRef.current = startThinkingChimes()
     const history = messages.map((m) => ({ role: m.role === 'monday' ? 'assistant' : 'user', content: m.text }))
+    let streamingStarted = false
+    let accumulatedText = ''
+    let finalMeta: any = null
     try {
       const res = await fetch('/api/chat', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    message: text,
-    mode: 'chat',
-    watchlist,
-    traderType,
-    prices: tickerData,
-    history,
-    news: [...watchlistNews, ...generalNews],
-    intraday,
-    marketState,
-    userId: user?.id ?? 'anonymous',
-  }),
-})
-      const data = await res.json(); const reply = data.reply || 'Sorry, I could not get a response.'
-      if (user) await supabase.from('conversations').insert({ user_id: user.id, role: 'assistant', content: reply })
-      const replyIso = new Date().toISOString()
-      setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(replyIso), iso: replyIso, text: reply }])
-      if (speechOn) {
-        const endsWithQuestion = isVoice && /\?\s*$/.test(reply.replace(/\[\/?(gold|green|red)\]/g, '').trim())
-        void speakText(reply, endsWithQuestion ? () => startVoiceRecording() : undefined, 'chat')
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text, mode: 'chat', watchlist, traderType,
+          prices: tickerData, history,
+          news: [...watchlistNews, ...generalNews],
+          intraday, marketState, userId: user?.id ?? 'anonymous',
+        }),
+      })
+      if (!res.ok || !res.body) throw new Error('No stream body')
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const lines = buf.split('\n'); buf = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const ev = JSON.parse(line)
+            if (ev.type === 'text') {
+              if (!streamingStarted) {
+                streamingStarted = true
+                setIsThinking(false)
+                stopThinkingChimesRef.current?.(); stopThinkingChimesRef.current = null
+                const replyIso = new Date().toISOString()
+                setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(replyIso), iso: replyIso, text: '' }])
+              }
+              accumulatedText += ev.text
+              setMessages((prev) => {
+                const updated = [...prev]
+                const last = updated[updated.length - 1]
+                if (last?.role === 'monday') updated[updated.length - 1] = { ...last, text: accumulatedText }
+                return updated
+              })
+            } else if (ev.type === 'done') {
+              finalMeta = ev
+              const finalText = ev.fullText || accumulatedText
+              setMessages((prev) => {
+                const updated = [...prev]
+                const last = updated[updated.length - 1]
+                if (last?.role === 'monday') updated[updated.length - 1] = {
+                  ...last, text: finalText,
+                  meta: { dataSource: ev.dataSource, confidence: ev.confidence, topic: ev.plan?.topic, sessionDate: ev.sessionDate },
+                }
+                return updated
+              })
+            }
+          } catch { /* incomplete JSON line */ }
+        }
+      }
+      const finalReply = finalMeta?.fullText || accumulatedText
+      if (finalReply && user) await supabase.from('conversations').insert({ user_id: user.id, role: 'assistant', content: finalReply })
+      if (speechOn && finalReply) {
+        const endsWithQuestion = isVoice && /\?\s*$/.test(finalReply.replace(/\[\/?(gold|green|red)\]/g, '').trim())
+        void speakText(finalReply, endsWithQuestion ? () => startVoiceRecording() : undefined, 'chat')
       }
     } catch {
       const errorReply = 'Connection error. Please try again.'
       const errIso = new Date().toISOString()
       setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(errIso), iso: errIso, text: errorReply }])
-      if (speechOn) { void speakText(errorReply, undefined, 'chat') }
+      if (speechOn) void speakText(errorReply, undefined, 'chat')
     } finally {
-  stopThinkingChimesRef.current?.()
-  stopThinkingChimesRef.current = null
-  setIsThinking(false)
-}
+      stopThinkingChimesRef.current?.(); stopThinkingChimesRef.current = null
+      setIsThinking(false)
+    }
   }
 
   async function handleSend() {
@@ -2827,8 +2865,13 @@ const visibleDaySummaries = useMemo(() => {
                           <div style={{ maxWidth: '88%', padding: '9px 12px', fontSize: '13px', lineHeight: 1.7, background: m.role === 'monday' ? T.chatAiBg : T.chatUserBg, border: `1px solid ${m.role === 'monday' ? T.chatAiBorder : T.chatUserBorder}`, color: T.text }}>
                             <MondayText text={m.text} />
                           </div>
-                          <div style={{ fontSize: '9px', color: T.text8, fontFamily: "'DM Mono', monospace", cursor: 'default', userSelect: 'none' }}>
+                          <div style={{ fontSize: '9px', color: T.text8, fontFamily: "'DM Mono', monospace", cursor: 'default', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             {m.role === 'monday' ? 'Monday' : 'You'} · <TimeHover iso={m.iso} label={m.time} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} />
+                            {m.role === 'monday' && m.meta?.dataSource && m.meta.dataSource !== 'none' && (
+                              <span style={{ color: m.meta.dataSource === 'supabase' ? T.green : m.meta.dataSource === 'search' ? '#60a5fa' : T.text7, letterSpacing: '0.05em' }}>
+                                · {m.meta.dataSource === 'supabase' ? '●' : m.meta.dataSource === 'search' ? '⌕' : '○'} {m.meta.dataSource}{m.meta.confidence === 'low' ? ' ·  ~' : ''}
+                              </span>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -4001,8 +4044,13 @@ const visibleDaySummaries = useMemo(() => {
                       <div style={{ maxWidth: '92%', padding: '10px 13px', fontSize: '12px', lineHeight: 1.75, background: m.role === 'monday' ? T.chatAiBg : T.chatUserBg, border: `1px solid ${m.role === 'monday' ? T.chatAiBorder : T.chatUserBorder}`, color: m.role === 'monday' ? T.text2 : T.text }}>
                         <MondayText text={m.text} />
                       </div>
-                      <div style={{ fontSize: '9px', color: T.text8, display: 'flex', alignItems: 'center', gap: '7px', fontFamily: "'DM Mono', monospace", cursor: 'default', userSelect: 'none' }}>
+                      <div style={{ fontSize: '9px', color: T.text8, display: 'flex', alignItems: 'center', gap: '4px', fontFamily: "'DM Mono', monospace", cursor: 'default', userSelect: 'none' }}>
                         {m.role === 'monday' ? 'Monday' : 'You'} · <TimeHover iso={m.iso} label={m.time} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} />
+                        {m.role === 'monday' && m.meta?.dataSource && m.meta.dataSource !== 'none' && (
+                          <span style={{ color: m.meta.dataSource === 'supabase' ? T.green : m.meta.dataSource === 'search' ? '#60a5fa' : T.text7, letterSpacing: '0.05em' }}>
+                            · {m.meta.dataSource === 'supabase' ? '●' : m.meta.dataSource === 'search' ? '⌕' : '○'} {m.meta.dataSource}{m.meta.confidence === 'low' ? ' · ~' : ''}
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
