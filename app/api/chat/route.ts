@@ -994,6 +994,7 @@ ${lengthRules}`
         : intent.isCasualConversation ? 50
         : intent.requestType === 'simple' ? 60
         : intent.isOpenEndedWhyQuestion ? 120
+        : intent.mentionsExactTimestamp ? 220
         : intent.requestType === 'briefing' ? 130
         : intent.needsMacro ? 250 : 100
 
