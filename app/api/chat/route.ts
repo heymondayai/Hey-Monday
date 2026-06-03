@@ -139,7 +139,7 @@ export async function POST(req: Request) {
     console.log('[chat] plan:', JSON.stringify(plan))
 
     // ── STAGE 2: COMPILE ─────────────────────────────────────────────────────
-    const { context: compiledContext, dataSource, confidence } = await compileContext(plan, {
+    const { context: compiledContext, badges: compiledBadges, confidence } = await compileContext(plan, {
       watchlistTickers,
       passedPrices: prices,
       passedNews: news,
@@ -156,7 +156,11 @@ export async function POST(req: Request) {
     const model     = useSonnet ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001'
     const maxTokens = plan.maxTokens
 
-    console.log(`[chat] model=${model} maxTokens=${maxTokens} search=${useSearch} topic=${plan.topic} src=${dataSource}`)
+    const badges = useSearch
+      ? [{ label: 'search', source: 'search' as const }, ...compiledBadges]
+      : compiledBadges
+
+    console.log(`[chat] model=${model} maxTokens=${maxTokens} search=${useSearch} topic=${plan.topic} badges=${badges.map(b => b.label).join(',')}`)
 
     // ── SYSTEM PROMPT ────────────────────────────────────────────────────────
     const outputInstructions = buildOutputInstructions(plan)
@@ -171,12 +175,18 @@ Last trading session close: ${lastCloseDayName}
 ${compiledContext}
 
 IDENTITY:
-- Direct, fast, precise. You are a terminal, not a newsletter.
+- Sound like a sharp, knowledgeable trading partner — direct and precise, but human.
 - No markdown, no bullets, no headers.
+- No filler phrases ("Great question!", "Of course!", "Sure!"). Just the answer.
 - Stop the moment the answer is complete.
+- Use natural language. Avoid robotic constructions like "22.2x average session level" — say "volume was running about 22 times the typical rate" instead.
+- Casual greetings get a warm, one-sentence response. Not "Yes?" — something like "Hey — market's open, what do you want to know?" or similar.
 
 CLOSING PRICE DAY RULE:
-Every closing price you state must name the weekday. Use only the name from "Last trading session close" above. Never say "yesterday" or "today". Correct: "TSLA closed at $423.74 on Tuesday." Wrong: "TSLA closed at $423.74."
+- When the user explicitly asks about a specific day's close (e.g. "what did TSLA close at on Tuesday"), answer about that day. Do not substitute the "Last trading session close" label.
+- When volunteering a closing price without the user specifying a day, name the weekday using "Last trading session close" above. Never say "yesterday" or "today".
+- Correct: "TSLA closed at $423.74 on Tuesday." Wrong: "TSLA closed at $423.74."
+- Do not parenthetically correct the user's day-of-week if it is close or a minor slip. If you must clarify, do it naturally, once, at the end.
 
 CORE RULES:
 1. Use only facts in the compiled context or web search results. Never invent prices, events, or timestamps.
@@ -210,7 +220,7 @@ ${outputInstructions}`
     // ── SHARED RESPONSE METADATA ──────────────────────────────────────────────
     const responseMeta = {
       plan:      { topic: plan.topic, outputFormat: plan.outputFormat },
-      dataSource: useSearch ? 'search' : dataSource,
+      badges,
       confidence: useSearch ? 'high' : confidence,
       sessionDate: plan.timeRange.startDate,
       sonnetRemaining: getSonnetRemaining(userKey),

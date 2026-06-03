@@ -103,7 +103,7 @@ TOKEN BUDGET:
 - prose/summary (1-2 sentences): 130
 - candle_list (per-candle detail): 240
 - briefing/detailed: 320
-- news_catalyst with search: 150
+- news_catalyst with search: 280
 
 FETCH RULES — only include what the question actually needs:
 - Candle questions always need "candles"

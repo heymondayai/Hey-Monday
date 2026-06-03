@@ -892,7 +892,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [showSettings, setShowSettings] = useState(false)
   const [settingsType, setSettingsType] = useState<string>('swing')
   const [savingType, setSavingType] = useState(false)
-  const [messages, setMessages] = useState<{ role: string; time: string; iso: string; text: string; dbId?: string; meta?: { dataSource: string; confidence: string; topic?: string; sessionDate?: string } }[]>([])
+  const [messages, setMessages] = useState<{ role: string; time: string; iso: string; text: string; dbId?: string; meta?: { badges?: { label: string; source: string }[]; confidence: string; topic?: string; sessionDate?: string } }[]>([])
   const [isThinking, setIsThinking] = useState(false)
   const [watchlistNews, setWatchlistNews] = useState<any[]>([])
   const [generalNews, setGeneralNews] = useState<any[]>([])
@@ -1890,7 +1890,7 @@ function startThinkingChimes(): () => void {
                 const last = updated[updated.length - 1]
                 if (last?.role === 'monday') updated[updated.length - 1] = {
                   ...last, text: finalText,
-                  meta: { dataSource: ev.dataSource, confidence: ev.confidence, topic: ev.plan?.topic, sessionDate: ev.sessionDate },
+                  meta: { badges: ev.badges ?? [], confidence: ev.confidence, topic: ev.plan?.topic, sessionDate: ev.sessionDate },
                 }
                 return updated
               })
@@ -2867,9 +2867,15 @@ const visibleDaySummaries = useMemo(() => {
                           </div>
                           <div style={{ fontSize: '9px', color: T.text8, fontFamily: "'DM Mono', monospace", cursor: 'default', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             {m.role === 'monday' ? 'Monday' : 'You'} · <TimeHover iso={m.iso} label={m.time} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} />
-                            {m.role === 'monday' && m.meta?.dataSource && m.meta.dataSource !== 'none' && (
-                              <span style={{ color: m.meta.dataSource === 'supabase' ? T.green : m.meta.dataSource === 'search' ? '#60a5fa' : T.text7, letterSpacing: '0.05em' }}>
-                                · {m.meta.dataSource === 'supabase' ? '●' : m.meta.dataSource === 'search' ? '⌕' : '○'} {m.meta.dataSource}{m.meta.confidence === 'low' ? ' ·  ~' : ''}
+                            {m.role === 'monday' && m.meta?.badges && m.meta.badges.length > 0 && (
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '5px', letterSpacing: '0.05em' }}>
+                                <span style={{ color: T.text8 }}>·</span>
+                                {m.meta.badges.map((b, bi) => (
+                                  <span key={bi} style={{ color: (b.label === 'candles' || b.label === 'prices') ? T.green : (b.label === 'news' || b.label === 'search') ? '#60a5fa' : '#f59e0b' }}>
+                                    {b.source === 'search' ? '⌕' : '●'} {b.label}
+                                  </span>
+                                ))}
+                                {m.meta.confidence === 'low' && <span style={{ color: T.text8 }}>· ~</span>}
                               </span>
                             )}
                           </div>
@@ -4046,9 +4052,15 @@ const visibleDaySummaries = useMemo(() => {
                       </div>
                       <div style={{ fontSize: '9px', color: T.text8, display: 'flex', alignItems: 'center', gap: '4px', fontFamily: "'DM Mono', monospace", cursor: 'default', userSelect: 'none' }}>
                         {m.role === 'monday' ? 'Monday' : 'You'} · <TimeHover iso={m.iso} label={m.time} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} />
-                        {m.role === 'monday' && m.meta?.dataSource && m.meta.dataSource !== 'none' && (
-                          <span style={{ color: m.meta.dataSource === 'supabase' ? T.green : m.meta.dataSource === 'search' ? '#60a5fa' : T.text7, letterSpacing: '0.05em' }}>
-                            · {m.meta.dataSource === 'supabase' ? '●' : m.meta.dataSource === 'search' ? '⌕' : '○'} {m.meta.dataSource}{m.meta.confidence === 'low' ? ' · ~' : ''}
+                        {m.role === 'monday' && m.meta?.badges && m.meta.badges.length > 0 && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '5px', letterSpacing: '0.05em' }}>
+                            <span style={{ color: T.text8 }}>·</span>
+                            {m.meta.badges.map((b, bi) => (
+                              <span key={bi} style={{ color: (b.label === 'candles' || b.label === 'prices') ? T.green : (b.label === 'news' || b.label === 'search') ? '#60a5fa' : '#f59e0b' }}>
+                                {b.source === 'search' ? '⌕' : '●'} {b.label}
+                              </span>
+                            ))}
+                            {m.meta.confidence === 'low' && <span style={{ color: T.text8 }}>· ~</span>}
                           </span>
                         )}
                       </div>

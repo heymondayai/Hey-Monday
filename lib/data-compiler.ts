@@ -239,11 +239,16 @@ function correlateNewsToPriceMove(
 
 // ── MAIN EXPORT ───────────────────────────────────────────────────────────────
 
-export type DataSource = 'supabase' | 'api' | 'search' | 'none'
+export type BadgeSource = 'live' | 'api' | 'search'
+
+export interface DataBadge {
+  label: string
+  source: BadgeSource
+}
 
 export interface CompilerResult {
   context: string
-  dataSource: DataSource
+  badges: DataBadge[]
   confidence: 'high' | 'low'
 }
 
@@ -266,7 +271,7 @@ export async function compileContext(
 
   const blocks: string[] = []
   const targetSymbols = plan.symbols.length ? plan.symbols : watchlistTickers.slice(0, 8)
-  let dataSource: DataSource = 'none'
+  const badges: DataBadge[] = []
 
   // ── CANDLES ────────────────────────────────────────────────────────────────
   if (plan.fetch.includes('candles') && targetSymbols.length) {
@@ -277,7 +282,7 @@ export async function compileContext(
     let candlesBySym: Record<string, EtCandle[]> = {}
 
     if (hasData) {
-      dataSource = 'supabase'
+      badges.push({ label: 'candles', source: 'live' })
       for (const sym of targetSymbols) {
         const converted = (rows[sym] ?? []).map(candleRowToEt)
         // Filter to the plan's target date
@@ -285,7 +290,7 @@ export async function compileContext(
         candlesBySym[sym] = dateFiltered.length ? dateFiltered : converted
       }
     } else {
-      dataSource = 'api'
+      badges.push({ label: 'candles', source: 'api' })
       // Supabase empty → fall back to Twelve Data API
       const { data } = await fetchIntraday(targetSymbols, {
         interval: '5min',
@@ -331,6 +336,7 @@ export async function compileContext(
     try {
       const prices = await fetchLivePrices(priceSyms)
       if (prices.length) {
+        badges.push({ label: 'prices', source: 'api' })
         blocks.push(`LIVE PRICES:\n${prices.map((p: any) => `  ${p.sym}: $${p.price} ${p.change ?? ''}`).join('\n')}`)
       }
     } catch { /* non-fatal */ }
@@ -346,6 +352,7 @@ export async function compileContext(
       )
       .slice(0, 10)
     if (relevant.length) {
+      badges.push({ label: 'news', source: 'api' })
       blocks.push(
         `NEWS:\n${relevant.map((n: any, i: number) =>
           `  ${i + 1}. [${n.ticker ?? 'MKT'}] ${n.headline}${n.ai ? ' — ' + n.ai : ''}`
@@ -376,8 +383,8 @@ export async function compileContext(
       }) : Promise.resolve(null),
     ])
 
-    if (economicEvents?.length) blocks.push(formatEconomicCalendar(economicEvents, todayStr))
-    if (macroData)              blocks.push(formatMacroData(macroData))
+    if (economicEvents?.length) { badges.push({ label: 'calendar', source: 'api' }); blocks.push(formatEconomicCalendar(economicEvents, todayStr)) }
+    if (macroData)              { badges.push({ label: 'macro', source: 'api' });    blocks.push(formatMacroData(macroData)) }
     if (marketState?.summary)   blocks.push(`MARKET SNAPSHOT (${marketState.snapshotTime}): ${marketState.summary}`)
     if (marketState?.macroContext?.length) {
       blocks.push(
@@ -395,7 +402,7 @@ export async function compileContext(
     const calToStr = calTo.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
     try {
       const events = await fetchEarningsCalendar(targetSymbols, todayStr, calToStr)
-      if (events?.length) blocks.push(formatEarningsCalendar(events))
+      if (events?.length) { badges.push({ label: 'earnings', source: 'api' }); blocks.push(formatEarningsCalendar(events)) }
     } catch { /* non-fatal */ }
   }
 
@@ -403,7 +410,7 @@ export async function compileContext(
   if (plan.fetch.includes('sector')) {
     try {
       const sectorData = await fetchSectorPerformance()
-      if (sectorData?.length) blocks.push(formatSectorPerformance(sectorData))
+      if (sectorData?.length) { badges.push({ label: 'sectors', source: 'api' }); blocks.push(formatSectorPerformance(sectorData)) }
     } catch { /* non-fatal */ }
   }
 
@@ -420,9 +427,9 @@ export async function compileContext(
       const results = await Promise.all(fetches)
       keys.forEach((k, i) => {
         if (!results[i]) return
-        if (k === 'insider') blocks.push(formatInsiderTransactions(results[i], focusSym))
-        if (k === 'analyst') blocks.push(formatAnalystRatings(results[i], focusSym))
-        if (k === 'options') blocks.push(formatOptionsFlow(results[i], focusSym))
+        if (k === 'insider') { badges.push({ label: 'insider', source: 'api' }); blocks.push(formatInsiderTransactions(results[i], focusSym)) }
+        if (k === 'analyst') { badges.push({ label: 'analyst', source: 'api' }); blocks.push(formatAnalystRatings(results[i], focusSym)) }
+        if (k === 'options') { badges.push({ label: 'options', source: 'api' }); blocks.push(formatOptionsFlow(results[i], focusSym)) }
       })
     }
   }
@@ -433,7 +440,7 @@ export async function compileContext(
       const hist = await buildHistoricalContext(
         message, watchlistTickers, focusSym, userPlan ?? null
       )
-      if (hist) blocks.push(hist)
+      if (hist) { badges.push({ label: 'history', source: 'api' }); blocks.push(hist) }
     } catch { /* non-fatal */ }
   }
 
@@ -445,9 +452,9 @@ export async function compileContext(
     : 'USER IS A SWING TRADER: Focus on 3-day to 3-month setups, catalysts, sector rotation.'
 
   const context = [traderLens, ...blocks].filter(Boolean).join('\n\n')
-  const confidence: CompilerResult['confidence'] = dataSource === 'supabase' ? 'high' : 'low'
+  const confidence: CompilerResult['confidence'] = badges.some(b => b.source === 'live') ? 'high' : 'low'
 
-  return { context, dataSource, confidence }
+  return { context, badges, confidence }
 }
 
 // ── OUTPUT FORMAT INSTRUCTIONS ────────────────────────────────────────────────
@@ -455,6 +462,9 @@ export async function compileContext(
 export function buildOutputInstructions(plan: QueryPlan): string {
   switch (plan.outputFormat) {
     case 'one_liner':
+      if (plan.topic === 'casual') {
+        return 'RESPONSE: One warm, natural sentence. Acknowledge the greeting and invite their question. Reflect the market context if relevant (e.g. market is open, busy session, etc.). Stop.'
+      }
       return 'RESPONSE: One sentence only. Answer the exact question. Stop.'
     case 'candle_list':
       return 'RESPONSE: List the candles exactly as shown in MARKET DATA. No prose intro. No filler. Stop after the last candle.'
