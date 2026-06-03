@@ -735,8 +735,19 @@ export function formatIntradayContext(data: Record<string, Candle[]>): string {
     return 'INTRADAY DATA: No candles loaded this session. Do not fabricate prices or moves — use available news, macro context, and web search to answer intraday questions instead.'
   }
 
+  // Collect the distinct ET dates represented across all candles so we can
+  // stamp the header — the model must not guess what day the candles belong to.
+  const allDates = new Set<string>()
+  for (const candles of Object.values(data)) {
+    for (const c of candles) {
+      const d = candleDatePart(c.datetime)
+      if (d) allDates.add(d)
+    }
+  }
+  const dateLabel = allDates.size ? ` — session date(s): ${[...allDates].sort().join(', ')}` : ''
+
   const lines = [
-    'INTRADAY 5-MIN CANDLES — oldest at top. Use these exact candles only.',
+    `INTRADAY 5-MIN CANDLES${dateLabel} — oldest at top. These candles ARE loaded. Use these exact candles only. Do NOT claim candles are unavailable if this block is present.`,
     'For exact-time questions, use the 5-minute candle interval that contains the ET timestamp, not the nearest later candle.',
     'For move questions, analyze the broader move window, not just one candle in isolation.',
   ]
@@ -746,6 +757,7 @@ export function formatIntradayContext(data: Record<string, Candle[]>): string {
 
     const first = candles[0]
     const last = candles[candles.length - 1]
+    const sessionDate = candleDatePart(first.datetime) ?? ''
     const firstOpen = parseFloat(first.open)
     const lastClose = parseFloat(last.close)
     const movePct = firstOpen !== 0 ? ((lastClose - firstOpen) / firstOpen) * 100 : 0
@@ -753,7 +765,7 @@ export function formatIntradayContext(data: Record<string, Candle[]>): string {
     const hi = Math.max(...candles.map((c) => parseFloat(c.high)))
 
     lines.push(
-      `\n${sym} coverage: ${candleEtLabel(first.datetime)} to ${candleEtLabel(last.datetime)} ET | ` +
+      `\n${sym} ${sessionDate} coverage: ${candleEtLabel(first.datetime)} to ${candleEtLabel(last.datetime)} ET | ` +
       `window ${movePct >= 0 ? '+' : ''}${movePct.toFixed(2)}% | range ${lo.toFixed(2)}-${hi.toFixed(2)}`
     )
 
