@@ -34,8 +34,9 @@ export async function GET(req: NextRequest) {
   }
 
   // Skip outside trading hours (pre-market opens 4 AM ET)
+  const force = req.nextUrl.searchParams.get('force') === 'true'
   const { session } = getNyseEquitiesStatus()
-  if (session === 'closed') {
+  if (session === 'closed' && !force) {
     return NextResponse.json({ skipped: true, reason: 'market closed' })
   }
 
