@@ -17,7 +17,7 @@ function etDatetimeToISO(dt: string): string {
     new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/New_York',
       hour: 'numeric',
-      hour12: false,
+      hourCycle: 'h23',
     }).format(withEDT),
     10,
   )
