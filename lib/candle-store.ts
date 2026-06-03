@@ -22,6 +22,29 @@ export async function upsertCandles(candles: CandleRow[]): Promise<void> {
   if (error) console.error('[candle-store] upsert:', error.message)
 }
 
+// Fetch the last `minutes` worth of candles for multiple tickers in one query, oldest-first.
+export async function getRecentCandlesMulti(
+  tickers: string[],
+  minutes = 480,
+): Promise<Record<string, CandleRow[]>> {
+  if (!tickers.length) return {}
+  const supabase = createAdminSupabaseClient()
+  const since = new Date(Date.now() - minutes * 60_000).toISOString()
+  const { data, error } = await supabase
+    .from('candles_1m')
+    .select('ticker,ts,open,high,low,close,volume,vwap')
+    .in('ticker', tickers)
+    .gte('ts', since)
+    .order('ts', { ascending: true })
+  if (error) console.error('[candle-store] getRecentCandlesMulti:', error.message)
+  const result: Record<string, CandleRow[]> = {}
+  for (const t of tickers) result[t] = []
+  for (const row of (data ?? []) as CandleRow[]) {
+    if (result[row.ticker]) result[row.ticker].push(row)
+  }
+  return result
+}
+
 // Fetch the last `minutes` worth of candles for a single ticker, oldest-first.
 export async function getRecentCandles(ticker: string, minutes = 30): Promise<CandleRow[]> {
   const supabase = createAdminSupabaseClient()

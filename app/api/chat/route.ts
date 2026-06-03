@@ -25,6 +25,7 @@ import { buildMarketState, MarketStateSnapshot } from '@/lib/market-state'
 import { getNyseEquitiesStatus } from '@/lib/market-hours'
 import { buildHistoricalContext } from '@/lib/context-builder'
 import { createAdminSupabaseClient } from '@/lib/supabase-admin'
+import { getRecentCandlesMulti, CandleRow } from '@/lib/candle-store'
 
 // ── SONNET DAILY CAP ─────────────────────────────────────────────────────────
 const sonnetUsage = new Map<string, { count: number; dateET: string }>()
@@ -171,6 +172,63 @@ function parseExplicitEtDate(message: string): string | null {
   if (!month) return null
 
   return `${year}-${month}-${day}`
+}
+
+// Convert a stored CandleRow (UTC timestamptz) to the Candle format expected by
+// computeSignals / formatIntradayContext (ET local datetime string).
+function candleRowToApiFormat(row: CandleRow): { datetime: string; open: string; high: string; low: string; close: string; volume: string } {
+  const d = new Date(row.ts)
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  }).formatToParts(d)
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? '00'
+  return {
+    datetime: `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`,
+    open:   row.open.toString(),
+    high:   row.high.toString(),
+    low:    row.low.toString(),
+    close:  row.close.toString(),
+    volume: row.volume.toString(),
+  }
+}
+
+// Fetch intraday candles: Supabase first (fast, free), Twelve Data API as fallback.
+// For historical date requests skip Supabase — the table only keeps ~95 days of 5-min bars.
+async function fetchCandlesForChat(
+  tickers: string[],
+  isHistorical: boolean,
+  startDate?: string,
+  endDate?: string,
+): Promise<{ data: Record<string, ReturnType<typeof candleRowToApiFormat>[]>; debug: string[] }> {
+  if (!isHistorical) {
+    // Pull the last 16 hours (covers pre-market + full session + after-hours)
+    const rows = await getRecentCandlesMulti(tickers, 16 * 60)
+    const hasData = tickers.some(t => (rows[t]?.length ?? 0) >= 3)
+    if (hasData) {
+      const data: Record<string, ReturnType<typeof candleRowToApiFormat>[]> = {}
+      const debug: string[] = []
+      for (const t of tickers) {
+        const converted = (rows[t] ?? []).map(candleRowToApiFormat)
+        if (converted.length) {
+          data[t] = converted
+          debug.push(`${t}: ${converted.length} candles (DB)`)
+        } else {
+          debug.push(`${t}: no data (DB)`)
+        }
+      }
+      return { data, debug }
+    }
+  }
+  // Fall back to Twelve Data API
+  return fetchIntraday(tickers, {
+    interval: '5min',
+    outputsize: isHistorical ? 500 : 100,
+    startDate,
+    endDate,
+  })
 }
 
 function parseHistoricalIntradayRequest(message: string): IntradayDateRequest {
@@ -628,12 +686,12 @@ const userPlan = await (async (): Promise<'core' | 'edge' | null> => {
 })()
 
 const [intradayResult, economicEvents, earningsEvents, macroData, sectorData, historicalContext] = await Promise.all([
-  fetchIntraday(intradaySymbols, {
-    interval: '5min',
-    outputsize: intradayDateRequest.isHistorical ? 500 : 100,
-    startDate: intradayDateRequest.startDate,
-    endDate: intradayDateRequest.endDate,
-  }),
+  fetchCandlesForChat(
+    intradaySymbols,
+    intradayDateRequest.isHistorical,
+    intradayDateRequest.startDate,
+    intradayDateRequest.endDate,
+  ),
   fetchEconomicCalendar(todayStr, calendarTo),
   fetchEarningsCalendar(intradaySymbols, todayStr, calendarTo),
   fetchMacroData(),
