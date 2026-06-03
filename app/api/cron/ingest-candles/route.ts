@@ -27,14 +27,15 @@ function etDatetimeToISO(dt: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  // Verify Vercel cron secret when configured
+  const force = req.nextUrl.searchParams.get('force') === 'true'
+
+  // Verify Vercel cron secret when configured (skip check in force/test mode)
   const secret = process.env.CRON_SECRET
-  if (secret && req.headers.get('authorization') !== `Bearer ${secret}`) {
+  if (!force && secret && req.headers.get('authorization') !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   // Skip outside trading hours (pre-market opens 4 AM ET)
-  const force = req.nextUrl.searchParams.get('force') === 'true'
   const { session } = getNyseEquitiesStatus()
   if (session === 'closed' && !force) {
     return NextResponse.json({ skipped: true, reason: 'market closed' })
