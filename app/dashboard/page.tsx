@@ -2871,7 +2871,7 @@ const visibleDaySummaries = useMemo(() => {
                               <span style={{ display: 'flex', alignItems: 'center', gap: '5px', letterSpacing: '0.05em' }}>
                                 <span style={{ color: T.text8 }}>·</span>
                                 {m.meta.badges.map((b, bi) => (
-                                  <span key={bi} style={{ color: (b.label === 'candles' || b.label === 'prices') ? T.green : (b.label === 'news' || b.label === 'search') ? '#60a5fa' : '#f59e0b' }}>
+                                  <span key={bi} style={{ color: (b.label === 'candle data' || b.label === 'prices') ? T.green : (b.label === 'news' || b.label === 'search') ? '#60a5fa' : '#f59e0b' }}>
                                     {b.source === 'search' ? '⌕' : '●'} {b.label}
                                   </span>
                                 ))}
@@ -4056,7 +4056,7 @@ const visibleDaySummaries = useMemo(() => {
                           <span style={{ display: 'flex', alignItems: 'center', gap: '5px', letterSpacing: '0.05em' }}>
                             <span style={{ color: T.text8 }}>·</span>
                             {m.meta.badges.map((b, bi) => (
-                              <span key={bi} style={{ color: (b.label === 'candles' || b.label === 'prices') ? T.green : (b.label === 'news' || b.label === 'search') ? '#60a5fa' : '#f59e0b' }}>
+                              <span key={bi} style={{ color: (b.label === 'candle data' || b.label === 'prices') ? T.green : (b.label === 'news' || b.label === 'search') ? '#60a5fa' : '#f59e0b' }}>
                                 {b.source === 'search' ? '⌕' : '●'} {b.label}
                               </span>
                             ))}

@@ -282,7 +282,7 @@ export async function compileContext(
     let candlesBySym: Record<string, EtCandle[]> = {}
 
     if (hasData) {
-      badges.push({ label: 'candles', source: 'live' })
+      badges.push({ label: 'candle data', source: 'live' })
       for (const sym of targetSymbols) {
         const converted = (rows[sym] ?? []).map(candleRowToEt)
         // Filter to the plan's target date
@@ -290,7 +290,7 @@ export async function compileContext(
         candlesBySym[sym] = dateFiltered.length ? dateFiltered : converted
       }
     } else {
-      badges.push({ label: 'candles', source: 'api' })
+      badges.push({ label: 'candle data', source: 'api' })
       // Supabase empty → fall back to Twelve Data API
       const { data } = await fetchIntraday(targetSymbols, {
         interval: '5min',
