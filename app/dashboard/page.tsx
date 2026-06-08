@@ -1062,8 +1062,8 @@ useEffect(() => { scheduledOffRef.current = scheduledOff }, [scheduledOff])
 useEffect(() => { scheduledOnRef.current  = scheduledOn  }, [scheduledOn])
 
 useEffect(() => {
-  // Don't run until user prefs have loaded from Supabase
-  if (!user) return
+  // Wait until user is set AND preferences are loaded from Supabase
+  if (!user || !prefsLoaded) return
   scheduleEffectReadyRef.current = true
 
   // Priority: scheduledOff > scheduledOn > user preference
@@ -1075,6 +1075,7 @@ useEffect(() => {
 
   if (scheduledOn) {
     if (!wakeManualOverride) setWakeOn(true)
+    if (!speechManualOverride) setSpeechOn(true)
     return
   }
 
@@ -1082,7 +1083,7 @@ useEffect(() => {
   if (!wakeManualOverride) setWakeOn(wakePreferredOnRef.current)
   if (!speechManualOverride) setSpeechOn(speechPreferredOnRef.current)
 // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [scheduledOff, scheduledOn, user, wakeManualOverride, speechManualOverride])
+}, [scheduledOff, scheduledOn, user, prefsLoaded, wakeManualOverride, speechManualOverride])
 
 useEffect(() => {
   if (!wakeManualOverride) return
@@ -1242,13 +1243,9 @@ useEffect(() => {
       setUserPlan(coreIds.includes(priceId) ? 'core' : edgeIds.includes(priceId) ? 'edge' : null)
       if (!profile?.trader_type) { router.push('/onboarding'); return }
       if (profile?.trader_type) { setTraderType(profile.trader_type); setSettingsType(profile.trader_type) }
-      const initialWakeOn = profile?.wake_word_enabled !== false
-setWakeOn(initialWakeOn)
-wakePreferredOnRef.current = initialWakeOn
-      const initialSpeechOn = profile?.voice_replies_enabled !== false
-      setSpeechOn(initialSpeechOn)
-      speechPreferredOnRef.current = initialSpeechOn
-      setPrefsLoaded(true)
+      wakePreferredOnRef.current   = profile?.wake_word_enabled !== false
+      speechPreferredOnRef.current = profile?.voice_replies_enabled !== false
+      setPrefsLoaded(true)  // schedule effect re-runs here and applies correct state
       const { data: wlRows } = await supabase.from('watchlist').select('ticker, company_name, added_at').eq('user_id', user.id).order('added_at', { ascending: true })
       let resolvedWl: typeof watchlist
       if (wlRows?.length) {
