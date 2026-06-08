@@ -1845,6 +1845,7 @@ function startThinkingChimes(): () => void {
     let streamingStarted = false
     let accumulatedText = ''
     let finalMeta: any = null
+    let replyClientIso = ''
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -1874,8 +1875,8 @@ function startThinkingChimes(): () => void {
                 streamingStarted = true
                 setIsThinking(false)
                 stopThinkingChimesRef.current?.(); stopThinkingChimesRef.current = null
-                const replyIso = new Date().toISOString()
-                setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(replyIso), iso: replyIso, text: '' }])
+                replyClientIso = new Date().toISOString()
+                setMessages((prev) => [...prev, { role: 'monday', time: formatSummaryTimeOnly(replyClientIso), iso: replyClientIso, text: '' }])
               }
               accumulatedText += ev.text
               setMessages((prev) => {
@@ -1908,7 +1909,20 @@ function startThinkingChimes(): () => void {
         }
       }
       const finalReply = finalMeta?.fullText || accumulatedText
-      if (finalReply && user) await supabase.from('conversations').insert({ user_id: user.id, role: 'assistant', content: finalReply })
+      if (finalReply && user) {
+        const { data: inserted } = await supabase.from('conversations').insert({ user_id: user.id, role: 'assistant', content: finalReply }).select('id, created_at').single()
+        if (inserted && replyClientIso) {
+          setMessages(prev => prev.map(m => m.iso === replyClientIso ? { ...m, iso: inserted.created_at, time: formatSummaryTimeOnly(inserted.created_at), dbId: inserted.id } : m))
+          try {
+            const stored = JSON.parse(localStorage.getItem(MSG_BADGES_KEY) ?? '{}')
+            if (stored[replyClientIso]) {
+              stored[inserted.created_at] = stored[replyClientIso]
+              delete stored[replyClientIso]
+              localStorage.setItem(MSG_BADGES_KEY, JSON.stringify(stored))
+            }
+          } catch {}
+        }
+      }
       if (speechOn && finalReply) {
         const endsWithQuestion = isVoice && /\?\s*$/.test(finalReply.replace(/\[\/?(gold|green|red)\]/g, '').trim())
         void speakText(finalReply, endsWithQuestion ? () => startVoiceRecording() : undefined, 'chat')
