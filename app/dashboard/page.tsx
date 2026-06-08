@@ -2961,6 +2961,7 @@ const visibleDaySummaries = useMemo(() => {
                     <span style={{ fontSize: '10px', color: T.text6, fontFamily: "'DM Mono', monospace", letterSpacing: '0.1em', textTransform: 'uppercase' }}>Wake Schedule</span>
                     {windows.length > 0 && <span style={{ marginLeft: 'auto', fontSize: '10px', color: T.gold }}>{windows.length}</span>}
                     {scheduledOff && <span style={{ fontSize: '9px', color: T.red, fontFamily: "'DM Mono', monospace", background: T.redFaint, border: `1px solid ${T.redBorder}`, padding: '1px 5px' }}>OFF</span>}
+                    {scheduledOn && !scheduledOff && <span style={{ fontSize: '9px', color: T.green, fontFamily: "'DM Mono', monospace", background: T.greenFaint3, border: `1px solid ${T.greenBorder}`, padding: '1px 5px' }}>ON</span>}
                   </div>
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
@@ -3252,6 +3253,7 @@ const visibleDaySummaries = useMemo(() => {
                   {windows.length > 0 ? `${windows.length} schedule${windows.length > 1 ? 's' : ''}` : 'Schedule'}
                 </span>
                 {scheduledOff && <span style={{ fontSize: '9px', color: T.red, fontFamily: "'DM Mono', monospace", background: T.redFaint, border: `1px solid ${T.redBorder}`, padding: '1px 5px' }}>OFF</span>}
+                {scheduledOn && !scheduledOff && <span style={{ fontSize: '9px', color: T.green, fontFamily: "'DM Mono', monospace", background: T.greenFaint3, border: `1px solid ${T.greenBorder}`, padding: '1px 5px' }}>ON</span>}
               </div>
 
               <div onClick={() => router.push('/dashboard/settings')} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginTop: '10px', padding: '5px 11px', background: activeTrader.bgColor, border: `1px solid ${activeTrader.borderColor}`, cursor: 'pointer' }}>
