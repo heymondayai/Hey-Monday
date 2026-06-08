@@ -29,7 +29,8 @@ const SAMPLE_RATE       = 16000
 const CHUNK_SAMPLES     = 1280          // 80ms per chunk
 const MEL_FRAMES_NEEDED = 76            // embedding model input window
 const MEL_STEP          = 4             // slide mel buffer by this many frames
-const DETECTION_THRESHOLD = 0.16       // score above this = detected
+const DETECTION_THRESHOLD = 0.22       // smoothed score above this = detected
+const SCORE_SMOOTH_WINDOW = 3          // rolling average window size
 const COOLDOWN_MS       = 2000          // prevent re-firing for 2 seconds
 
 interface UseWakeWordOptions {
@@ -185,9 +186,15 @@ export function useWakeWord({
           const wakeResult = await wake.run({ [wake.inputNames[0]]: wakeInput })
           const score = (wakeResult[wake.outputNames[0]].data as Float32Array)[0]
 
-          console.log('[WakeWord] score:', score.toFixed(4))
+          scoreHistoryRef.current.push(score)
+          if (scoreHistoryRef.current.length > SCORE_SMOOTH_WINDOW) {
+            scoreHistoryRef.current = scoreHistoryRef.current.slice(-SCORE_SMOOTH_WINDOW)
+          }
+          const smoothedScore = scoreHistoryRef.current.reduce((a, b) => a + b, 0) / scoreHistoryRef.current.length
 
-          if (score > threshold) {
+          console.log('[WakeWord] score:', score.toFixed(4), 'smoothed:', smoothedScore.toFixed(4))
+
+          if (smoothedScore > threshold) {
   const now = Date.now()
   if (now - lastDetectRef.current > COOLDOWN_MS) {
     lastDetectRef.current = now
