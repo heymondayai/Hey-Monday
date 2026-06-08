@@ -1817,6 +1817,8 @@ function startThinkingChimes(): () => void {
         }
       }
 
+      playChime('alert')
+      await new Promise(res => setTimeout(res, 420))
       recorder.start()
       setIsRecordingVoice(true)
     } catch { setIsRecordingVoice(false) }
