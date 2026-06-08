@@ -1791,7 +1791,6 @@ function startThinkingChimes(): () => void {
         // keeps running when the tab is in the background
         setTimeout(checkSilence, 100)
       }
-      setTimeout(checkSilence, 100)
       // ──────────────────────────────────────────────────────────────────────
 
       recorder.ondataavailable = (event) => { if (event.data.size > 0) recordedChunksRef.current.push(event.data) }
@@ -1821,6 +1820,7 @@ function startThinkingChimes(): () => void {
       await new Promise(res => setTimeout(res, 420))
       recorder.start()
       setIsRecordingVoice(true)
+      setTimeout(checkSilence, 100)
     } catch { setIsRecordingVoice(false) }
   }
 
