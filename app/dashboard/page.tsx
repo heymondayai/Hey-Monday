@@ -239,6 +239,7 @@ const LIGHT = {
 type PanelId = 'pulse' | 'events' | 'news' | 'summaries' | 'alerts' | 'tradingview' | 'chat'
 type LayoutId = '2x2' | 'focus' | '2col' | '2row'
 const DASHBOARD_PREFS_KEY = 'heymonday_dashboard_prefs_v1'
+const MSG_BADGES_KEY = 'heymonday_msg_badges'
 
 type DashboardPrefs = {
   isDark: boolean
@@ -1264,7 +1265,8 @@ useEffect(() => {
       await loadAlertFirings(user.id)
       const midnightUTC = getStartOfTodayETUtcIso()
       const { data: convos } = await supabase.from('conversations').select('id, role, content, created_at').eq('user_id', user.id).gte('created_at', midnightUTC).order('created_at', { ascending: true })
-      setMessages((convos ?? []).map((c) => ({ role: c.role === 'assistant' ? 'monday' : 'user', time: formatSummaryTimeOnly(c.created_at), iso: c.created_at, text: c.content, dbId: c.id })))
+      const storedBadges = JSON.parse(localStorage.getItem(MSG_BADGES_KEY) ?? '{}')
+      setMessages((convos ?? []).map((c) => ({ role: c.role === 'assistant' ? 'monday' : 'user', time: formatSummaryTimeOnly(c.created_at), iso: c.created_at, text: c.content, dbId: c.id, meta: storedBadges[c.created_at] ?? undefined })))
       await doFetchPrices(resolvedWl, profile?.trader_type ?? traderType, true)
       fetchBothNews(resolvedWl.map((w) => w.ticker))
       await loadScheduledSummariesFromSupabase(user.id)
@@ -1886,9 +1888,16 @@ function startThinkingChimes(): () => void {
               setMessages((prev) => {
                 const updated = [...prev]
                 const last = updated[updated.length - 1]
-                if (last?.role === 'monday') updated[updated.length - 1] = {
-                  ...last, text: finalText,
-                  meta: { badges: ev.badges ?? [], confidence: ev.confidence, topic: ev.plan?.topic, sessionDate: ev.sessionDate },
+                if (last?.role === 'monday') {
+                  const meta = { badges: ev.badges ?? [], confidence: ev.confidence, topic: ev.plan?.topic, sessionDate: ev.sessionDate }
+                  updated[updated.length - 1] = { ...last, text: finalText, meta }
+                  if (last.iso && ev.badges?.length) {
+                    try {
+                      const stored = JSON.parse(localStorage.getItem(MSG_BADGES_KEY) ?? '{}')
+                      stored[last.iso] = meta
+                      localStorage.setItem(MSG_BADGES_KEY, JSON.stringify(stored))
+                    } catch {}
+                  }
                 }
                 return updated
               })
@@ -2878,7 +2887,7 @@ const visibleDaySummaries = useMemo(() => {
                                   {m.meta.badges.length > 1 && <span style={{ color: T.text7 }}> +{m.meta.badges.length - 1}</span>}
                                 </span>
                                 {hoveredBadge === m.iso && m.meta.badges.length > 1 && (
-                                  <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, background: T.cardBg, border: `1px solid ${T.borderFaint}`, padding: '5px 10px', display: 'flex', gap: '10px', whiteSpace: 'nowrap', zIndex: 100, fontSize: '9px', fontFamily: "'DM Mono', monospace" }}>
+                                  <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, background: T.cardBg, border: `1px solid ${T.borderFaint}`, padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: '5px', whiteSpace: 'nowrap', zIndex: 100, fontSize: '9px', fontFamily: "'DM Mono', monospace" }}>
                                     {m.meta.badges.map((b, bi) => (
                                       <span key={bi} style={{ color: (b.label === 'candle data' || b.label === 'prices') ? T.green : (b.label === 'news' || b.label === 'search') ? '#60a5fa' : '#f59e0b' }}>
                                         {b.source === 'search' ? '⌕' : '●'} {b.label}
@@ -4077,7 +4086,7 @@ const visibleDaySummaries = useMemo(() => {
                               {m.meta.badges.length > 1 && <span style={{ color: T.text7 }}> +{m.meta.badges.length - 1}</span>}
                             </span>
                             {hoveredBadge === m.iso && m.meta.badges.length > 1 && (
-                              <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, background: T.cardBg, border: `1px solid ${T.borderFaint}`, padding: '5px 10px', display: 'flex', gap: '10px', whiteSpace: 'nowrap', zIndex: 100, fontSize: '9px', fontFamily: "'DM Mono', monospace" }}>
+                              <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, background: T.cardBg, border: `1px solid ${T.borderFaint}`, padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: '5px', whiteSpace: 'nowrap', zIndex: 100, fontSize: '9px', fontFamily: "'DM Mono', monospace" }}>
                                 {m.meta.badges.map((b, bi) => (
                                   <span key={bi} style={{ color: (b.label === 'candle data' || b.label === 'prices') ? T.green : (b.label === 'news' || b.label === 'search') ? '#60a5fa' : '#f59e0b' }}>
                                     {b.source === 'search' ? '⌕' : '●'} {b.label}
