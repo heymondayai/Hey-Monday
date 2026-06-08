@@ -885,6 +885,9 @@ function handleTouchEnd(e: React.TouchEvent) {
   const ttsSpeechDurationRef = useRef<number>(0)
   const autoSendRef = useRef<string | null>(null)
   const stopThinkingChimesRef = useRef<(() => void) | null>(null)
+  const streamSentenceBufferRef = useRef('')
+  const ttsChainRef = useRef<Promise<void>>(Promise.resolve())
+  const ttsStreamCancelledRef = useRef(false)
 
   const [tickerData, setTickerData] = useState<{ sym: string; price?: string; change?: string; up?: boolean }[]>(DEFAULT_TICKER_DATA)
   const [watchlist, setWatchlist] = useState<{ ticker: string; bars: number[]; price?: string; change?: string; up?: boolean }[]>(DEFAULT_WATCHLIST_TICKERS.map((ticker) => makeWlItem(ticker)))
@@ -1750,6 +1753,67 @@ function startThinkingChimes(): () => void {
     } catch { setIsSpeaking(false) }
   }
 
+  async function fetchTTSBlob(text: string): Promise<Blob | null> {
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, watchlist: watchlist.map((w: any) => ({ ticker: w.ticker, company_name: w.company_name })) }),
+      })
+      if (!res.ok) return null
+      return await res.blob()
+    } catch { return null }
+  }
+
+  function playTTSBlob(blob: Blob, onEnded?: () => void): Promise<void> {
+    return new Promise(async (resolve) => {
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      audioRef.current = audio
+      const actx = ttsAudioContextRef.current
+      if (actx && actx.state !== 'closed') {
+        if (actx.state === 'suspended') await actx.resume()
+        const mediaSource = actx.createMediaElementSource(audio)
+        mediaSource.connect(actx.destination)
+      }
+      ttsSpeechStartRef.current = Date.now()
+      setIsSpeaking(true)
+      setSpeakingContext('chat')
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: 'Monday', artist: 'Hey Monday' })
+        navigator.mediaSession.playbackState = 'playing'
+      }
+      audio.onended = () => {
+        URL.revokeObjectURL(url)
+        ttsSourceNodeRef.current = null
+        setIsSpeaking(false)
+        setSpeakingContext(null)
+        if (audioRef.current === audio) audioRef.current = null
+        if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none'
+        onEnded?.()
+        resolve()
+      }
+      audio.onerror = () => {
+        URL.revokeObjectURL(url)
+        setIsSpeaking(false)
+        setSpeakingContext(null)
+        if (audioRef.current === audio) audioRef.current = null
+        resolve()
+      }
+      try { await audio.play(); ttsSpeechDurationRef.current = audio.duration ?? 0 } catch { resolve() }
+    })
+  }
+
+  function enqueueSentenceTTS(text: string, onEnded?: () => void) {
+    const blobPromise = fetchTTSBlob(text)
+    ttsChainRef.current = ttsChainRef.current.then(async () => {
+      if (ttsStreamCancelledRef.current || !speechOnRef.current) return
+      const blob = await blobPromise
+      if (!blob || ttsStreamCancelledRef.current || !speechOnRef.current) return
+      await playTTSBlob(blob, onEnded)
+    })
+  }
+
   async function startVoiceRecording() {
     try {
       if (isRecordingVoice) return
@@ -1840,6 +1904,11 @@ function startThinkingChimes(): () => void {
     if (user) await supabase.from('conversations').insert({ user_id: user.id, role: 'user', content: text })
     setMessages((prev) => [...prev, { role: 'user', time: timeStr, iso: nowIso, text }])
     setIsThinking(true)
+    ttsStreamCancelledRef.current = true
+    stopCurrentAudio()
+    ttsChainRef.current = Promise.resolve()
+    ttsStreamCancelledRef.current = false
+    streamSentenceBufferRef.current = ''
     stopThinkingChimesRef.current = startThinkingChimes()
     const history = messages.map((m) => ({ role: m.role === 'monday' ? 'assistant' : 'user', content: m.text }))
     let streamingStarted = false
@@ -1885,6 +1954,16 @@ function startThinkingChimes(): () => void {
                 if (last?.role === 'monday') updated[updated.length - 1] = { ...last, text: accumulatedText }
                 return updated
               })
+              if (speechOnRef.current) {
+                streamSentenceBufferRef.current += ev.text
+                let boundary = streamSentenceBufferRef.current.search(/[.!?](?=\s)/)
+                while (boundary !== -1) {
+                  const sentence = streamSentenceBufferRef.current.slice(0, boundary + 1).trim()
+                  streamSentenceBufferRef.current = streamSentenceBufferRef.current.slice(boundary + 2)
+                  if (sentence.length >= 8) enqueueSentenceTTS(sentence)
+                  boundary = streamSentenceBufferRef.current.search(/[.!?](?=\s)/)
+                }
+              }
             } else if (ev.type === 'done') {
               finalMeta = ev
               const finalText = ev.fullText || accumulatedText
@@ -1923,9 +2002,15 @@ function startThinkingChimes(): () => void {
           } catch {}
         }
       }
-      if (speechOn && finalReply) {
+      if (speechOnRef.current && finalReply) {
         const endsWithQuestion = isVoice && /\?\s*$/.test(finalReply.replace(/\[\/?(gold|green|red)\]/g, '').trim())
-        void speakText(finalReply, endsWithQuestion ? () => startVoiceRecording() : undefined, 'chat')
+        const remaining = streamSentenceBufferRef.current.trim()
+        streamSentenceBufferRef.current = ''
+        if (remaining.length >= 3) {
+          enqueueSentenceTTS(remaining, endsWithQuestion ? () => startVoiceRecording() : undefined)
+        } else if (endsWithQuestion) {
+          ttsChainRef.current = ttsChainRef.current.then(() => { if (!ttsStreamCancelledRef.current) startVoiceRecording() })
+        }
       }
     } catch {
       const errorReply = 'Connection error. Please try again.'
