@@ -1003,6 +1003,7 @@ function handleTouchEnd(e: React.TouchEvent) {
   }
 
   const [showWakeSchedule, setShowWakeSchedule] = useState(false)
+  const [hoveredBadge, setHoveredBadge] = useState<string | null>(null)
 const wakeOverrideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 const lastWakeDetectionRef = useRef<number>(0)
 const wakePreferredOnRef = useRef(true)
@@ -2865,14 +2866,26 @@ const visibleDaySummaries = useMemo(() => {
                           <div style={{ fontSize: '9px', color: T.text8, fontFamily: "'DM Mono', monospace", cursor: 'default', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             {m.role === 'monday' ? 'Monday' : 'You'} · <TimeHover iso={m.iso} label={m.time} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} />
                             {m.role === 'monday' && m.meta?.badges && m.meta.badges.length > 0 && (
-                              <span style={{ display: 'flex', alignItems: 'center', gap: '5px', letterSpacing: '0.05em' }}>
-                                <span style={{ color: T.text8 }}>·</span>
-                                {m.meta.badges.map((b, bi) => (
-                                  <span key={bi} style={{ color: (b.label === 'candle data' || b.label === 'prices') ? T.green : (b.label === 'news' || b.label === 'search') ? '#60a5fa' : '#f59e0b' }}>
-                                    {b.source === 'search' ? '⌕' : '●'} {b.label}
-                                  </span>
-                                ))}
-                                {m.meta.confidence === 'low' && <span style={{ color: T.text8 }}>· ~</span>}
+                              <span
+                                style={{ position: 'relative', letterSpacing: '0.05em', cursor: 'default' }}
+                                onMouseEnter={() => setHoveredBadge(m.iso)}
+                                onMouseLeave={() => setHoveredBadge(null)}
+                              >
+                                {' '}<span style={{ color: T.text8 }}>·</span>{' '}
+                                <span style={{ color: m.meta.badges.some(b => b.source === 'search') ? '#60a5fa' : m.meta.badges.some(b => b.label === 'candle data') ? T.green : '#f59e0b' }}>
+                                  {m.meta.badges.some(b => b.source === 'search') ? '⌕' : '●'}{' '}
+                                  {(m.meta.badges.find(b => b.source === 'search') ?? m.meta.badges.find(b => b.label === 'candle data') ?? m.meta.badges[0]).label}
+                                  {m.meta.badges.length > 1 && <span style={{ color: T.text7 }}> +{m.meta.badges.length - 1}</span>}
+                                </span>
+                                {hoveredBadge === m.iso && m.meta.badges.length > 1 && (
+                                  <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, background: T.cardBg, border: `1px solid ${T.borderFaint}`, padding: '5px 10px', display: 'flex', gap: '10px', whiteSpace: 'nowrap', zIndex: 100, fontSize: '9px', fontFamily: "'DM Mono', monospace" }}>
+                                    {m.meta.badges.map((b, bi) => (
+                                      <span key={bi} style={{ color: (b.label === 'candle data' || b.label === 'prices') ? T.green : (b.label === 'news' || b.label === 'search') ? '#60a5fa' : '#f59e0b' }}>
+                                        {b.source === 'search' ? '⌕' : '●'} {b.label}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
                               </span>
                             )}
                           </div>
@@ -4052,14 +4065,26 @@ const visibleDaySummaries = useMemo(() => {
                       <div style={{ fontSize: '9px', color: T.text8, display: 'flex', alignItems: 'center', gap: '4px', fontFamily: "'DM Mono', monospace", cursor: 'default', userSelect: 'none' }}>
                         {m.role === 'monday' ? 'Monday' : 'You'} · <TimeHover iso={m.iso} label={m.time} cardBg={T.cardBg} borderFaint={T.borderFaint} text5={T.text5} />
                         {m.role === 'monday' && m.meta?.badges && m.meta.badges.length > 0 && (
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '5px', letterSpacing: '0.05em' }}>
-                            <span style={{ color: T.text8 }}>·</span>
-                            {m.meta.badges.map((b, bi) => (
-                              <span key={bi} style={{ color: (b.label === 'candle data' || b.label === 'prices') ? T.green : (b.label === 'news' || b.label === 'search') ? '#60a5fa' : '#f59e0b' }}>
-                                {b.source === 'search' ? '⌕' : '●'} {b.label}
-                              </span>
-                            ))}
-                            {m.meta.confidence === 'low' && <span style={{ color: T.text8 }}>· ~</span>}
+                          <span
+                            style={{ position: 'relative', letterSpacing: '0.05em', cursor: 'default' }}
+                            onMouseEnter={() => setHoveredBadge(m.iso)}
+                            onMouseLeave={() => setHoveredBadge(null)}
+                          >
+                            {' '}<span style={{ color: T.text8 }}>·</span>{' '}
+                            <span style={{ color: m.meta.badges.some(b => b.source === 'search') ? '#60a5fa' : m.meta.badges.some(b => b.label === 'candle data') ? T.green : '#f59e0b' }}>
+                              {m.meta.badges.some(b => b.source === 'search') ? '⌕' : '●'}{' '}
+                              {(m.meta.badges.find(b => b.source === 'search') ?? m.meta.badges.find(b => b.label === 'candle data') ?? m.meta.badges[0]).label}
+                              {m.meta.badges.length > 1 && <span style={{ color: T.text7 }}> +{m.meta.badges.length - 1}</span>}
+                            </span>
+                            {hoveredBadge === m.iso && m.meta.badges.length > 1 && (
+                              <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, background: T.cardBg, border: `1px solid ${T.borderFaint}`, padding: '5px 10px', display: 'flex', gap: '10px', whiteSpace: 'nowrap', zIndex: 100, fontSize: '9px', fontFamily: "'DM Mono', monospace" }}>
+                                {m.meta.badges.map((b, bi) => (
+                                  <span key={bi} style={{ color: (b.label === 'candle data' || b.label === 'prices') ? T.green : (b.label === 'news' || b.label === 'search') ? '#60a5fa' : '#f59e0b' }}>
+                                    {b.source === 'search' ? '⌕' : '●'} {b.label}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </span>
                         )}
                       </div>
