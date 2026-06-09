@@ -96,6 +96,93 @@ const HOURS = Array.from({ length: 24 }, (_, i) => {
 
 const BRIEFING_HOURS = HOURS.filter(h => h.value >= 4 && h.value <= 12)
 
+// ── ONBOARDING PRESET SUMMARIES ───────────────────────────────────────────────
+
+const ONBOARDING_PRESETS = [
+  {
+    name: 'Pre-Market',
+    defaultTime: '09:00',
+    prompt: 'Give me a pre-market briefing for today focused on my watchlist, biggest catalysts, and macro risks.',
+    top_color: '#e8b84b',
+    blurb: 'Before the open',
+    hoverCopy: 'Watchlist, overnight movers, major headlines, macro events, and biggest risks heading into the open.',
+  },
+  {
+    name: 'Open Pulse',
+    defaultTime: '10:00',
+    prompt: 'Give me a market open pulse with the strongest and weakest names on my watchlist plus the biggest early driver.',
+    top_color: '#4ade80',
+    blurb: 'First move after the bell',
+    hoverCopy: 'Early strength and weakness, opening drivers, immediate watchlist movement, and what looks actionable right after the bell.',
+  },
+  {
+    name: 'Midday',
+    defaultTime: '12:00',
+    prompt: 'Give me a midday summary of my watchlist, sector rotation, and what matters most into the afternoon.',
+    top_color: '#7ab8e8',
+    blurb: 'Mid-session reset',
+    hoverCopy: 'Watchlist trends, sector rotation, market tone, and what matters most heading into the second half.',
+  },
+  {
+    name: 'Power Hour',
+    defaultTime: '15:00',
+    prompt: 'Give me a power hour summary with strongest movers, closing themes, and any setups into the close.',
+    top_color: '#f59e0b',
+    blurb: 'Into the close',
+    hoverCopy: 'Strongest movers, late-session momentum, closing themes, and anything worth watching into the final hour.',
+  },
+  {
+    name: 'End of Day',
+    defaultTime: '16:00',
+    prompt: 'Give me an end of day recap focused on my watchlist, major catalysts, and what matters for tomorrow.',
+    top_color: '#c084fc',
+    blurb: 'Wrap up the session',
+    hoverCopy: 'Biggest moves, key catalysts, how your watchlist finished, and what matters most for tomorrow.',
+  },
+]
+
+function formatEtTime(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  const period = h >= 12 ? 'PM' : 'AM'
+  const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h
+  return `${h12}:${m.toString().padStart(2, '0')} ${period} ET`
+}
+
+function nextWeekdayAtEtTime(hhmm: string): string {
+  const [hour, minute] = hhmm.split(':').map(Number)
+  for (let daysAhead = 0; daysAhead <= 7; daysAhead++) {
+    const d = new Date(Date.now() + daysAhead * 86_400_000)
+    // Check if this day is a weekday in ET
+    const etDayOfWeek = new Date(d.toLocaleString('en-US', { timeZone: 'America/New_York' })).getDay()
+    if (etDayOfWeek === 0 || etDayOfWeek === 6) continue
+    // Get ET date components
+    const etParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(d)
+    const year = parseInt(etParts.find(p => p.type === 'year')!.value)
+    const month = parseInt(etParts.find(p => p.type === 'month')!.value)
+    const day = parseInt(etParts.find(p => p.type === 'day')!.value)
+    // Find the UTC offset that maps to hour:minute ET on this date
+    for (let offset = -12; offset <= 14; offset++) {
+      const candidate = new Date(Date.UTC(year, month - 1, day, hour - offset, minute, 0))
+      const check = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+      }).formatToParts(candidate)
+      if (
+        parseInt(check.find(p => p.type === 'year')!.value) === year &&
+        parseInt(check.find(p => p.type === 'month')!.value) === month &&
+        parseInt(check.find(p => p.type === 'day')!.value) === day &&
+        parseInt(check.find(p => p.type === 'hour')!.value) === hour &&
+        parseInt(check.find(p => p.type === 'minute')!.value) === minute
+      ) return candidate.toISOString()
+    }
+  }
+  return new Date().toISOString()
+}
+
 // ── SMALL COMPONENTS ─────────────────────────────────────────────────────────
 
 function SunIcon({ color }: { color: string }) {
@@ -182,8 +269,7 @@ export default function OnboardingPage() {
   const [calImpact, setCalImpact] = useState<'HIGH' | 'MEDIUM' | 'ALL'>('MEDIUM')
   const [tvAlertsOn, setTvAlertsOn] = useState(true)
 
-  const [briefingOn, setBriefingOn] = useState(false)
-  const [briefingHour, setBriefingHour] = useState(8)
+  const [selectedPresets, setSelectedPresets] = useState<string[]>([])
 
   // ── AUTH CHECK ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -261,19 +347,21 @@ export default function OnboardingPage() {
       // 3. TV alerts preference
       localStorage.setItem('tv_alert_behavior', tvAlertsOn ? 'speak' : 'silent')
 
-      // 4. Scheduled morning briefing
-      if (briefingOn) {
-        const runAt = `${String(briefingHour).padStart(2, '0')}:00`
+      // 4. Scheduled summaries — one row per selected preset
+      for (const presetName of selectedPresets) {
+        const preset = ONBOARDING_PRESETS.find(p => p.name === presetName)
+        if (!preset) continue
         await supabase.from('scheduled_summaries').insert({
           user_id: user.id,
-          name: 'Morning Briefing',
-          run_at: runAt,
-          prompt: 'Give me a morning market briefing covering my watchlist, key economic events today, and anything I should know before the market opens.',
-          icon: '☀️',
-          top_color: '#c9922a',
-          type: 'chat',
+          name: preset.name,
+          run_at: nextWeekdayAtEtTime(preset.defaultTime),
+          prompt: preset.prompt,
+          icon: '',
+          top_color: preset.top_color,
+          type: 'preset',
           enabled: true,
           recurrence: 'weekdays',
+          recurrence_end: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
@@ -525,32 +613,42 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* ── STEP 4: BRIEFING ── */}
+          {/* ── STEP 4: SCHEDULED SUMMARIES ── */}
           {step === 4 && (
             <div>
-              <StepHeader tag="Step 4 of 5" title="Morning briefing?" sub="Monday can brief you each morning on market conditions, your watchlist, and key events before the open." T={T} />
+              <StepHeader tag="Step 4 of 5" title="Scheduled summaries" sub="Pick briefings to receive automatically every weekday. You can add, remove, or customize more on the dashboard." T={T} />
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
-                {[true, false].map(val => (
-                  <div key={String(val)} onClick={() => setBriefingOn(val)} style={{ padding: '18px 20px', border: `1px solid ${briefingOn === val ? T.gold : T.border}`, background: briefingOn === val ? T.goldFaint : T.cardBg, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 14 }}>
-                    <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${briefingOn === val ? T.gold : T.border2}`, background: briefingOn === val ? T.gold : 'transparent', flexShrink: 0, transition: 'all 0.2s' }} />
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: briefingOn === val ? T.gold : T.heading }}>{val ? 'Yes — set up a morning briefing' : 'No thanks, I\'ll ask manually'}</div>
-                      <div style={{ fontSize: 10, color: T.subText, marginTop: 3 }}>
-                        {val ? 'Monday will brief you before the market opens.' : 'You can always say "Hey Monday, brief me" anytime.'}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                {ONBOARDING_PRESETS.map(preset => {
+                  const on = selectedPresets.includes(preset.name)
+                  return (
+                    <div
+                      key={preset.name}
+                      onClick={() => setSelectedPresets(prev =>
+                        prev.includes(preset.name)
+                          ? prev.filter(n => n !== preset.name)
+                          : [...prev, preset.name]
+                      )}
+                      style={{ padding: '14px 18px', border: `1px solid ${on ? preset.top_color : T.border}`, background: on ? `${preset.top_color}12` : T.cardBg, cursor: 'pointer', transition: 'all 0.18s', display: 'flex', alignItems: 'center', gap: 14 }}
+                    >
+                      <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${on ? preset.top_color : T.border2}`, background: on ? preset.top_color : 'transparent', flexShrink: 0, transition: 'all 0.18s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {on && <div style={{ width: 6, height: 6, background: '#000', borderRadius: 1 }} />}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: on ? preset.top_color : T.heading }}>{preset.name}</span>
+                          <span style={{ fontSize: 9, color: T.text3, letterSpacing: '0.06em' }}>{preset.blurb}</span>
+                        </div>
+                        <div style={{ fontSize: 10, color: T.subText, marginTop: 2 }}>{preset.hoverCopy}</div>
+                      </div>
+                      <div style={{ fontSize: 10, color: on ? preset.top_color : T.text3, flexShrink: 0, fontWeight: 600 }}>
+                        {formatEtTime(preset.defaultTime)}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
-
-              {briefingOn && (
-                <div style={{ border: `1px solid ${T.border}`, padding: '18px 20px', marginBottom: 28, background: T.cardBg }}>
-                  <div style={{ fontSize: 10, color: T.text3, marginBottom: 10, letterSpacing: '0.06em' }}>BRIEFING TIME (ET)</div>
-                  <SelectInput value={briefingHour} onChange={setBriefingHour} options={BRIEFING_HOURS} T={T} />
-                  <div style={{ fontSize: 10, color: T.text3, marginTop: 8 }}>Runs weekdays only · You can add more schedules on the dashboard</div>
-                </div>
-              )}
+              <div style={{ fontSize: 10, color: T.text3, marginBottom: 28 }}>Runs every weekday at the listed ET time · Select any combination</div>
 
               <NavRow onBack={goBack} onNext={goNext} canNext T={T} />
             </div>
@@ -590,7 +688,7 @@ export default function OnboardingPage() {
                     scheduleOn ? `🕐 Schedule ${HOURS.find(h => h.value === schedStartHour)?.label}–${HOURS.find(h => h.value === schedEndHour)?.label}` : null,
                     calAlertsOn ? `📅 Calendar (${calImpact === 'HIGH' ? 'High only' : calImpact === 'MEDIUM' ? 'High+Med' : 'All'})` : null,
                     tvAlertsOn ? '📡 TradingView on' : null,
-                    briefingOn ? `☀️ Briefing at ${HOURS.find(h => h.value === briefingHour)?.label}` : null,
+                    selectedPresets.length > 0 ? `📊 ${selectedPresets.length} summary${selectedPresets.length > 1 ? 's' : ''} scheduled` : null,
                   ].filter(Boolean).map((label, i) => (
                     <div key={i} style={{ fontSize: 10, color: T.text2, background: T.bg2, border: `1px solid ${T.border}`, padding: '4px 10px' }}>
                       {label}
