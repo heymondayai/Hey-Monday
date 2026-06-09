@@ -141,6 +141,44 @@ const ONBOARDING_PRESETS = [
   },
 ]
 
+const WATCHLIST_PRESETS = [
+  {
+    category: 'Mega Caps',
+    color: '#60a5fa',
+    items: [
+      { sym: 'NVDA', name: 'NVIDIA' },
+      { sym: 'AAPL', name: 'Apple' },
+      { sym: 'MSFT', name: 'Microsoft' },
+      { sym: 'TSLA', name: 'Tesla' },
+      { sym: 'META', name: 'Meta' },
+      { sym: 'AMZN', name: 'Amazon' },
+      { sym: 'GOOGL', name: 'Alphabet' },
+      { sym: 'AMD', name: 'AMD' },
+    ],
+  },
+  {
+    category: 'Indices & ETFs',
+    color: '#c9922a',
+    items: [
+      { sym: 'SPY', name: 'S&P 500 ETF' },
+      { sym: 'QQQ', name: 'Nasdaq 100 ETF' },
+      { sym: 'IWM', name: 'Russell 2000 ETF' },
+      { sym: 'GLD', name: 'Gold ETF' },
+      { sym: 'TLT', name: '20yr Treasury ETF' },
+      { sym: 'VIX', name: 'Volatility Index' },
+    ],
+  },
+  {
+    category: 'Crypto',
+    color: '#f59e0b',
+    items: [
+      { sym: 'BTC', name: 'Bitcoin' },
+      { sym: 'ETH', name: 'Ethereum' },
+      { sym: 'SOL', name: 'Solana' },
+    ],
+  },
+]
+
 function formatEtTime(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number)
   const period = h >= 12 ? 'PM' : 'AM'
@@ -272,6 +310,33 @@ export default function OnboardingPage() {
 
   const [selectedPresets, setSelectedPresets] = useState<string[]>([])
 
+  const [watchlistItems, setWatchlistItems] = useState<{ sym: string; name: string }[]>([
+    { sym: 'SPY', name: 'S&P 500 ETF' },
+    { sym: 'QQQ', name: 'Nasdaq 100 ETF' },
+    { sym: 'NVDA', name: 'NVIDIA' },
+    { sym: 'AAPL', name: 'Apple' },
+    { sym: 'TSLA', name: 'Tesla' },
+  ])
+  const [wlSearch, setWlSearch] = useState('')
+  const [wlResults, setWlResults] = useState<{ sym: string; name: string; type: string }[]>([])
+  const [wlSearching, setWlSearching] = useState(false)
+
+  // ── WATCHLIST SEARCH ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    const q = wlSearch.trim()
+    if (!q) { setWlResults([]); return }
+    const t = setTimeout(async () => {
+      setWlSearching(true)
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
+        const { results } = await res.json()
+        setWlResults(results ?? [])
+      } catch {}
+      setWlSearching(false)
+    }, 280)
+    return () => clearTimeout(t)
+  }, [wlSearch])
+
   // ── AUTH CHECK ───────────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true
@@ -293,7 +358,7 @@ export default function OnboardingPage() {
   }, [supabase, router])
 
   // ── NAVIGATION ────────────────────────────────────────────────────────────────
-  const TOTAL_STEPS = 6
+  const TOTAL_STEPS = 7
 
   const goNext = useCallback(() => {
     setAnimKey(k => k + 1)
@@ -309,6 +374,16 @@ export default function OnboardingPage() {
 
   const toggleDay = (d: number) => {
     setSchedDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])
+  }
+
+  function addWlItem(sym: string, name: string) {
+    if (watchlistItems.length >= 20) return
+    setWatchlistItems(prev => prev.some(i => i.sym === sym) ? prev : [...prev, { sym, name }])
+    setWlSearch('')
+    setWlResults([])
+  }
+  function removeWlItem(sym: string) {
+    setWatchlistItems(prev => prev.filter(i => i.sym !== sym))
   }
 
   // ── SAVE ALL + ENTER DASHBOARD ────────────────────────────────────────────────
@@ -349,7 +424,20 @@ export default function OnboardingPage() {
       // 3. TV alerts preference
       localStorage.setItem('tv_alert_behavior', tvAlertsOn ? 'speak' : 'silent')
 
-      // 4. Scheduled summaries — one row per selected preset
+      // 4. Watchlist
+      if (watchlistItems.length > 0) {
+        await supabase.from('watchlist').upsert(
+          watchlistItems.map((item, i) => ({
+            user_id: user.id,
+            ticker: item.sym,
+            company_name: item.name,
+            added_at: new Date(Date.now() + i).toISOString(),
+          })),
+          { onConflict: 'user_id,ticker' }
+        )
+      }
+
+      // 5. Scheduled summaries — one row per selected preset
       for (const presetName of selectedPresets) {
         const preset = ONBOARDING_PRESETS.find(p => p.name === presetName)
         if (!preset) continue
@@ -478,7 +566,7 @@ export default function OnboardingPage() {
           {step === 1 && (
             <div>
               <StepHeader
-                tag="Step 1 of 5"
+                tag="Step 1 of 6"
                 title="How do you trade?"
                 sub="Your dashboard, data, and Monday's voice will be tailored to your style."
                 T={T}
@@ -512,7 +600,7 @@ export default function OnboardingPage() {
           {/* ── STEP 2: VOICE ── */}
           {step === 2 && (
             <div>
-              <StepHeader tag="Step 2 of 5" title="Set up your voice." sub="Monday can listen for your wake word and speak responses aloud. Turn these on or off anytime." T={T} />
+              <StepHeader tag="Step 2 of 6" title="Set up your voice." sub="Monday can listen for your wake word and speak responses aloud. Turn these on or off anytime." T={T} />
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 28 }}>
                 <ToggleRow
@@ -560,10 +648,93 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* ── STEP 3: ALERTS ── */}
+          {/* ── STEP 3: WATCHLIST ── */}
           {step === 3 && (
             <div>
-              <StepHeader tag="Step 3 of 5" title="Configure your alerts." sub="Choose what Monday notifies you about. You can fine-tune everything in Settings later." T={T} />
+              <StepHeader tag="Step 3 of 6" title="Build your watchlist." sub="Monday personalizes your briefings, alerts, and summaries around the assets you follow." T={T} />
+
+              {/* Search */}
+              <div style={{ position: 'relative', marginBottom: 20 }}>
+                <input
+                  value={wlSearch}
+                  onChange={e => setWlSearch(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && wlResults.length > 0) {
+                      const top = wlResults[0]
+                      addWlItem(top.sym, top.name)
+                    }
+                  }}
+                  placeholder="Search ticker or company name..."
+                  style={{ width: '100%', background: T.bg3, border: `1px solid ${T.border2}`, color: T.heading, padding: '10px 14px', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, outline: 'none', letterSpacing: '0.04em' }}
+                />
+                {wlSearching && (
+                  <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', width: 10, height: 10, border: `2px solid ${T.gold}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
+                )}
+                {wlResults.length > 0 && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: T.bg2, border: `1px solid ${T.border2}`, borderTop: 'none', zIndex: 10, maxHeight: 200, overflowY: 'auto' }}>
+                    {wlResults.slice(0, 8).map(r => {
+                      const already = watchlistItems.some(i => i.sym === r.sym)
+                      return (
+                        <div key={r.sym} onClick={() => !already && addWlItem(r.sym, r.name)}
+                          style={{ padding: '9px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: already ? 'default' : 'pointer', opacity: already ? 0.45 : 1, borderBottom: `1px solid ${T.border}` }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: T.gold }}>{r.sym}</span>
+                            <span style={{ fontSize: 10, color: T.text3 }}>{r.name}</span>
+                          </div>
+                          <span style={{ fontSize: 9, color: T.text3, letterSpacing: '0.06em' }}>{r.type}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Preset categories */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 20 }}>
+                {WATCHLIST_PRESETS.map(cat => (
+                  <div key={cat.category}>
+                    <div style={{ fontSize: 9, color: T.text3, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>{cat.category}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                      {cat.items.map(item => {
+                        const on = watchlistItems.some(i => i.sym === item.sym)
+                        return (
+                          <div key={item.sym} onClick={() => on ? removeWlItem(item.sym) : addWlItem(item.sym, item.name)}
+                            style={{ padding: '6px 12px', border: `1px solid ${on ? cat.color : T.border}`, background: on ? `${cat.color}18` : 'transparent', color: on ? cat.color : T.text3, fontSize: 10, fontWeight: on ? 700 : 400, cursor: 'pointer', transition: 'all 0.15s', display: 'flex', alignItems: 'center', gap: 5 }}>
+                            {on && <span style={{ fontSize: 8 }}>✓</span>}
+                            {item.sym}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Selected summary */}
+              {watchlistItems.length > 0 && (
+                <div style={{ border: `1px solid ${T.border}`, padding: '12px 16px', background: T.cardBg, marginBottom: 20 }}>
+                  <div style={{ fontSize: 9, color: T.text3, letterSpacing: '0.1em', marginBottom: 8 }}>
+                    SELECTED ({watchlistItems.length}/20)
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {watchlistItems.map(item => (
+                      <div key={item.sym} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 8px 4px 10px', background: T.bg2, border: `1px solid ${T.border2}`, fontSize: 10, color: T.text }}>
+                        <span style={{ fontWeight: 700, color: T.gold }}>{item.sym}</span>
+                        <span onClick={() => removeWlItem(item.sym)} style={{ color: T.text3, cursor: 'pointer', fontSize: 10, lineHeight: 1, padding: '0 2px' }}>✕</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <NavRow onBack={goBack} onNext={goNext} canNext T={T} />
+            </div>
+          )}
+
+          {/* ── STEP 4: ALERTS ── */}
+          {step === 4 && (
+            <div>
+              <StepHeader tag="Step 4 of 6" title="Configure your alerts." sub="Choose what Monday notifies you about. You can fine-tune everything in Settings later." T={T} />
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 28 }}>
                 <div style={{ border: `1px solid ${T.border}`, padding: '18px 20px', background: T.cardBg }}>
@@ -627,10 +798,10 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* ── STEP 4: SCHEDULED SUMMARIES ── */}
-          {step === 4 && (
+          {/* ── STEP 5: SCHEDULED SUMMARIES ── */}
+          {step === 5 && (
             <div>
-              <StepHeader tag="Step 4 of 5" title="Scheduled summaries" sub="Pick briefings to receive automatically every weekday. You can add, remove, or customize more on the dashboard." T={T} />
+              <StepHeader tag="Step 5 of 6" title="Scheduled summaries" sub="Pick briefings to receive automatically every weekday. You can add, remove, or customize more on the dashboard." T={T} />
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
                 {ONBOARDING_PRESETS.map(preset => {
@@ -668,8 +839,8 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* ── STEP 5: DONE ── */}
-          {step === 5 && (
+          {/* ── STEP 6: DONE ── */}
+          {step === 6 && (
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 40, marginBottom: 16 }}>✓</div>
               <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 38, fontStyle: 'italic', fontWeight: 700, color: T.heading, marginBottom: 8 }}>
@@ -700,6 +871,7 @@ export default function OnboardingPage() {
                     wakeWordOn ? '🎙️ Wake Word on' : null,
                     voiceRepliesOn ? '🔊 Voice Replies on' : null,
                     scheduleOn ? `🕐 Schedule ${HOURS.find(h => h.value === schedStartHour)?.label}–${HOURS.find(h => h.value === schedEndHour)?.label}` : null,
+                    watchlistItems.length > 0 ? `📋 ${watchlistItems.length} watchlist item${watchlistItems.length > 1 ? 's' : ''}` : null,
                     calAlertsOn ? `📅 Calendar (${calImpact === 'HIGH' ? 'High only' : calImpact === 'MEDIUM' ? 'High+Med' : 'All'})` : null,
                     tvAlertsOn ? '📡 TradingView on' : null,
                     selectedPresets.length > 0 ? `📊 ${selectedPresets.length} summary${selectedPresets.length > 1 ? 's' : ''} scheduled` : null,
