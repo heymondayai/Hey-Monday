@@ -190,11 +190,11 @@ export function useWakeWord({
           if (scoreHistoryRef.current.length > SCORE_SMOOTH_WINDOW) {
             scoreHistoryRef.current = scoreHistoryRef.current.slice(-SCORE_SMOOTH_WINDOW)
           }
-          const smoothedScore = scoreHistoryRef.current.reduce((a, b) => a + b, 0) / scoreHistoryRef.current.length
+          const peakScore = Math.max(...scoreHistoryRef.current)
 
-          console.log('[WakeWord] score:', score.toFixed(4), 'smoothed:', smoothedScore.toFixed(4))
+          console.log('[WakeWord] score:', score.toFixed(4), 'peak:', peakScore.toFixed(4))
 
-          if (smoothedScore > threshold) {
+          if (peakScore > threshold) {
   const now = Date.now()
   if (now - lastDetectRef.current > COOLDOWN_MS) {
     lastDetectRef.current = now
