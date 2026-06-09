@@ -41,9 +41,16 @@ function SuccessContent() {
               }
               return
             }
-            setMessage(`Setting up your account... (${attempt + 1}/5)`)
+            const reason = data.reason ?? data.detail ?? data.error ?? 'unknown'
+            console.warn('[billing/success] activate attempt', attempt + 1, 'failed:', reason)
+            if (data.reason === 'session_not_complete') {
+              setMessage(`Waiting for payment to confirm... (${attempt + 1}/5)`)
+            } else {
+              setMessage(`Setting up your account... (${attempt + 1}/5)`)
+            }
             await new Promise(r => setTimeout(r, 2000))
-          } catch {
+          } catch (err: any) {
+            console.warn('[billing/success] activate fetch error:', err?.message)
             await new Promise(r => setTimeout(r, 2000))
           }
         }
