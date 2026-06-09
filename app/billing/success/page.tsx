@@ -15,12 +15,13 @@ function SuccessContent() {
     let cancelled = false
 
     async function run() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user) { router.replace('/login'); return }
-
       const sessionId = searchParams.get('session_id')
+      const { data: { session } } = await supabase.auth.getSession()
 
-      // ── Fast path: use session_id to activate directly via Stripe API ────────
+      // Without session_id we need auth for the fallback poll
+      if (!sessionId && !session?.user) { router.replace('/login'); return }
+
+      // ── Fast path: session_id → activate via Stripe API (no browser auth needed) ──
       if (sessionId) {
         for (let attempt = 0; attempt < 5; attempt++) {
           if (cancelled) return
@@ -33,31 +34,24 @@ function SuccessContent() {
             const data = await res.json()
             if (cancelled) return
             if (data.ok) {
-              const { data: profile } = await supabase
-                .from('profiles')
-                .select('trader_type, onboarding_complete')
-                .eq('id', session.user.id)
-                .maybeSingle()
-              if (cancelled) return
-              if (!profile?.trader_type || !profile?.onboarding_complete) {
+              if (!data.traderType || !data.onboardingComplete) {
                 router.replace('/onboarding')
               } else {
                 router.replace('/dashboard')
               }
               return
             }
-            // Session not complete yet — brief wait then retry
-            if (data.reason === 'session_not_complete') {
-              setMessage(`Setting up your account... (${attempt + 1}/5)`)
-              await new Promise(r => setTimeout(r, 2000))
-            }
+            setMessage(`Setting up your account... (${attempt + 1}/5)`)
+            await new Promise(r => setTimeout(r, 2000))
           } catch {
             await new Promise(r => setTimeout(r, 2000))
           }
         }
       }
 
-      // ── Fallback: poll Supabase for webhook write (no session_id) ────────────
+      // ── Fallback: poll Supabase for webhook write ─────────────────────────────
+      if (!session?.user) { router.replace('/login'); return }
+
       for (let i = 0; i < 20; i++) {
         if (cancelled) return
         const { data: profile } = await supabase

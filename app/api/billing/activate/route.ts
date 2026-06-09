@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createAdminSupabaseClient } from '@/lib/supabase-admin'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
 
@@ -10,16 +9,11 @@ function toIso(ts?: number | null) {
 }
 
 // Called from the billing success page with the Stripe checkout session_id.
-// Retrieves the session directly from Stripe — no webhook required.
+// Uses metadata.supabase_user_id from the Stripe session — no browser auth cookie required.
+// This avoids auth session loss after the Stripe redirect.
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createServerSupabaseClient()
     const admin = createAdminSupabaseClient()
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
-    }
 
     const { sessionId } = await req.json()
     if (!sessionId) {
@@ -39,6 +33,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, reason: 'no_subscription' })
     }
 
+    // The user ID is embedded in the Stripe session metadata at checkout creation time.
+    const userId =
+      session.metadata?.supabase_user_id ||
+      (sub as any).metadata?.supabase_user_id
+
+    if (!userId) {
+      console.error('[billing/activate] No supabase_user_id in session metadata', session.id)
+      return NextResponse.json({ ok: false, reason: 'no_user_id' })
+    }
+
     await admin.from('profiles').update({
       stripe_subscription_id: sub.id,
       stripe_price_id: (sub as any).items?.data?.[0]?.price?.id ?? null,
@@ -48,9 +52,22 @@ export async function POST(req: NextRequest) {
       current_period_end: toIso((sub as any).current_period_end),
       cancel_at_period_end: (sub as any).cancel_at_period_end,
       trial_used: true,
-    }).eq('id', user.id)
+    }).eq('id', userId)
 
-    return NextResponse.json({ ok: true, subscriptionId: sub.id, status: sub.status })
+    // Fetch trader_type + onboarding_complete so the client can route without its own auth query
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('trader_type, onboarding_complete')
+      .eq('id', userId)
+      .maybeSingle()
+
+    return NextResponse.json({
+      ok: true,
+      subscriptionId: sub.id,
+      status: sub.status,
+      traderType: profile?.trader_type ?? null,
+      onboardingComplete: profile?.onboarding_complete ?? false,
+    })
   } catch (err: any) {
     console.error('[billing/activate]', err.message)
     return NextResponse.json({ error: err.message ?? 'Activation failed.' }, { status: 500 })
