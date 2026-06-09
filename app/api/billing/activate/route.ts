@@ -8,28 +8,41 @@ function toIso(ts?: number | null) {
   return ts ? new Date(ts * 1000).toISOString() : null
 }
 
-async function resolveUserId(session: Stripe.Checkout.Session, sub: Stripe.Subscription): Promise<string | null> {
-  // 1. Session-level metadata (set at checkout creation time)
-  if (session.metadata?.supabase_user_id) return session.metadata.supabase_user_id
+interface SessionExtras {
+  userId: string | null
+  email: string | null
+  fullName: string | null
+  customerId: string | null
+}
 
-  // 2. Subscription metadata
-  if ((sub as any).metadata?.supabase_user_id) return (sub as any).metadata.supabase_user_id
-
-  // 3. Stripe customer metadata (fallback — customer was created with this)
+async function resolveSessionExtras(session: Stripe.Checkout.Session, sub: Stripe.Subscription): Promise<SessionExtras> {
   const customerId = typeof session.customer === 'string'
     ? session.customer
-    : (session.customer as any)?.id
+    : (session.customer as Stripe.Customer | null)?.id ?? null
 
-  if (customerId) {
+  // Email/name from Stripe's collected customer details (most reliable)
+  let email: string | null = session.customer_details?.email ?? null
+  let fullName: string | null = session.customer_details?.name ?? null
+
+  // 1. Session-level metadata (set at checkout creation time)
+  let userId: string | null = session.metadata?.supabase_user_id ?? null
+
+  // 2. Subscription metadata
+  if (!userId) userId = (sub as any).metadata?.supabase_user_id ?? null
+
+  // 3. Stripe customer metadata + fill in email/name gaps
+  if (customerId && (!userId || !email || !fullName)) {
     try {
       const customer = await stripe.customers.retrieve(customerId)
-      if (!('deleted' in customer) && customer.metadata?.supabase_user_id) {
-        return customer.metadata.supabase_user_id
+      if (!('deleted' in customer)) {
+        if (!userId) userId = customer.metadata?.supabase_user_id ?? null
+        if (!email) email = customer.email ?? null
+        if (!fullName) fullName = customer.name ?? null
       }
     } catch {}
   }
 
-  return null
+  return { userId, email, fullName, customerId }
 }
 
 // Called from the billing success page with the Stripe checkout session_id.
@@ -56,15 +69,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, reason: 'no_subscription' })
     }
 
-    const userId = await resolveUserId(session, sub)
+    const { userId, email, fullName, customerId } = await resolveSessionExtras(session, sub)
 
     if (!userId) {
       console.error('[billing/activate] No supabase_user_id found for session', session.id)
       return NextResponse.json({ ok: false, reason: 'no_user_id' })
     }
 
-    const { error: updateErr, count } = await admin.from('profiles').update({
+    // plan comes from checkout session metadata ('edge' | 'core')
+    const plan = session.metadata?.plan ?? null
+
+    const profileFields = {
       stripe_subscription_id: sub.id,
+      stripe_customer_id: customerId,
       stripe_price_id: (sub as any).items?.data?.[0]?.price?.id ?? null,
       billing_interval: (sub as any).items?.data?.[0]?.price?.recurring?.interval ?? null,
       subscription_status: sub.status,
@@ -72,7 +89,14 @@ export async function POST(req: NextRequest) {
       current_period_end: toIso((sub as any).current_period_end),
       cancel_at_period_end: (sub as any).cancel_at_period_end,
       trial_used: true,
-    }, { count: 'exact' }).eq('id', userId)
+      ...(plan ? { plan } : {}),
+      ...(email ? { email } : {}),
+      ...(fullName ? { full_name: fullName } : {}),
+    }
+
+    const { error: updateErr, count } = await admin.from('profiles').update(
+      profileFields, { count: 'exact' }
+    ).eq('id', userId)
 
     if (updateErr) {
       console.error('[billing/activate] Profile update failed', updateErr.message, 'userId:', userId)
@@ -84,14 +108,7 @@ export async function POST(req: NextRequest) {
       console.warn('[billing/activate] Profile row not found for userId, attempting upsert', userId)
       const { error: upsertErr } = await admin.from('profiles').upsert({
         id: userId,
-        stripe_subscription_id: sub.id,
-        stripe_price_id: (sub as any).items?.data?.[0]?.price?.id ?? null,
-        billing_interval: (sub as any).items?.data?.[0]?.price?.recurring?.interval ?? null,
-        subscription_status: sub.status,
-        trial_ends_at: toIso(sub.trial_end),
-        current_period_end: toIso((sub as any).current_period_end),
-        cancel_at_period_end: (sub as any).cancel_at_period_end,
-        trial_used: true,
+        ...profileFields,
       }, { onConflict: 'id' })
 
       if (upsertErr) {

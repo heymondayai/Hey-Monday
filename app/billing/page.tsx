@@ -104,7 +104,7 @@ type ProfileRow = {
   cancel_at_period_end: boolean | null
 }
 
-type Modal = 'cancel' | 'reactivate' | 'change-plan' | null
+type Modal = 'cancel' | 'reactivate' | 'change-plan' | 'delete-account' | null
 
 function SunIcon({ color }: { color: string }) {
   return (
@@ -242,6 +242,20 @@ export default function BillingPage() {
     } catch (err: any) {
       showToast(err.message || 'Could not cancel.', 'error')
     } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleDeleteAccount() {
+    setActionLoading(true)
+    try {
+      const res = await fetch('/api/account/delete', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not delete account.')
+      await supabase.auth.signOut()
+      router.replace('/')
+    } catch (err: any) {
+      showToast(err.message || 'Could not delete account.', 'error')
       setActionLoading(false)
     }
   }
@@ -513,7 +527,7 @@ export default function BillingPage() {
               <div style={{ fontSize: 13, fontWeight: 600, color: T.heading, marginBottom: 3, transition: 'color 0.3s' }}>Delete account</div>
               <div style={{ fontSize: 11, color: T.text3, lineHeight: 1.6, transition: 'color 0.3s' }}>Permanently delete your account and all data. This cannot be undone.</div>
             </div>
-            <button style={{ fontSize: 9, padding: '8px 14px', background: 'transparent', border: `1px solid ${T.red}`, color: T.red, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", letterSpacing: '0.1em', textTransform: 'uppercase', flexShrink: 0, opacity: 0.7 }}>
+            <button onClick={() => setModal('delete-account')} style={{ fontSize: 9, padding: '8px 14px', background: 'transparent', border: `1px solid ${T.red}`, color: T.red, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", letterSpacing: '0.1em', textTransform: 'uppercase', flexShrink: 0, opacity: 0.7 }}>
               Delete Account
             </button>
           </div>
@@ -559,6 +573,25 @@ export default function BillingPage() {
                     <button onClick={() => setModal(null)} style={{ flex: 1, padding: '11px', background: 'transparent', border: `1px solid ${T.border2}`, color: T.text2, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Back</button>
                     <button onClick={handleReactivate} disabled={actionLoading} style={{ flex: 1, padding: '11px', background: T.gold, border: 'none', color: T.btnText, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                       {actionLoading ? spinner(T.btnText) : 'Reactivate →'}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* ── Delete account ── */}
+              {modal === 'delete-account' && (
+                <>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: T.red, marginBottom: 6 }}>Delete account?</div>
+                  <div style={{ fontSize: 12, color: T.text2, lineHeight: 1.7, marginBottom: 16 }}>
+                    This will permanently delete your account, cancel your subscription, and erase all your data. <strong style={{ color: T.heading }}>This cannot be undone.</strong>
+                  </div>
+                  <div style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, padding: '10px 14px', fontSize: 11, color: T.text2, lineHeight: 1.6, marginBottom: 20 }}>
+                    You'll lose: all chat history, watchlists, alerts, scheduled summaries, and access to Monday.
+                  </div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={() => setModal(null)} style={{ flex: 1, padding: '11px', background: 'transparent', border: `1px solid ${T.border2}`, color: T.text2, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Keep Account</button>
+                    <button onClick={handleDeleteAccount} disabled={actionLoading} style={{ flex: 1, padding: '11px', background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, color: T.red, cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      {actionLoading ? spinner(T.red) : 'Delete Forever'}
                     </button>
                   </div>
                 </>

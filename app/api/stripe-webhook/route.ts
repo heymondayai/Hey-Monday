@@ -10,6 +10,23 @@ function toIso(ts?: number | null) {
   return ts ? new Date(ts * 1000).toISOString() : null
 }
 
+function planFromPriceId(priceId: string | null | undefined): string | null {
+  if (!priceId) return null
+  const edgeIds = [
+    process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_MONTHLY,
+    process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_ANNUAL,
+  ].filter(Boolean)
+  const coreIds = [
+    process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_MONTHLY,
+    process.env.NEXT_PUBLIC_STRIPE_PRICE_CORE_ANNUAL,
+    process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY,
+    process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL,
+  ].filter(Boolean)
+  if (edgeIds.includes(priceId)) return 'edge'
+  if (coreIds.includes(priceId)) return 'core'
+  return null
+}
+
 async function syncSubscriptionToProfile(subscriptionId: string) {
   const admin = createAdminSupabaseClient()
 
@@ -41,21 +58,24 @@ async function syncSubscriptionToProfile(subscriptionId: string) {
       : subscription.customer.id
 
   const stripeSub = subscription as any
+  const priceId = stripeSub.items?.data?.[0]?.price?.id || null
+  const derivedPlan = planFromPriceId(priceId)
 
-await admin
-  .from('profiles')
-  .update({
-    stripe_customer_id: customerId,
-    stripe_subscription_id: stripeSub.id,
-    stripe_price_id: stripeSub.items?.data?.[0]?.price?.id || null,
-    billing_interval: stripeSub.items?.data?.[0]?.price?.recurring?.interval || null,
-    subscription_status: stripeSub.status,
-    trial_ends_at: toIso(stripeSub.trial_end),
-    current_period_end: toIso(stripeSub.current_period_end),
-    cancel_at_period_end: stripeSub.cancel_at_period_end,
-    trial_used: true,
-  })
-  .eq('id', supabaseUserId)
+  await admin
+    .from('profiles')
+    .update({
+      stripe_customer_id: customerId,
+      stripe_subscription_id: stripeSub.id,
+      stripe_price_id: priceId,
+      billing_interval: stripeSub.items?.data?.[0]?.price?.recurring?.interval || null,
+      subscription_status: stripeSub.status,
+      trial_ends_at: toIso(stripeSub.trial_end),
+      current_period_end: toIso(stripeSub.current_period_end),
+      cancel_at_period_end: stripeSub.cancel_at_period_end,
+      trial_used: true,
+      ...(derivedPlan ? { plan: derivedPlan } : {}),
+    })
+    .eq('id', supabaseUserId)
 }
 
 export async function POST(req: Request) {

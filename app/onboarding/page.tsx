@@ -267,6 +267,7 @@ export default function OnboardingPage() {
 
   const [calAlertsOn, setCalAlertsOn] = useState(true)
   const [calImpact, setCalImpact] = useState<'HIGH' | 'MEDIUM' | 'ALL'>('MEDIUM')
+  const [calAlertMinutes, setCalAlertMinutes] = useState(10)
   const [tvAlertsOn, setTvAlertsOn] = useState(true)
 
   const [selectedPresets, setSelectedPresets] = useState<string[]>([])
@@ -328,6 +329,7 @@ export default function OnboardingPage() {
         voice_replies_enabled: voiceRepliesOn,
         event_alerts_enabled: calAlertsOn,
         event_alert_impact_filter: calImpact,
+        event_alert_minutes_before: calAlertMinutes,
         onboarding_complete: true,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'id' })
@@ -574,14 +576,26 @@ export default function OnboardingPage() {
                       </div>
                       <div style={{ fontSize: 10, color: T.subText, marginBottom: calAlertsOn ? 14 : 0 }}>Get notified before major economic events — CPI, FOMC, jobs data, and more.</div>
                       {calAlertsOn && (
-                        <div>
-                          <div style={{ fontSize: 10, color: T.text3, marginBottom: 8, letterSpacing: '0.06em' }}>IMPACT LEVEL</div>
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            {([['HIGH', 'High only'], ['MEDIUM', 'High + Medium'], ['ALL', 'All events']] as const).map(([val, lbl]) => (
-                              <div key={val} onClick={() => setCalImpact(val)} style={{ padding: '6px 12px', fontSize: 10, cursor: 'pointer', border: `1px solid ${calImpact === val ? T.amber : T.border}`, background: calImpact === val ? T.amberFaint : 'transparent', color: calImpact === val ? T.amber : T.text3, transition: 'all 0.15s', fontWeight: calImpact === val ? 700 : 400 }}>
-                                {lbl}
-                              </div>
-                            ))}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                          <div>
+                            <div style={{ fontSize: 10, color: T.text3, marginBottom: 8, letterSpacing: '0.06em' }}>IMPACT LEVEL</div>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              {([['HIGH', 'High only'], ['MEDIUM', 'High + Medium'], ['ALL', 'All events']] as const).map(([val, lbl]) => (
+                                <div key={val} onClick={() => setCalImpact(val)} style={{ padding: '6px 12px', fontSize: 10, cursor: 'pointer', border: `1px solid ${calImpact === val ? T.amber : T.border}`, background: calImpact === val ? T.amberFaint : 'transparent', color: calImpact === val ? T.amber : T.text3, transition: 'all 0.15s', fontWeight: calImpact === val ? 700 : 400 }}>
+                                  {lbl}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, color: T.text3, marginBottom: 8, letterSpacing: '0.06em' }}>ALERT ME BEFORE EVENT</div>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              {[1, 5, 10, 15, 30].map(min => (
+                                <div key={min} onClick={() => setCalAlertMinutes(min)} style={{ padding: '6px 12px', fontSize: 10, cursor: 'pointer', border: `1px solid ${calAlertMinutes === min ? T.amber : T.border}`, background: calAlertMinutes === min ? T.amberFaint : 'transparent', color: calAlertMinutes === min ? T.amber : T.text3, transition: 'all 0.15s', fontWeight: calAlertMinutes === min ? 700 : 400 }}>
+                                  {min}m
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       )}

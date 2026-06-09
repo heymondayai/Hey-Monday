@@ -783,6 +783,11 @@ export default function DashboardPage() {
   const [isDark, setIsDark] = useState<boolean>(() => {
   if (typeof window === 'undefined') return true
   try {
+    // Prefer the shared theme key so landing page / onboarding / billing all stay in sync
+    const sharedTheme = window.localStorage.getItem('heymonday-theme')
+    if (sharedTheme === 'light') return false
+    if (sharedTheme === 'dark') return true
+    // Fall back to old dashboard prefs
     const raw = window.localStorage.getItem(DASHBOARD_PREFS_KEY)
     if (!raw) return true
     const parsed = JSON.parse(raw) as Partial<DashboardPrefs>
@@ -1233,6 +1238,8 @@ useEffect(() => {
       slotPanels,
       newsTab,
     }))
+    // Keep the shared theme key in sync so other pages stay consistent
+    window.localStorage.setItem('heymonday-theme', isDark ? 'dark' : 'light')
   } catch {}
 }, [isDark, layout, slotPanels, newsTab])
 
