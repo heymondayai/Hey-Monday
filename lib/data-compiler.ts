@@ -254,7 +254,8 @@ export interface CompilerResult {
 
 export interface CompilerOptions {
   watchlistTickers: string[]
-  passedPrices?: any[]
+  watchlistNames?: Record<string, string>   // ticker → company_name
+  passedPrices?: any[]                      // { sym, price, change, up }[]
   passedNews?: any[]
   todayStr: string
   message: string
@@ -267,10 +268,27 @@ export async function compileContext(
   plan: QueryPlan,
   opts: CompilerOptions,
 ): Promise<CompilerResult> {
-  const { watchlistTickers, passedNews, todayStr, message, userPlan, traderType } = opts
+  const { watchlistTickers, watchlistNames = {}, passedPrices = [], passedNews, todayStr, message, userPlan, traderType } = opts
 
   const blocks: string[] = []
   const targetSymbols = plan.symbols.length ? plan.symbols : watchlistTickers.slice(0, 8)
+
+  // ── WATCHLIST BLOCK (always present) ──────────────────────────────────────
+  // Gives the AI explicit knowledge of what's in the watchlist and current prices.
+  if (watchlistTickers.length) {
+    const priceMap: Record<string, { price?: string; change?: string }> = {}
+    for (const p of passedPrices) {
+      if (p.sym) priceMap[p.sym] = { price: p.price, change: p.change }
+    }
+    const pricesAt = passedPrices.length ? ` (prices as of ${new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true })} ET)` : ''
+    const lines = watchlistTickers.map(t => {
+      const name = watchlistNames[t] && watchlistNames[t] !== t ? ` (${watchlistNames[t]})` : ''
+      const p = priceMap[t]
+      const priceStr = p?.price ? ` — $${p.price}${p.change ? ' ' + p.change : ''}` : ''
+      return `  ${t}${name}${priceStr}`
+    })
+    blocks.push(`WATCHLIST${pricesAt}:\n${lines.join('\n')}`)
+  }
   const badges: DataBadge[] = []
 
   // ── CANDLES ────────────────────────────────────────────────────────────────

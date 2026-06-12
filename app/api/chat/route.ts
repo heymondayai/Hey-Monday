@@ -67,6 +67,10 @@ export async function POST(req: Request) {
     }
 
     const watchlistTickers: string[] = watchlist?.map((s: any) => s.ticker) ?? []
+    const watchlistNames: Record<string, string> = {}
+    for (const w of (watchlist ?? [])) {
+      if (w.ticker && w.company_name) watchlistNames[w.ticker] = w.company_name
+    }
     const userKey = userId ?? 'anonymous'
     const sonnetAllowed = canUseSonnet(userKey)
 
@@ -141,6 +145,7 @@ export async function POST(req: Request) {
     // ── STAGE 2: COMPILE ─────────────────────────────────────────────────────
     const { context: compiledContext, badges: compiledBadges, confidence } = await compileContext(plan, {
       watchlistTickers,
+      watchlistNames,
       passedPrices: prices,
       passedNews: news,
       todayStr,
