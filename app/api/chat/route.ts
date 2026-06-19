@@ -159,7 +159,10 @@ export async function POST(req: Request) {
     const useSearch = plan.requiresSearch
     const useSonnet = useSearch && sonnetAllowed
     const model     = useSonnet ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001'
-    const maxTokens = plan.maxTokens
+    // Safety floor: planner sometimes under-budgets detailed prose — guarantee enough room to finish.
+    const maxTokens = plan.detailLevel === 'detailed'
+      ? Math.max(plan.maxTokens, 700)
+      : plan.maxTokens
 
     const badges = useSearch
       ? [{ label: 'search', source: 'search' as const }, ...compiledBadges]
@@ -287,8 +290,11 @@ ${outputInstructions}`
               }
             }
           } finally {
+            const normalised = normalise(fullText)
+            const truncated = normalised.length > 0 && !/[.!?]$/.test(normalised.trimEnd())
+            if (truncated) console.warn(`[chat] TRUNCATED at ${maxTokens} tokens — response ended mid-sentence`)
             controller.enqueue(encoder.encode(
-              JSON.stringify({ type: 'done', fullText: normalise(fullText), ...responseMeta }) + '\n'
+              JSON.stringify({ type: 'done', fullText: normalised, truncated, ...responseMeta }) + '\n'
             ))
             controller.close()
           }

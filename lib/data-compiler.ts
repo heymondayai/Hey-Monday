@@ -496,8 +496,11 @@ export function buildOutputInstructions(plan: QueryPlan): string {
 - Sentence 3: One key risk or forward note. Stop.`
     case 'prose':
     default:
+      if (plan.detailLevel === 'detailed') {
+        return 'RESPONSE: Provide a complete, detailed narrative covering the full requested timeframe chronologically. Cover all key price moves, volume spikes, and session phases through the end of the period. Do not stop early. Do not summarize — narrate.'
+      }
       return plan.detailLevel === 'brief'
         ? 'RESPONSE: 1–2 sentences. Answer the question. Stop.'
-        : 'RESPONSE: 2–3 sentences maximum. Answer first, one supporting fact only if it changes the answer. Stop.'
+        : 'RESPONSE: 2–3 sentences. Answer first, one supporting fact only. Stop.'
   }
 }
