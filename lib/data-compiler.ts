@@ -123,7 +123,7 @@ function compileSymbol(
 
     const sign = parseFloat(changePct) >= 0 ? '+' : ''
     lines.push(
-      `${sym} ${sessionDate}: open $${sessionOpen.toFixed(2)} → close $${sessionClose.toFixed(2)} (${sign}${changePct}%) | ` +
+      `${sym} ${sessionDate}: open $${sessionOpen.toFixed(2)} → close $${sessionClose.toFixed(2)} (${sign}${changePct}% intraday open→close) | ` +
       `HOD $${hod.toFixed(2)} | LOD $${lod.toFixed(2)} | VWAP $${vwap} | vol ${totalVol.toLocaleString()}`
     )
   }
@@ -284,7 +284,7 @@ export async function compileContext(
     const lines = watchlistTickers.map(t => {
       const name = watchlistNames[t] && watchlistNames[t] !== t ? ` (${watchlistNames[t]})` : ''
       const p = priceMap[t]
-      const priceStr = p?.price ? ` — $${p.price}${p.change ? ' ' + p.change : ''}` : ''
+      const priceStr = p?.price ? ` — $${p.price}${p.change ? ' ' + p.change + ' vs prev close' : ''}` : ''
       return `  ${t}${name}${priceStr}`
     })
     blocks.push(`WATCHLIST${pricesAt}:\n${lines.join('\n')}`)
