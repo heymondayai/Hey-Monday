@@ -1,7 +1,7 @@
 // Stage 2 of the two-stage chat pipeline.
 // Given a QueryPlan, fetches exactly the data it specifies, pre-computes
-// structured insights (VWAP, HOD/LOD, biggest move, etc.), and returns a
-// compact context string ready to paste into the executor system prompt.
+// structured insights (VWAP, HOD/LOD, gaps, breadth, signals, etc.),
+// and returns a compact context string for the executor system prompt.
 
 import { getRecentCandlesMulti, CandleRow } from './candle-store'
 import {
@@ -23,12 +23,13 @@ import {
   formatOptionsFlow,
   computeSignals,
   formatSignals,
+  SymbolSignals,
 } from './market-data'
 import { buildMarketState } from './market-state'
 import { buildHistoricalContext } from './context-builder'
 import { QueryPlan, CompileStep } from './query-planner'
 
-// ── UTC → ET conversion (same approach as chat/route.ts) ─────────────────────
+// ── UTC → ET conversion ───────────────────────────────────────────────────────
 
 function candleRowToEt(row: CandleRow) {
   const d = new Date(row.ts)
@@ -78,13 +79,121 @@ function filterToTimeRange(candles: EtCandle[], startTime?: string, endTime?: st
   })
 }
 
+// ── SESSION PHASE ──────────────────────────────────────────────────────────────
+// Intraday context changes meaning depending on where we are in the trading day.
+
+export function getSessionPhase(): { phase: string; label: string; guidance: string } {
+  const now = new Date()
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now)
+  const h    = parseInt(parts.find(p => p.type === 'hour')?.value   ?? '0', 10)
+  const m    = parseInt(parts.find(p => p.type === 'minute')?.value ?? '0', 10)
+  const mins = h * 60 + m
+
+  if (mins < 240)  return { phase: 'overnight',     label: 'Overnight / Post-market',          guidance: 'Market is closed. Reference the most recent regular-session close for price context. Overnight futures and overseas markets are the active session.' }
+  if (mins < 570)  return { phase: 'premarket',     label: 'Pre-market (4:00–9:30 AM ET)',     guidance: 'Pre-market is active. Volume is thin; treat pre-market prints as directional signals, not firm levels. The opening gap from yesterday\'s close is the key setup to frame.' }
+  if (mins < 630)  return { phase: 'opening_drive', label: 'Opening drive (9:30–10:30 AM ET)', guidance: 'Opening drive: the most volatile and highest-volume period of the day. HOD and LOD are frequently set here. The first 15–30 min establishes session tone — gap direction, bias, and whether the gap holds or fills.' }
+  if (mins < 840)  return { phase: 'midday',        label: 'Midday (10:30 AM–2:00 PM ET)',     guidance: 'Midday chop: volume dries up, price ranges. Breakouts from midday ranges on low volume are suspect. A volume pickup during this window is a meaningful signal. VWAP acts as a gravitational anchor.' }
+  if (mins < 930)  return { phase: 'afternoon',     label: 'Afternoon (2:00–3:30 PM ET)',      guidance: 'Afternoon trend: institutional rebalancing and position-building begins. Volume increases. Directional moves in this window have more conviction than midday.' }
+  if (mins < 960)  return { phase: 'power_hour',    label: 'Power hour (3:30–4:00 PM ET)',     guidance: 'Power hour: highest intraday volume window. Trends that hold to 3:45 PM typically close in that direction. High-volume reversals here are significant. Closing auctions finalize prices.' }
+  if (mins < 1200) return { phase: 'after_hours',   label: 'After-hours (4:00–8:00 PM ET)',    guidance: 'After-hours: thin liquidity, wider spreads. AH prices reflect earnings reactions and breaking news. Treat AH levels as directional signals, not as firm support/resistance.' }
+  return           { phase: 'overnight',     label: 'Late post-market / Overnight',             guidance: 'Market closed. Reference the regular-session close for price context.' }
+}
+
+// ── WATCHLIST BREADTH INTELLIGENCE ────────────────────────────────────────────
+// Pre-computed market-wide view for multi-symbol / briefing questions.
+// Replaces scattered per-symbol raw data with a single structured intelligence block.
+
+function buildWatchlistBreadthBlock(
+  candlesBySym: Record<string, EtCandle[]>,
+  signalsBySym: Record<string, SymbolSignals | null>,
+  prevCloses: Record<string, number>,
+  todayStr: string,
+): string {
+  type Entry = {
+    sym: string
+    intradayPct: number
+    dayOverDayPct: number | null
+    aboveVwap: boolean
+    nearHod: boolean
+    nearLod: boolean
+    volRatio: number
+  }
+  const entries: Entry[] = []
+
+  for (const sym of Object.keys(candlesBySym)) {
+    const candles = candlesBySym[sym]
+    if (!candles?.length) continue
+
+    const sessionOpen  = parseFloat(candles[0].open)
+    const sessionClose = parseFloat(candles[candles.length - 1].close)
+    const intradayPct  = sessionOpen !== 0 ? (sessionClose - sessionOpen) / sessionOpen * 100 : 0
+
+    const prevClose    = prevCloses[sym]
+    const dayOverDayPct = prevClose && prevClose > 0
+      ? (sessionClose - prevClose) / prevClose * 100
+      : null
+
+    const sig = signalsBySym[sym]
+    entries.push({
+      sym,
+      intradayPct,
+      dayOverDayPct,
+      aboveVwap: sig ? sig.vwapRelation !== 'below' : false,
+      nearHod:   sig?.nearHod ?? false,
+      nearLod:   sig?.nearLod ?? false,
+      volRatio:  sig?.volumeRatio ?? 1,
+    })
+  }
+
+  if (entries.length < 2) return ''
+
+  const sign   = (n: number) => n >= 0 ? '+' : ''
+  const fmtPct = (n: number) => `${sign(n)}${n.toFixed(2)}%`
+
+  const greenCount    = entries.filter(e => e.intradayPct >= 0).length
+  const avgIntraday   = entries.reduce((a, e) => a + e.intradayPct, 0) / entries.length
+  const sorted        = [...entries].sort((a, b) => b.intradayPct - a.intradayPct)
+  const aboveVwapCnt  = entries.filter(e => e.aboveVwap).length
+  const nearHodCnt    = entries.filter(e => e.nearHod).length
+  const nearLodCnt    = entries.filter(e => e.nearLod).length
+  const volAlerts     = entries.filter(e => e.volRatio >= 2)
+
+  const leaders  = sorted.slice(0, 3).map(e => `${e.sym} ${fmtPct(e.intradayPct)}`)
+  const laggards = [...sorted].reverse()
+    .filter(e => e.intradayPct < 0)
+    .slice(0, 3)
+    .map(e => `${e.sym} ${fmtPct(e.intradayPct)}`)
+
+  const lines: string[] = [
+    `WATCHLIST BREADTH (intraday open→close, ${todayStr}):`,
+    `  ${greenCount}/${entries.length} names green | Avg: ${fmtPct(avgIntraday)} | VWAP: ${aboveVwapCnt}/${entries.length} above`,
+    `  Leaders:  ${leaders.join(' | ')}`,
+  ]
+  if (laggards.length) lines.push(`  Laggards: ${laggards.join(' | ')}`)
+
+  const structureNotes = [
+    nearHodCnt > 0 && `${nearHodCnt} near HOD (session strength)`,
+    nearLodCnt > 0 && `${nearLodCnt} near LOD (session weakness)`,
+  ].filter(Boolean)
+  if (structureNotes.length) lines.push(`  Structure: ${structureNotes.join(' | ')}`)
+
+  if (volAlerts.length) {
+    lines.push(`  Volume elevated: ${volAlerts.map(e => `${e.sym} ${e.volRatio.toFixed(1)}x avg (${e.intradayPct >= 0 ? '▲' : '▼'})`).join(', ')}`)
+  }
+
+  return lines.join('\n')
+}
+
 // ── PER-SYMBOL COMPILE ────────────────────────────────────────────────────────
 
 function compileSymbol(
   sym: string,
-  allCandles: EtCandle[],   // all candles for sym (ET, date-filtered to session)
+  allCandles: EtCandle[],
   steps: CompileStep[],
   plan: QueryPlan,
+  prevClose?: number,   // previous session close — enables gap detection
 ): string[] {
   if (!allCandles.length) return []
 
@@ -111,7 +220,6 @@ function compileSymbol(
       : '0.00'
     const totalVol = vols.reduce((a, b) => a + b, 0)
 
-    // VWAP = Σ(typical_price × volume) / Σ(volume)
     let cumPV = 0, cumVol = 0
     for (const c of candles) {
       const tp = (parseFloat(c.high) + parseFloat(c.low) + parseFloat(c.close)) / 3
@@ -126,6 +234,24 @@ function compileSymbol(
       `${sym} ${sessionDate}: open $${sessionOpen.toFixed(2)} → close $${sessionClose.toFixed(2)} (${sign}${changePct}% intraday open→close) | ` +
       `HOD $${hod.toFixed(2)} | LOD $${lod.toFixed(2)} | VWAP $${vwap} | vol ${totalVol.toLocaleString()}`
     )
+
+    // Gap detection — only available when prev session close is known
+    if (prevClose && prevClose > 0) {
+      const gapAbs = sessionOpen - prevClose
+      const gapPct = (gapAbs / prevClose) * 100
+      const gapFilled = gapAbs > 0 ? lod <= prevClose : hod >= prevClose
+
+      if (Math.abs(gapPct) >= 0.10) {
+        const gapDir  = gapAbs > 0 ? 'gap up' : 'gap down'
+        const gapSign = gapAbs >= 0 ? '+' : ''
+        lines.push(
+          `${sym} vs prev close $${prevClose.toFixed(2)}: ${gapDir} ${gapSign}$${Math.abs(gapAbs).toFixed(2)} (${gapSign}${gapPct.toFixed(2)}%) | ` +
+          `gap ${gapFilled ? 'FILLED intraday' : 'unfilled (holding)'}`
+        )
+      } else {
+        lines.push(`${sym} vs prev close $${prevClose.toFixed(2)}: flat open (no meaningful gap)`)
+      }
+    }
   }
 
   // ── biggest_move ──────────────────────────────────────────────────────────
@@ -195,7 +321,6 @@ function compileSymbol(
 }
 
 // ── NEWS–PRICE CORRELATION ────────────────────────────────────────────────────
-// Matches news items (by publish time) to the nearest candle for context.
 
 function correlateNewsToPriceMove(
   candlesBySym: Record<string, EtCandle[]>,
@@ -211,7 +336,6 @@ function correlateNewsToPriceMove(
     const candles = sym ? (candlesBySym[sym] ?? []) : Object.values(candlesBySym)[0] ?? []
     if (!candles.length) continue
 
-    // Find candle whose window contains the news timestamp (ET)
     const pubEt = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
     }).format(new Date(pubMs))
@@ -254,7 +378,7 @@ export interface CompilerResult {
 
 export interface CompilerOptions {
   watchlistTickers: string[]
-  watchlistNames?: Record<string, string>   // ticker → company_name
+  watchlistNames?: Record<string, string>
   passedPrices?: any[]                      // { sym, price, change, up }[]
   passedNews?: any[]
   todayStr: string
@@ -268,80 +392,112 @@ export async function compileContext(
   plan: QueryPlan,
   opts: CompilerOptions,
 ): Promise<CompilerResult> {
-  const { watchlistTickers, watchlistNames = {}, passedPrices = [], passedNews, todayStr, message, userPlan, traderType } = opts
+  const {
+    watchlistTickers, watchlistNames = {}, passedPrices = [],
+    passedNews, todayStr, message, userPlan, traderType,
+  } = opts
 
   const blocks: string[] = []
   const targetSymbols = plan.symbols.length ? plan.symbols : watchlistTickers.slice(0, 8)
 
   // ── WATCHLIST BLOCK (always present) ──────────────────────────────────────
-  // Gives the AI explicit knowledge of what's in the watchlist and current prices.
   if (watchlistTickers.length) {
     const priceMap: Record<string, { price?: string; change?: string }> = {}
     for (const p of passedPrices) {
       if (p.sym) priceMap[p.sym] = { price: p.price, change: p.change }
     }
-    const pricesAt = passedPrices.length ? ` (prices as of ${new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true })} ET)` : ''
+    const pricesAt = passedPrices.length
+      ? ` (prices as of ${new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true })} ET)`
+      : ''
     const lines = watchlistTickers.map(t => {
-      const name = watchlistNames[t] && watchlistNames[t] !== t ? ` (${watchlistNames[t]})` : ''
-      const p = priceMap[t]
+      const name     = watchlistNames[t] && watchlistNames[t] !== t ? ` (${watchlistNames[t]})` : ''
+      const p        = priceMap[t]
       const priceStr = p?.price ? ` — $${p.price}${p.change ? ' ' + p.change + ' vs prev close' : ''}` : ''
       return `  ${t}${name}${priceStr}`
     })
     blocks.push(`WATCHLIST${pricesAt}:\n${lines.join('\n')}`)
   }
+
   const badges: DataBadge[] = []
 
   // ── CANDLES ────────────────────────────────────────────────────────────────
+  // Hoisted so market-state can reuse the same candles instead of double-fetching.
+  // 26h lookback: captures yesterday's 4 PM close from any time today
+  // (market closes 4 PM ET; at 9:30 AM next day = 17.5h ago — within 26h window).
+  let candlesBySym: Record<string, EtCandle[]> = {}
+  const prevCloses: Record<string, number> = {}
+
   if (plan.fetch.includes('candles') && targetSymbols.length) {
-    const lookbackMins = plan.isHistorical ? 32 * 60 : 16 * 60
+    const lookbackMins = plan.isHistorical ? 32 * 60 : 26 * 60
     const rows = await getRecentCandlesMulti(targetSymbols, lookbackMins)
     const hasData = targetSymbols.some(t => (rows[t]?.length ?? 0) > 0)
-
-    let candlesBySym: Record<string, EtCandle[]> = {}
 
     if (hasData) {
       badges.push({ label: 'candle data', source: 'live' })
       for (const sym of targetSymbols) {
-        const converted = (rows[sym] ?? []).map(candleRowToEt)
-        // Filter to the plan's target date
-        const dateFiltered = converted.filter(c => c.datetime.startsWith(plan.timeRange.startDate))
-        candlesBySym[sym] = dateFiltered.length ? dateFiltered : converted
+        const converted    = (rows[sym] ?? []).map(candleRowToEt)
+        const todayCandles = converted.filter(c => c.datetime.startsWith(plan.timeRange.startDate))
+        const prevCandles  = converted.filter(c => !c.datetime.startsWith(plan.timeRange.startDate))
+
+        // Never fall back to wrong-day candles — leave empty and log
+        if (todayCandles.length) {
+          candlesBySym[sym] = todayCandles
+        } else {
+          console.warn(`[compiler] ${sym}: no candles for ${plan.timeRange.startDate}`)
+          candlesBySym[sym] = []
+        }
+
+        // Previous session close → enables gap detection in session_summary
+        if (prevCandles.length) {
+          prevCloses[sym] = parseFloat(prevCandles[prevCandles.length - 1].close)
+        }
       }
     } else {
       badges.push({ label: 'candle data', source: 'api' })
-      // Supabase empty → fall back to Twelve Data API
       const { data } = await fetchIntraday(targetSymbols, {
         interval: '5min',
         outputsize: plan.isHistorical ? 500 : 100,
         startDate: plan.timeRange.startDate,
-        endDate: plan.timeRange.endDate,
+        endDate:   plan.timeRange.endDate,
       })
       for (const sym of targetSymbols) {
         candlesBySym[sym] = (data[sym] ?? []) as unknown as EtCandle[]
       }
     }
 
-    // Run compile steps per symbol
+    // Pre-compute signals for ALL target symbols (not just first or briefing)
+    const spyRaw = (candlesBySym['SPY'] ?? []) as unknown as Parameters<typeof computeSignals>[2]
+    const signalsBySym: Record<string, SymbolSignals | null> = {}
+    for (const sym of targetSymbols) {
+      signalsBySym[sym] = computeSignals(sym, candlesBySym[sym] as any ?? [], spyRaw)
+    }
+
+    // Watchlist breadth block — leads context for multi-symbol / briefing queries
+    const isMultiSymbol = targetSymbols.length >= 3 || plan.topic === 'briefing'
+    if (isMultiSymbol) {
+      const breadth = buildWatchlistBreadthBlock(candlesBySym, signalsBySym, prevCloses, plan.timeRange.startDate)
+      if (breadth) blocks.push(breadth)
+    }
+
+    // Per-symbol candle details (session summary, biggest move, gaps, etc.)
     const candleLines: string[] = []
     for (const sym of targetSymbols) {
-      if (!(candlesBySym[sym]?.length)) continue
-      const compiled = compileSymbol(sym, candlesBySym[sym], plan.compile, plan)
+      if (!candlesBySym[sym]?.length) continue
+      const compiled = compileSymbol(sym, candlesBySym[sym], plan.compile, plan, prevCloses[sym])
       candleLines.push(...compiled)
     }
 
-    // News–price correlation (cross-symbol step)
+    // News–price correlation
     if (plan.compile.includes('news_price_correlation') && passedNews?.length) {
       const correlation = correlateNewsToPriceMove(candlesBySym, passedNews)
       if (correlation) candleLines.push(correlation)
     }
 
-    // Signals (technical indicators)
-    const spyCandles = (candlesBySym['SPY'] ?? []) as unknown as Parameters<typeof computeSignals>[2]
-    const signalSyms = plan.topic === 'briefing' ? targetSymbols : targetSymbols.slice(0, 1)
-    const signals = signalSyms
-      .map(sym => computeSignals(sym, candlesBySym[sym] as any ?? [], spyCandles))
-      .filter(Boolean)
-    if (signals.length) candleLines.push(formatSignals(signals as any))
+    // Signals block — all symbols
+    const allSignals = targetSymbols
+      .map(sym => signalsBySym[sym])
+      .filter((s): s is SymbolSignals => s !== null)
+    if (allSignals.length) candleLines.push(formatSignals(allSignals))
 
     if (candleLines.length) {
       blocks.push(`MARKET DATA (session: ${plan.timeRange.startDate})\n${candleLines.join('\n')}`)
@@ -398,12 +554,14 @@ export async function compileContext(
           symbol: n.ticker, headline: n.headline,
           source: n.source, publishedAt: n.publishedAt,
         })),
+        // Pass already-fetched candles to avoid a duplicate Twelve Data API call
+        intradayData: Object.keys(candlesBySym).length > 0 ? candlesBySym as any : undefined,
       }) : Promise.resolve(null),
     ])
 
-    if (economicEvents?.length) { badges.push({ label: 'calendar', source: 'api' }); blocks.push(formatEconomicCalendar(economicEvents, todayStr)) }
-    if (macroData)              { badges.push({ label: 'macro', source: 'api' });    blocks.push(formatMacroData(macroData)) }
-    if (marketState?.summary)   blocks.push(`MARKET SNAPSHOT (${marketState.snapshotTime}): ${marketState.summary}`)
+    if (economicEvents?.length)  { badges.push({ label: 'calendar', source: 'api' }); blocks.push(formatEconomicCalendar(economicEvents, todayStr)) }
+    if (macroData)               { badges.push({ label: 'macro', source: 'api' });    blocks.push(formatMacroData(macroData)) }
+    if (marketState?.summary)    blocks.push(`MARKET SNAPSHOT (${marketState.snapshotTime}): ${marketState.summary}`)
     if (marketState?.macroContext?.length) {
       blocks.push(
         `MACRO:\n${marketState.macroContext.slice(0, 10)
@@ -455,19 +613,17 @@ export async function compileContext(
   // ── HISTORICAL CONTEXT ─────────────────────────────────────────────────────
   if (plan.fetch.includes('historical_context')) {
     try {
-      const hist = await buildHistoricalContext(
-        message, watchlistTickers, focusSym, userPlan ?? null
-      )
+      const hist = await buildHistoricalContext(message, watchlistTickers, focusSym, userPlan ?? null)
       if (hist) { badges.push({ label: 'history', source: 'api' }); blocks.push(hist) }
     } catch { /* non-fatal */ }
   }
 
   // ── TRADER LENS ────────────────────────────────────────────────────────────
   const traderLens = traderType === 'day'
-    ? 'USER IS A DAY TRADER: Focus on intraday momentum, VWAP, HOD/LOD, volume, session context.'
+    ? 'USER IS A DAY TRADER: Prioritize intraday momentum, VWAP, HOD/LOD, volume pace, session phase context.'
     : traderType === 'longterm'
-    ? 'USER IS A LONG-TERM INVESTOR: Focus on fundamentals, macro, earnings, longer-term thesis.'
-    : 'USER IS A SWING TRADER: Focus on 3-day to 3-month setups, catalysts, sector rotation.'
+    ? 'USER IS A LONG-TERM INVESTOR: Prioritize fundamentals, macro regime, earnings, thesis durability.'
+    : 'USER IS A SWING TRADER: Prioritize 3-day to 3-month setups, catalysts, sector rotation, key technical levels.'
 
   const context = [traderLens, ...blocks].filter(Boolean).join('\n\n')
   const confidence: CompilerResult['confidence'] = badges.some(b => b.source === 'live') ? 'high' : 'low'
@@ -489,15 +645,11 @@ export function buildOutputInstructions(plan: QueryPlan): string {
     case 'summary':
       return 'RESPONSE: 2–3 sentences. Lead with the key number or move. One supporting fact. Stop.'
     case 'briefing':
-      return `RESPONSE RULES (HARD LIMITS):
-- Max 3 sentences.
-- Sentence 1: Biggest theme with a number.
-- Sentence 2: Top mover or catalyst.
-- Sentence 3: One key risk or forward note. Stop.`
+      return `RESPONSE: Lead with the WATCHLIST BREADTH block summary (breadth, leaders/laggards). Then the single most important market theme or catalyst. Then one forward-looking note (key risk, upcoming event, or setup). Max 4 sentences total. Stop.`
     case 'prose':
     default:
       if (plan.detailLevel === 'detailed') {
-        return 'RESPONSE: Provide a complete, detailed narrative covering the full requested timeframe chronologically. Cover all key price moves, volume spikes, and session phases through the end of the period. Do not stop early. Do not summarize — narrate.'
+        return 'RESPONSE: Provide a complete, detailed narrative covering the full requested timeframe chronologically. Cover all key price moves, volume spikes, gap behavior, and session phases through the end of the period. Do not stop early. Do not summarize — narrate.'
       }
       return plan.detailLevel === 'brief'
         ? 'RESPONSE: 1–2 sentences. Answer the question. Stop.'

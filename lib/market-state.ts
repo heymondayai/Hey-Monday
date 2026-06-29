@@ -270,6 +270,7 @@ function buildRuleBasedSummary(params: {
 export async function buildMarketState(params?: {
   watchlistTickers?: string[]
   keyNews?: MarketNewsItem[]
+  intradayData?: Record<string, any[]>  // pre-fetched candles — skips the Twelve Data API call
 }): Promise<MarketStateSnapshot> {
   const watchlistTickers =
     params?.watchlistTickers?.length
@@ -286,8 +287,13 @@ const calendarTo = calendarToDate.toLocaleDateString('en-CA', {
   timeZone: 'America/New_York',
 })
 
+// Use pre-fetched candles when available to avoid double-hitting Twelve Data rate limits
+const intradayPromise = params?.intradayData && Object.keys(params.intradayData).length > 0
+  ? Promise.resolve({ data: params.intradayData as Record<string, Candle[]>, debug: ['pre-fetched'] })
+  : fetchIntraday(watchlistTickers)
+
 const [intradayResult, economicEvents, earningsEvents, macroData, sectorData] = await Promise.all([
-  fetchIntraday(watchlistTickers),
+  intradayPromise,
   fetchEconomicCalendar(todayStr, calendarTo),
   fetchEarningsCalendar(watchlistTickers, todayStr, calendarTo),
   fetchMacroData(),

@@ -86,6 +86,7 @@ Schema:
 
 TOPIC RULES:
 - "show/list/give me candles" → intraday, compile:[candle_range_detail], outputFormat:candle_list
+- "describe/walk me through/explain/tell me about price movement/candles from open/open to close/full session/full day" → intraday, compile:[session_summary,biggest_move,volume_spikes], outputFormat:prose, detailLevel:detailed
 - "what happened to X today/this session" → intraday, compile:[session_summary,biggest_move], outputFormat:prose
 - "why did X move/drop/spike/rally" → news_catalyst, fetch:[candles,news], compile:[biggest_move,news_price_correlation], requiresSearch:true
 - "what is the price / where is X" → price, fetch:[live_prices], compile:[], outputFormat:one_liner
@@ -100,10 +101,15 @@ TOPIC RULES:
 TOKEN BUDGET:
 - casual/one_liner: 50
 - price/simple: 80
-- prose/summary (1-2 sentences): 130
-- candle_list (per-candle detail): 240
-- briefing/detailed: 320
-- news_catalyst with search: 280
+- prose/summary (standard, 2-3 sentences): 150
+- prose/narrative (detailed walkthrough, full session, describe): 650
+- candle_list (per-candle detail): 400
+- briefing/detailed: 380
+- news_catalyst with search: 320
+
+DETAIL LEVEL:
+- detailLevel:detailed → always use the higher token budget; do NOT cap at 2-3 sentences
+- For "describe", "walk me through", "explain the price action", "open to close" → detailLevel:detailed, maxTokens:650
 
 FETCH RULES — only include what the question actually needs:
 - Candle questions always need "candles"
@@ -175,11 +181,12 @@ export function buildFallbackPlan(
   const lower = message.toLowerCase()
   const isCasual = /^(hey|hi|hello|thanks|good morning|good afternoon|what's up|yo)\b/.test(lower)
   const isBriefing = /briefing|summary|recap|rundown|how did|what happened|end of day|eod/.test(lower)
-  const isCandle = /candle|ohlc|open.*close|from \d/.test(lower)
+  const isCandle = /candle|ohlc|from \d/.test(lower)
+  const isDetailedNarrative = /describe|walk me through|explain.*price|price movement|open to close|open.*close|full session|full day/.test(lower)
   const isPrice = /price|where is|how much/.test(lower) && lower.split(' ').length < 8
 
   return {
-    topic: isCasual ? 'casual' : isBriefing ? 'briefing' : isCandle ? 'intraday' : isPrice ? 'price' : 'intraday',
+    topic: isCasual ? 'casual' : isBriefing ? 'briefing' : (isCandle || isDetailedNarrative) ? 'intraday' : isPrice ? 'price' : 'intraday',
     symbols: watchlistTickers,
     timeRange: { type: 'session', startDate: todayEt, endDate: todayEt },
     fetch: isCasual ? [] : isBriefing
@@ -187,10 +194,12 @@ export function buildFallbackPlan(
       : ['candles', 'live_prices', 'news', 'market_state'],
     compile: isCasual ? [] : isBriefing
       ? ['session_summary', 'biggest_move']
-      : isCandle ? ['candle_range_detail'] : ['session_summary', 'biggest_move'],
+      : isCandle ? ['candle_range_detail']
+      : isDetailedNarrative ? ['session_summary', 'biggest_move', 'volume_spikes']
+      : ['session_summary', 'biggest_move'],
     outputFormat: isCasual ? 'one_liner' : isBriefing ? 'briefing' : isCandle ? 'candle_list' : 'prose',
-    detailLevel: isBriefing ? 'detailed' : 'standard',
-    maxTokens: isCasual ? 50 : isBriefing ? 320 : isCandle ? 240 : 130,
+    detailLevel: (isBriefing || isDetailedNarrative) ? 'detailed' : 'standard',
+    maxTokens: isCasual ? 50 : isBriefing ? 380 : isDetailedNarrative ? 650 : isCandle ? 400 : 150,
     isHistorical: false,
     requiresSearch: false,
   }
