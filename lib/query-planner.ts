@@ -3,20 +3,22 @@
 // that tells the compiler exactly what data to fetch and how to compile it.
 
 export type TopicType =
-  | 'intraday'       // candle questions, time-range price action
-  | 'price'          // current price / today's simple move
-  | 'news_catalyst'  // why did it move, what's driving it
-  | 'macro'          // economic calendar, fed, rates
-  | 'earnings'       // earnings calendar / results
-  | 'options'        // options flow, unusual activity
-  | 'insider'        // insider buying/selling
-  | 'analyst'        // ratings, price targets, upgrades
-  | 'briefing'       // eod briefing, session recap, catch me up
-  | 'sector'         // sector rotation / performance
-  | 'technical'      // signals, momentum, technical levels
-  | 'setup_analysis' // trade setup: entry zone, stop, target, R/R
-  | 'historical'     // specific past date
-  | 'casual'         // greeting / non-market chat
+  | 'intraday'         // candle questions, time-range price action
+  | 'price'            // current price / today's simple move
+  | 'news_catalyst'    // why did it move, what's driving it
+  | 'macro'            // economic calendar, fed, rates
+  | 'earnings'         // earnings calendar / results
+  | 'earnings_warroom' // live earnings reaction interpretation
+  | 'options'          // options flow, unusual activity
+  | 'insider'          // insider buying/selling
+  | 'analyst'          // ratings, price targets, upgrades
+  | 'briefing'         // eod briefing, session recap, catch me up
+  | 'sector'           // sector rotation / performance
+  | 'technical'        // signals, momentum, technical levels
+  | 'setup_analysis'   // trade setup: entry zone, stop, target, R/R
+  | 'journal_review'   // performance review, how am I doing, trade stats
+  | 'historical'       // specific past date
+  | 'casual'           // greeting / non-market chat
 
 export type DataFetchType =
   | 'candles'
@@ -55,7 +57,7 @@ export interface QueryPlan {
   timeRange: TimeRange
   fetch: DataFetchType[]
   compile: CompileStep[]
-  outputFormat: 'prose' | 'candle_list' | 'summary' | 'one_liner' | 'briefing' | 'setup'
+  outputFormat: 'prose' | 'candle_list' | 'summary' | 'one_liner' | 'briefing' | 'setup' | 'warroom'
   detailLevel: 'brief' | 'standard' | 'detailed'
   maxTokens: number
   isHistorical: boolean
@@ -68,7 +70,7 @@ const PLANNER_SYSTEM = `You are a query planner for a stock market AI assistant.
 
 Schema:
 {
-  "topic": intraday|price|news_catalyst|macro|earnings|options|insider|analyst|briefing|sector|technical|setup_analysis|historical|casual,
+  "topic": intraday|price|news_catalyst|macro|earnings|earnings_warroom|options|insider|analyst|briefing|sector|technical|setup_analysis|journal_review|historical|casual,
   "symbols": [uppercase ticker strings — include watchlist tickers for general market questions],
   "timeRange": {
     "type": session|range|specific_date|yesterday|week|month,
@@ -79,7 +81,7 @@ Schema:
   },
   "fetch": [candles|live_prices|news|macro|calendar|earnings_calendar|sector|insider|analyst|options|historical_context|market_state],
   "compile": [session_summary|candle_range_detail|biggest_move|volume_spikes|momentum_score|news_price_correlation|setup_analysis],
-  "outputFormat": prose|candle_list|summary|one_liner|briefing|setup,
+  "outputFormat": prose|candle_list|summary|one_liner|briefing|setup|warroom,
   "detailLevel": brief|standard|detailed,
   "maxTokens": integer,
   "isHistorical": boolean,
@@ -94,6 +96,8 @@ TOPIC RULES:
 - "what is the price / where is X" → price, fetch:[live_prices], compile:[], outputFormat:one_liner
 - "briefing/summary/recap/how did market do" → briefing, fetch:[candles,live_prices,news,sector,macro,market_state], compile:[session_summary,biggest_move], outputFormat:briefing
 - "setup/entry/trade idea/where would you enter/is this a good setup/what's the play/where's the stop/where's the target/give me levels/trade this/risk reward/r:r/R/R" → setup_analysis, fetch:[candles,news,options,analyst,insider], compile:[setup_analysis,session_summary,biggest_move,volume_spikes], outputFormat:setup, detailLevel:detailed, maxTokens:500
+- "earnings war room/earnings reaction/just reported/beat/miss/guidance/earnings call" → earnings_warroom, fetch:[candles,news,earnings_calendar], compile:[biggest_move,news_price_correlation], outputFormat:prose, detailLevel:detailed, maxTokens:500
+- "how am I doing/my performance/trade journal/my trades/win rate/my stats/review my trades/journal" → journal_review, fetch:[], compile:[], outputFormat:prose, detailLevel:detailed, maxTokens:400
 - macro/calendar/events/fed/cpi → macro, fetch:[calendar,macro,market_state], compile:[]
 - earnings → earnings, fetch:[earnings_calendar], compile:[]
 - insider → insider, fetch:[insider], compile:[]

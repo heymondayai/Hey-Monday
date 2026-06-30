@@ -28,6 +28,8 @@ import {
 import { buildMarketState } from './market-state'
 import { buildHistoricalContext } from './context-builder'
 import { QueryPlan, CompileStep } from './query-planner'
+import { computeMarketRegime } from './market-regime'
+import { runBacktests, formatBacktests } from './backtest'
 
 // ── UTC → ET conversion ───────────────────────────────────────────────────────
 
@@ -540,6 +542,11 @@ export async function compileContext(
     ? buildEarningsProximityAlert(targetSymbols, todayStr)
     : Promise.resolve('')
 
+  // Fire backtest in parallel for setup_analysis — 4s cap so it never blocks response
+  const backtestPromise = plan.compile.includes('setup_analysis') && plan.symbols[0]
+    ? runBacktests(plan.symbols[0])
+    : Promise.resolve([])
+
   if (plan.fetch.includes('candles') && targetSymbols.length) {
     const lookbackMins = plan.isHistorical ? 32 * 60 : 26 * 60
 
@@ -598,6 +605,18 @@ export async function compileContext(
       })
     }
 
+    // Market regime — computed from SPY candles when available
+    const spyCandlesRaw = candlesBySym['SPY']
+    if (spyCandlesRaw?.length) {
+      const spySimple = spyCandlesRaw.map(c => ({
+        open: parseFloat(c.open), high: parseFloat(c.high),
+        low:  parseFloat(c.low),  close: parseFloat(c.close),
+        volume: parseInt(c.volume, 10),
+      }))
+      const regime = computeMarketRegime(spySimple)
+      if (regime.formatted) blocks.push(regime.formatted)
+    }
+
     // Watchlist breadth block — leads context for multi-symbol / briefing queries
     const isMultiSymbol = targetSymbols.length >= 3 || plan.topic === 'briefing'
     if (isMultiSymbol) {
@@ -633,6 +652,13 @@ export async function compileContext(
   // Earnings proximity alert — fires whenever any target symbol reports within 7 days
   const earningsAlert = await earningsProximityPromise
   if (earningsAlert) blocks.push(earningsAlert)
+
+  // Backtest stats — injected alongside setup levels when setup_analysis runs
+  const backtestResults = await backtestPromise
+  if (backtestResults.length) {
+    const backtestBlock = formatBacktests(plan.symbols[0], backtestResults)
+    if (backtestBlock) blocks.push(backtestBlock)
+  }
 
   // ── LIVE PRICES ────────────────────────────────────────────────────────────
   if (plan.fetch.includes('live_prices')) {
@@ -776,6 +802,8 @@ export function buildOutputInstructions(plan: QueryPlan): string {
       return 'RESPONSE: 2–3 sentences. Lead with the key number or move. One supporting fact. Stop.'
     case 'briefing':
       return `RESPONSE: Lead with the WATCHLIST BREADTH block summary (breadth, leaders/laggards). Then the single most important market theme or catalyst. Then one forward-looking note (key risk, upcoming event, or setup). Max 4 sentences total. Stop.`
+    case 'warroom':
+      return `RESPONSE: Lead with EPS vs estimate and revenue vs estimate in one sentence. Then forward guidance vs consensus — identify which number matters most. Then the initial price reaction and whether it makes sense. Then one trade implication (gap-and-go, earnings fade, or "wait for structure"). Max 5 sentences. No filler.`
     case 'setup':
       return `RESPONSE: Provide a structured technical setup analysis using the SETUP LEVELS block. Write in flowing prose — no markdown, no bullets, no headers. Cover all four elements in order:
 1. Setup: Identify the setup type (e.g. VWAP reclaim, ORB breakout, HOD breakout, gap-and-go, bull flag, prior day high test) and direction (long/short). One sentence.

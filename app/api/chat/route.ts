@@ -4,6 +4,7 @@ import { createAdminSupabaseClient } from '@/lib/supabase-admin'
 import { planQuery, buildFallbackPlan } from '@/lib/query-planner'
 import { compileContext, buildOutputInstructions, getSessionPhase } from '@/lib/data-compiler'
 import { getConversationHistory, saveConversationMessages } from '@/lib/conversation-store'
+import { messageContainsTrade, extractTradeFromMessage, saveTrade, getPerformanceStats, generateCoachingInsight } from '@/lib/trade-journal'
 
 
 // ── SONNET DAILY CAP ─────────────────────────────────────────────────────────
@@ -94,6 +95,11 @@ export async function POST(req: Request) {
     const etDate = `${etParts.find(p => p.type === 'weekday')?.value}, ${etParts.find(p => p.type === 'month')?.value} ${etParts.find(p => p.type === 'day')?.value}, ${etParts.find(p => p.type === 'year')?.value}`
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
+    // Kick off trade detection in parallel — fire-and-forget, no hot-path latency
+    const tradeDetectPromise = userId && messageContainsTrade(message)
+      ? extractTradeFromMessage(message, todayStr)
+      : Promise.resolve(null)
+
     // Last-close day label (before 4 PM ET the current session hasn't closed)
     const etHour = parseInt(
       new Intl.DateTimeFormat('en-US', {
@@ -159,6 +165,18 @@ export async function POST(req: Request) {
       traderType,
     })
 
+    // ── JOURNAL REVIEW — inject stats when user asks about their performance ──
+    let journalContext = ''
+    if (plan.topic === 'journal_review' && userId) {
+      const stats = await getPerformanceStats(userId)
+      if (stats) {
+        const coaching = await generateCoachingInsight(stats)
+        journalContext = `\n\n${stats.formatted}\n\nCOACHING INSIGHT: ${coaching}`
+      } else {
+        journalContext = '\n\nTRADE JOURNAL: No trades logged yet. Mention a trade in conversation to start tracking — e.g. "I bought NVDA at $118, stopped out at $115."'
+      }
+    }
+
     // ── MODEL + SEARCH ROUTING ────────────────────────────────────────────────
     const useSearch = plan.requiresSearch
     const useSonnet = useSearch && sonnetAllowed
@@ -204,7 +222,7 @@ Session phase: ${sessionPhase.label}
 ${sessionPhase.guidance}
 ${memoryNote ? '\n' + memoryNote : ''}
 
-${compiledContext}
+${compiledContext}${journalContext}
 
 IDENTITY:
 - Sound like a sharp, knowledgeable trading partner — direct and precise, but human.
@@ -272,6 +290,22 @@ SETUP ANALYSIS RULES:
 - Setup types to identify: VWAP reclaim, HOD/LOD breakout, opening range breakout (ORB), gap-and-go, gap fill, prior day high/low test, bull flag, bear flag, volume climax reversal.
 - Risk/reward: always compute and state it. Entry to stop = risk. Entry to target = reward. State as ratio (2.5:1 is the minimum worth noting).
 - If the chart structure does not support a clean setup, say so directly: "No clean setup here — the structure is choppy / no clear R/R."
+- When HISTORICAL PATTERN STATS are present in context, cite the relevant win rate and sample size naturally: "This VWAP reclaim has historically continued 68% of the time in 23 setups over the last 90 days — above-average odds for this pattern."
+
+EARNINGS WAR ROOM RULES (topic: earnings_warroom):
+- When a company has just reported, lead with the three numbers that move stocks: EPS vs estimate, revenue vs estimate, and forward guidance.
+- Format the beat/miss clearly: "Beat EPS by $0.23 ($1.89 vs $1.66 estimate). Revenue in-line at $X.Xb. Guided Q2 revenue to $X.X–X.Xb vs $X.Xb estimate."
+- Always identify WHICH number matters most: "The guide is the story here, not the beat — guidance came in below expectations."
+- Note the initial price reaction and whether it's consistent with the report: "Stock up 4% AH on what is broadly a solid beat — reaction makes sense."
+- Flag any unusual divergence: "Stock selling off despite the beat — watch for guidance language or margin compression."
+- State the sector/macro context: "Higher rates make the guide miss more punishing than it would be in a growth environment."
+
+TRADE JOURNAL RULES (topic: journal_review):
+- When TRADE JOURNAL data is present, use it to give a specific, personalized performance review.
+- Lead with the headline number: win rate and total P&L over the period.
+- Identify the most actionable pattern: their strongest setup or their most frequent losing scenario.
+- Be direct and coach-like. "Your NVDA trades are 4/5 — that's your edge. Your midday fades are 1/4 — that pattern is hurting you."
+- End with one concrete recommendation: "Focus on the first hour for entries — your opening drive setup is working."
 
 CORE RULES:
 1. Use only facts in the compiled context or web search results. Never invent prices, events, or timestamps.
@@ -382,6 +416,12 @@ ${outputInstructions}`
               ]).catch(e => console.error('[chat] memory save:', e))
             }
 
+            // Save detected trade entry — fire-and-forget
+            const detectedTrade = await tradeDetectPromise
+            if (detectedTrade && userId) {
+              saveTrade({ ...detectedTrade, userId }).catch(e => console.error('[chat] trade save:', e))
+            }
+
             controller.enqueue(encoder.encode(
               JSON.stringify({ type: 'done', fullText: normalised, truncated, ...responseMeta }) + '\n'
             ))
@@ -433,6 +473,12 @@ ${outputInstructions}`
         { role: 'user',      content: message.slice(0, 4000) },
         { role: 'assistant', content: fullText.slice(0, 4000) },
       ]).catch(e => console.error('[chat] memory save:', e))
+    }
+
+    // Save detected trade entry — fire-and-forget
+    const detectedTrade = await tradeDetectPromise
+    if (detectedTrade && userId) {
+      saveTrade({ ...detectedTrade, userId }).catch(e => console.error('[chat] trade save:', e))
     }
 
     const encoder = new TextEncoder()
