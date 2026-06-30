@@ -605,9 +605,10 @@ export async function compileContext(
       })
     }
 
-    // Market regime — computed from SPY candles when available
+    // Market regime — only for topics where it changes the advice (not simple price/candle lookups)
+    const REGIME_TOPICS = new Set(['briefing', 'setup_analysis', 'technical', 'sector', 'intraday'])
     const spyCandlesRaw = candlesBySym['SPY']
-    if (spyCandlesRaw?.length) {
+    if (spyCandlesRaw?.length && REGIME_TOPICS.has(plan.topic)) {
       const spySimple = spyCandlesRaw.map(c => ({
         open: parseFloat(c.open), high: parseFloat(c.high),
         low:  parseFloat(c.low),  close: parseFloat(c.close),

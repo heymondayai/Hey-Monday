@@ -3121,6 +3121,18 @@ const visibleDaySummaries = useMemo(() => {
                     </div>
                   )}
                 </div>
+                {/* Tool launchers */}
+                <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.borderFaint}`, display: 'flex', gap: '6px' }}>
+                  {[
+                    { href: '/flow', label: 'Flow Map' },
+                    { href: '/tape', label: 'Tape Reader' },
+                  ].map(t => (
+                    <div key={t.href} onClick={() => { router.push(t.href); setMobileDrawerOpen(false) }}
+                      style={{ flex: 1, padding: '6px 4px', textAlign: 'center' as const, fontSize: '10px', color: T.text5, cursor: 'pointer', border: `1px solid ${T.borderFaint}`, letterSpacing: '0.10em', textTransform: 'uppercase' as const, fontFamily: "'DM Mono', monospace" }}>
+                      {t.label}
+                    </div>
+                  ))}
+                </div>
                 <div style={{ padding: '12px 16px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div onClick={() => { router.push('/dashboard/settings'); setMobileDrawerOpen(false) }} style={{ fontSize: '11px', color: T.goldText, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Settings</div>
                   <div onClick={handleLogout} style={{ fontSize: '11px', color: T.text6, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Sign Out</div>
@@ -3569,16 +3581,36 @@ const visibleDaySummaries = useMemo(() => {
                 { id: '2row',  label: '2 Row',  icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="1" width="12" height="5.5" fill="currentColor" rx="1"/><rect x="1" y="7.5" width="12" height="5.5" fill="currentColor" rx="1"/></svg> },
                 { id: '2x2',   label: '2×2',    icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="1" width="5.5" height="5.5" fill="currentColor" rx="1"/><rect x="7.5" y="1" width="5.5" height="5.5" fill="currentColor" rx="1"/><rect x="1" y="7.5" width="5.5" height="5.5" fill="currentColor" rx="1"/><rect x="7.5" y="7.5" width="5.5" height="5.5" fill="currentColor" rx="1"/></svg> },
               ]
+              const TOOLS: { href: string; label: string; title: string; icon: React.ReactNode }[] = [
+                { href: '/flow', label: 'Flow', title: 'Options Flow Map', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="1" width="3.5" height="5" fill="currentColor" rx="0.5" opacity="0.5"/><rect x="5.25" y="1" width="3.5" height="8" fill="currentColor" rx="0.5" opacity="0.8"/><rect x="9.5" y="1" width="3.5" height="12" fill="currentColor" rx="0.5"/><rect x="1" y="8" width="3.5" height="5" fill="currentColor" rx="0.5" opacity="0.3"/><rect x="5.25" y="11" width="3.5" height="2" fill="currentColor" rx="0.5" opacity="0.4"/></svg> },
+                { href: '/tape', label: 'Tape', title: 'Tape Reader', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="2.5" width="12" height="1.5" fill="currentColor" rx="0.5"/><rect x="1" y="6" width="8" height="1.5" fill="currentColor" rx="0.5" opacity="0.6"/><rect x="1" y="9.5" width="10" height="1.5" fill="currentColor" rx="0.5" opacity="0.8"/><rect x="1" y="13" width="6" height="1" fill="currentColor" rx="0.5" opacity="0.4"/></svg> },
+              ]
               return (
-                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 18px', height: '36px', borderBottom: `1px solid ${T.borderFaint2}`, background: T.headerBg, gap: '3px' }}>
-                  {LAYOUTS.map(l => (
-                    <div key={l.id} onClick={() => setLayout(l.id)} title={l.label}
-                      style={{ width: '28px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: layout === l.id ? T.gold : T.text6, background: layout === l.id ? T.goldFaint2 : 'transparent', border: `1px solid ${layout === l.id ? T.goldFaint7 : 'transparent'}`, transition: 'all 0.15s' }}
-                      onMouseEnter={e => { if (layout !== l.id) (e.currentTarget as HTMLElement).style.color = T.text3 }}
-                      onMouseLeave={e => { if (layout !== l.id) (e.currentTarget as HTMLElement).style.color = T.text6 }}>
-                      {l.icon}
-                    </div>
-                  ))}
+                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', height: '36px', borderBottom: `1px solid ${T.borderFaint2}`, background: T.headerBg }}>
+                  {/* Tool launchers — left side */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                    <span style={{ fontSize: '9px', color: T.text7, letterSpacing: '0.14em', textTransform: 'uppercase', marginRight: '5px', fontFamily: "'DM Mono', monospace" }}>Tools</span>
+                    {TOOLS.map(t => (
+                      <div key={t.href} onClick={() => router.push(t.href)} title={t.title}
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px', height: '24px', padding: '0 7px', cursor: 'pointer', color: T.text6, border: `1px solid transparent`, transition: 'all 0.15s', borderRadius: '3px', fontSize: '10px', fontFamily: "'DM Mono', monospace", letterSpacing: '0.06em' }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = T.gold; (e.currentTarget as HTMLElement).style.borderColor = T.goldFaint7; (e.currentTarget as HTMLElement).style.background = T.goldFaint2 }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = T.text6; (e.currentTarget as HTMLElement).style.borderColor = 'transparent'; (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
+                        {t.icon}
+                        <span>{t.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Layout icons — right side */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                    {LAYOUTS.map(l => (
+                      <div key={l.id} onClick={() => setLayout(l.id)} title={l.label}
+                        style={{ width: '28px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: layout === l.id ? T.gold : T.text6, background: layout === l.id ? T.goldFaint2 : 'transparent', border: `1px solid ${layout === l.id ? T.goldFaint7 : 'transparent'}`, transition: 'all 0.15s' }}
+                        onMouseEnter={e => { if (layout !== l.id) (e.currentTarget as HTMLElement).style.color = T.text3 }}
+                        onMouseLeave={e => { if (layout !== l.id) (e.currentTarget as HTMLElement).style.color = T.text6 }}>
+                        {l.icon}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )
             })()}
