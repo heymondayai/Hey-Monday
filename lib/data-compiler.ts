@@ -3,7 +3,7 @@
 // structured insights (VWAP, HOD/LOD, gaps, breadth, signals, etc.),
 // and returns a compact context string for the executor system prompt.
 
-import { getRecentCandlesMulti, CandleRow } from './candle-store'
+import { getRecentCandlesMulti, getHistoricalDailyVolumes, CandleRow } from './candle-store'
 import {
   fetchLivePrices,
   fetchIntraday,
@@ -193,7 +193,9 @@ function compileSymbol(
   allCandles: EtCandle[],
   steps: CompileStep[],
   plan: QueryPlan,
-  prevClose?: number,   // previous session close — enables gap detection
+  prevClose?: number,  // previous session close — enables gap detection
+  prevHigh?: number,   // prior session high — key intraday reference level
+  prevLow?: number,    // prior session low
 ): string[] {
   if (!allCandles.length) return []
 
@@ -300,6 +302,81 @@ function compileSymbol(
     lines.push(`${sym} momentum (last 5 candles): ${label} (${upCount}/5 green)`)
   }
 
+  // ── setup_analysis ────────────────────────────────────────────────────────
+  // Pre-computes the key structural levels the model needs to synthesize a setup.
+  // The model does the actual setup analysis — this block gives it the scaffolding.
+  if (steps.includes('setup_analysis')) {
+    const opens  = candles.map(c => parseFloat(c.open))
+    const highs  = candles.map(c => parseFloat(c.high))
+    const lows   = candles.map(c => parseFloat(c.low))
+    const closes = candles.map(c => parseFloat(c.close))
+    const vols   = candles.map(c => parseInt(c.volume, 10))
+
+    const sessionOpen  = opens[0]
+    const sessionClose = closes[closes.length - 1]
+    const hod = Math.max(...highs)
+    const lod = Math.min(...lows)
+    const totalVol = vols.reduce((a, b) => a + b, 0)
+
+    // Session VWAP
+    let cumPV = 0, cumVol = 0
+    for (const c of candles) {
+      const tp = (parseFloat(c.high) + parseFloat(c.low) + parseFloat(c.close)) / 3
+      const v  = parseInt(c.volume, 10)
+      cumPV += tp * v
+      cumVol += v
+    }
+    const vwap = cumVol > 0 ? cumPV / cumVol : sessionClose
+
+    // Opening range: first 30 minutes of regular session (9:30–10:00 AM ET)
+    const orCandles = candles.filter(c => {
+      const mins = candleTimeMins(c)
+      return mins >= 570 && mins < 600
+    })
+    const orHigh = orCandles.length ? Math.max(...orCandles.map(c => parseFloat(c.high))) : null
+    const orLow  = orCandles.length ? Math.min(...orCandles.map(c => parseFloat(c.low))) : null
+
+    // Price context relative to key levels
+    const vsVwap     = sessionClose > vwap * 1.0005 ? 'above' : sessionClose < vwap * 0.9995 ? 'below' : 'at'
+    const nearHod    = hod > 0 && (hod - sessionClose) / hod < 0.005
+    const nearLod    = lod > 0 && (sessionClose - lod) / lod < 0.005
+    const abovePrevH = prevHigh && sessionClose > prevHigh
+    const belowPrevL = prevLow  && sessionClose < prevLow
+    const priceCtx   = nearHod ? 'near HOD' : nearLod ? 'near LOD' : `${vsVwap} VWAP`
+
+    const setupLines: string[] = [
+      `SETUP LEVELS — ${sym} (${sessionDate}):`,
+      `  Current price:  $${sessionClose.toFixed(2)} — ${priceCtx}`,
+      `  Session VWAP:   $${vwap.toFixed(2)} (price ${vsVwap} by $${Math.abs(sessionClose - vwap).toFixed(2)})`,
+      `  HOD / LOD:      $${hod.toFixed(2)} / $${lod.toFixed(2)}`,
+    ]
+
+    if (orHigh !== null && orLow !== null) {
+      const orStatus = sessionClose > orHigh ? 'ABOVE OR (breakout)' : sessionClose < orLow ? 'BELOW OR (breakdown)' : 'inside OR'
+      setupLines.push(`  Opening range:  H $${orHigh.toFixed(2)} / L $${orLow.toFixed(2)} — price ${orStatus}`)
+    }
+
+    if (prevClose) {
+      const gapAbs = sessionOpen - prevClose
+      const gapPct = (gapAbs / prevClose * 100).toFixed(2)
+      const gapStatus = Math.abs(parseFloat(gapPct)) >= 0.15
+        ? `${gapAbs > 0 ? 'gap up' : 'gap down'} ${gapAbs > 0 ? '+' : ''}${gapPct}% from $${prevClose.toFixed(2)}`
+        : `flat open (prev close $${prevClose.toFixed(2)})`
+      setupLines.push(`  Gap / prior C:  ${gapStatus}`)
+    }
+
+    if (prevHigh && prevLow) {
+      const priorContext = abovePrevH ? 'price ABOVE prior high — extended territory'
+        : belowPrevL ? 'price BELOW prior low — breakdown territory'
+        : 'price within prior range'
+      setupLines.push(`  Prior day H/L:  $${prevHigh.toFixed(2)} / $${prevLow.toFixed(2)} — ${priorContext}`)
+    }
+
+    setupLines.push(`  Session volume: ${totalVol.toLocaleString()} shares`)
+
+    lines.push(...setupLines)
+  }
+
   // ── candle_range_detail ───────────────────────────────────────────────────
   if (steps.includes('candle_range_detail')) {
     const label = plan.timeRange.startTime && plan.timeRange.endTime
@@ -359,6 +436,35 @@ function correlateNewsToPriceMove(
     }
   }
   return lines.length > 1 ? lines.join('\n') : ''
+}
+
+// ── EARNINGS PROXIMITY ALERT ──────────────────────────────────────────────────
+// Always injected when any target symbol has earnings within 7 calendar days
+// (~5 trading days). Runs in parallel with candle fetch — no added latency.
+
+async function buildEarningsProximityAlert(
+  symbols: string[],
+  todayStr: string,
+): Promise<string> {
+  if (!symbols.length) return ''
+  try {
+    const toDate = new Date(`${todayStr}T12:00:00`)
+    toDate.setDate(toDate.getDate() + 7)
+    const toStr = toDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+    const events = await fetchEarningsCalendar(symbols, todayStr, toStr)
+    if (!events.length) return ''
+    const alerts = events
+      .filter(e => e.date >= todayStr)
+      .map(e => {
+        const timing = e.time === 'bmo' ? 'before open'
+          : e.time === 'amc' ? 'after close'
+          : e.date
+        return `EARNINGS ALERT: ${e.symbol} reports ${e.date} (${timing}) — elevated volume and implied volatility are earnings-driven, not purely technical`
+      })
+    return alerts.join('\n')
+  } catch {
+    return ''
+  }
 }
 
 // ── MAIN EXPORT ───────────────────────────────────────────────────────────────
@@ -426,10 +532,23 @@ export async function compileContext(
   // (market closes 4 PM ET; at 9:30 AM next day = 17.5h ago — within 26h window).
   let candlesBySym: Record<string, EtCandle[]> = {}
   const prevCloses: Record<string, number> = {}
+  const prevHighs:  Record<string, number> = {}
+  const prevLows:   Record<string, number> = {}
+
+  // Fire earnings proximity check alongside candle fetch — no serial latency added
+  const earningsProximityPromise = plan.fetch.includes('candles') && targetSymbols.length
+    ? buildEarningsProximityAlert(targetSymbols, todayStr)
+    : Promise.resolve('')
 
   if (plan.fetch.includes('candles') && targetSymbols.length) {
     const lookbackMins = plan.isHistorical ? 32 * 60 : 26 * 60
-    const rows = await getRecentCandlesMulti(targetSymbols, lookbackMins)
+
+    // Historical volumes run in parallel with candle fetch — both hit Supabase
+    const [rows, historicalAvgVolumes] = await Promise.all([
+      getRecentCandlesMulti(targetSymbols, lookbackMins),
+      getHistoricalDailyVolumes(targetSymbols),
+    ])
+
     const hasData = targetSymbols.some(t => (rows[t]?.length ?? 0) > 0)
 
     if (hasData) {
@@ -447,9 +566,11 @@ export async function compileContext(
           candlesBySym[sym] = []
         }
 
-        // Previous session close → enables gap detection in session_summary
+        // Previous session OHLC — close enables gap detection, H/L are key reference levels
         if (prevCandles.length) {
           prevCloses[sym] = parseFloat(prevCandles[prevCandles.length - 1].close)
+          prevHighs[sym]  = Math.max(...prevCandles.map(c => parseFloat(c.high)))
+          prevLows[sym]   = Math.min(...prevCandles.map(c => parseFloat(c.low)))
         }
       }
     } else {
@@ -469,7 +590,12 @@ export async function compileContext(
     const spyRaw = (candlesBySym['SPY'] ?? []) as unknown as Parameters<typeof computeSignals>[2]
     const signalsBySym: Record<string, SymbolSignals | null> = {}
     for (const sym of targetSymbols) {
-      signalsBySym[sym] = computeSignals(sym, candlesBySym[sym] as any ?? [], spyRaw)
+      signalsBySym[sym] = computeSignals(sym, candlesBySym[sym] as any ?? [], spyRaw, {
+        historicalAvgDailyVolume: hasData ? historicalAvgVolumes[sym] : undefined,
+        prevDayHigh:  prevHighs[sym],
+        prevDayLow:   prevLows[sym],
+        prevDayClose: prevCloses[sym],
+      })
     }
 
     // Watchlist breadth block — leads context for multi-symbol / briefing queries
@@ -483,7 +609,7 @@ export async function compileContext(
     const candleLines: string[] = []
     for (const sym of targetSymbols) {
       if (!candlesBySym[sym]?.length) continue
-      const compiled = compileSymbol(sym, candlesBySym[sym], plan.compile, plan, prevCloses[sym])
+      const compiled = compileSymbol(sym, candlesBySym[sym], plan.compile, plan, prevCloses[sym], prevHighs[sym], prevLows[sym])
       candleLines.push(...compiled)
     }
 
@@ -503,6 +629,10 @@ export async function compileContext(
       blocks.push(`MARKET DATA (session: ${plan.timeRange.startDate})\n${candleLines.join('\n')}`)
     }
   }
+
+  // Earnings proximity alert — fires whenever any target symbol reports within 7 days
+  const earningsAlert = await earningsProximityPromise
+  if (earningsAlert) blocks.push(earningsAlert)
 
   // ── LIVE PRICES ────────────────────────────────────────────────────────────
   if (plan.fetch.includes('live_prices')) {
@@ -646,6 +776,14 @@ export function buildOutputInstructions(plan: QueryPlan): string {
       return 'RESPONSE: 2–3 sentences. Lead with the key number or move. One supporting fact. Stop.'
     case 'briefing':
       return `RESPONSE: Lead with the WATCHLIST BREADTH block summary (breadth, leaders/laggards). Then the single most important market theme or catalyst. Then one forward-looking note (key risk, upcoming event, or setup). Max 4 sentences total. Stop.`
+    case 'setup':
+      return `RESPONSE: Provide a structured technical setup analysis using the SETUP LEVELS block. Write in flowing prose — no markdown, no bullets, no headers. Cover all four elements in order:
+1. Setup: Identify the setup type (e.g. VWAP reclaim, ORB breakout, HOD breakout, gap-and-go, bull flag, prior day high test) and direction (long/short). One sentence.
+2. Entry zone: Specific price range where the setup triggers with reasoning (e.g. "entry on a VWAP reclaim above $X, ideally a dip to the $X–Y zone"). If there are multiple valid entries (aggressive vs. confirmation), state both.
+3. Risk level: The exact price where the setup is invalidated — the natural structural stop. State it precisely ("structure breaks below LOD at $X" or "invalidated below VWAP at $X").
+4. Target: Measured move or next key resistance/support with the risk/reward ratio stated explicitly (e.g. "measured move to prior day high at $X — roughly 2.5:1 at current entry").
+5. Context (1–2 sentences): Volume confirmation, session phase, what would confirm or invalidate the setup intraday.
+End every setup response with exactly: "Technical analysis only — not financial advice." Do not stop before all five elements are covered.`
     case 'prose':
     default:
       if (plan.detailLevel === 'detailed') {

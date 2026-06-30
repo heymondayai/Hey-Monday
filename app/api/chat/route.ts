@@ -3,6 +3,7 @@ import { getNyseEquitiesStatus } from '@/lib/market-hours'
 import { createAdminSupabaseClient } from '@/lib/supabase-admin'
 import { planQuery, buildFallbackPlan } from '@/lib/query-planner'
 import { compileContext, buildOutputInstructions, getSessionPhase } from '@/lib/data-compiler'
+import { getConversationHistory, saveConversationMessages } from '@/lib/conversation-store'
 
 
 // ── SONNET DAILY CAP ─────────────────────────────────────────────────────────
@@ -73,6 +74,9 @@ export async function POST(req: Request) {
     }
     const userKey = userId ?? 'anonymous'
     const sonnetAllowed = canUseSonnet(userKey)
+
+    // Kick off DB history fetch now — runs in parallel with planQuery so adds no latency
+    const dbHistoryPromise = userId ? getConversationHistory(userId, 20) : Promise.resolve([])
 
     // ── DATE / TIME / MARKET STATUS ──────────────────────────────────────────
     const now = new Date()
@@ -170,6 +174,22 @@ export async function POST(req: Request) {
 
     console.log(`[chat] model=${model} maxTokens=${maxTokens} search=${useSearch} topic=${plan.topic} badges=${badges.map(b => b.label).join(',')}`)
 
+    // ── CROSS-SESSION MEMORY ─────────────────────────────────────────────────
+    // Merge DB history (prior sessions) with the frontend's current-session history.
+    // Dedup by content so messages already in the frontend array aren't doubled up.
+    const dbHistory = await dbHistoryPromise
+    const sessionContentSet = new Set(
+      (history as { content?: string }[]).map(m => (m.content ?? '').trim())
+    )
+    const priorDbMessages = dbHistory
+      .filter(m => !sessionContentSet.has(m.content.trim()))
+      .slice(-4)  // at most 2 prior exchanges — enough context without flooding tokens
+      .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content.slice(0, 800) }))
+
+    const memoryNote = priorDbMessages.length > 0
+      ? 'MEMORY: Prior conversation history with this user is included in the message context below. Use it to resolve references to earlier discussions, positions they mentioned, or questions they asked before.'
+      : ''
+
     // ── SYSTEM PROMPT ────────────────────────────────────────────────────────
     const outputInstructions = buildOutputInstructions(plan)
     const sessionPhase = getSessionPhase()
@@ -182,6 +202,7 @@ Market status: ${marketStatus}${minutesToClose !== null ? `\nMinutes until marke
 Last trading session close: ${lastCloseDayName}
 Session phase: ${sessionPhase.label}
 ${sessionPhase.guidance}
+${memoryNote ? '\n' + memoryNote : ''}
 
 ${compiledContext}
 
@@ -241,10 +262,21 @@ SESSION PHASE RULES:
 - Power hour (3:30–4:00 PM): Trends that persist here carry into the close and often overnight.
 - After-hours / pre-market: Prices are directional signals only — thin liquidity, not firm levels.
 
+SETUP ANALYSIS RULES:
+- You CAN and SHOULD identify trade setups, entry zones, stop levels, and price targets when asked.
+- Frame all setup analysis as technical analysis, not personalized investment advice.
+- Use: "the setup is", "technical entry zone", "structure-based stop", "measured move target", "the risk/reward at current structure is X:1".
+- Do NOT say: "I recommend", "you should buy/sell", "this is a good trade for you".
+- Every setup response ends with: "Technical analysis only — not financial advice."
+- You are analyzing chart structure. You do not know the user's account size, risk tolerance, tax situation, or portfolio — and you are not their advisor.
+- Setup types to identify: VWAP reclaim, HOD/LOD breakout, opening range breakout (ORB), gap-and-go, gap fill, prior day high/low test, bull flag, bear flag, volume climax reversal.
+- Risk/reward: always compute and state it. Entry to stop = risk. Entry to target = reward. State as ratio (2.5:1 is the minimum worth noting).
+- If the chart structure does not support a clean setup, say so directly: "No clean setup here — the structure is choppy / no clear R/R."
+
 CORE RULES:
 1. Use only facts in the compiled context or web search results. Never invent prices, events, or timestamps.
 2. Do not restate the question.
-3. Frame bullish/bearish views as scenario analysis, never as advice. Never tell the user to buy, sell, or size a position.
+3. State directional views with evidence from the data. For setup analysis, use the SETUP ANALYSIS RULES above. For general commentary, note when the data supports or contradicts a thesis.
 4. CALENDAR STRICT RULE: List only events in the ECONOMIC CALENDAR block. Do not add events from training knowledge.
 5. INTRADAY DATE RULE: The MARKET DATA block shows the session date. Never state a different date for those candles. Never say candles are unavailable if the block is present.
 6. DATE ACCURACY: Trust "Current date" above. Do not derive the date from weekday names or training data.
@@ -256,10 +288,14 @@ CORE RULES:
 ${outputInstructions}`
 
     // ── BUILD REQUEST ─────────────────────────────────────────────────────────
-    const historyMessages = (history as { role: string; content: string }[])
+    // Current-session messages from the frontend
+    const sessionMessages = (history as { role: string; content: string }[])
       .slice(useSearch ? -4 : -8)
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content.slice(0, 800) }))
+
+    // Prior-session messages prepended so the model has cross-session context
+    const historyMessages = [...priorDbMessages, ...sessionMessages]
 
     const requestBody: any = {
       model,
@@ -337,6 +373,15 @@ ${outputInstructions}`
             const normalised = normalise(fullText)
             const truncated = normalised.length > 0 && !/[.!?]$/.test(normalised.trimEnd())
             if (truncated) console.warn(`[chat] TRUNCATED at ${maxTokens} tokens — response ended mid-sentence`)
+
+            // Persist exchange to Supabase — fire-and-forget, never blocks the stream
+            if (userId && normalised) {
+              saveConversationMessages(userId, [
+                { role: 'user',      content: message.slice(0, 4000) },
+                { role: 'assistant', content: normalised.slice(0, 4000) },
+              ]).catch(e => console.error('[chat] memory save:', e))
+            }
+
             controller.enqueue(encoder.encode(
               JSON.stringify({ type: 'done', fullText: normalised, truncated, ...responseMeta }) + '\n'
             ))
@@ -381,6 +426,14 @@ ${outputInstructions}`
       .trim() ?? ''
 
     const fullText = normalise(reply)
+
+    // Persist exchange — fire-and-forget
+    if (userId && fullText) {
+      saveConversationMessages(userId, [
+        { role: 'user',      content: message.slice(0, 4000) },
+        { role: 'assistant', content: fullText.slice(0, 4000) },
+      ]).catch(e => console.error('[chat] memory save:', e))
+    }
 
     const encoder = new TextEncoder()
     const stream = new ReadableStream({

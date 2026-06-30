@@ -72,6 +72,49 @@ export function computeVWAP(candles: CandleRow[]): number | null {
   return cumVol > 0 ? cumPV / cumVol : null
 }
 
+// Returns average daily total volume per ticker from the last `tradingDays` sessions.
+// Queries existing candles_1m data — no external API call.
+// Used for historical relative volume ("today running at 1.8x 20-day avg").
+export async function getHistoricalDailyVolumes(
+  tickers: string[],
+  tradingDays = 20,
+): Promise<Record<string, number>> {
+  if (!tickers.length) return {}
+  const supabase = createAdminSupabaseClient()
+  // 32 calendar days reliably contains 20 trading days
+  const since = new Date(Date.now() - 32 * 86_400_000).toISOString()
+  const todayEt = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+
+  const { data, error } = await supabase
+    .from('candles_1m')
+    .select('ticker,ts,volume')
+    .in('ticker', tickers)
+    .gte('ts', since)
+    .order('ts', { ascending: true })
+
+  if (error) { console.error('[candle-store] historical volumes:', error.message); return {} }
+
+  // Accumulate daily totals: byTickerDate[ticker][date] = total volume for that day
+  const byTickerDate: Record<string, Record<string, number>> = {}
+  for (const t of tickers) byTickerDate[t] = {}
+
+  for (const row of (data ?? []) as CandleRow[]) {
+    const dateEt = new Date(row.ts).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+    if (dateEt === todayEt) continue  // skip today — session not yet complete
+    if (!byTickerDate[row.ticker]) continue
+    byTickerDate[row.ticker][dateEt] = (byTickerDate[row.ticker][dateEt] ?? 0) + row.volume
+  }
+
+  const result: Record<string, number> = {}
+  for (const ticker of tickers) {
+    const dayVols = Object.values(byTickerDate[ticker] ?? {}).slice(-tradingDays)
+    if (!dayVols.length) continue
+    result[ticker] = dayVols.reduce((a, b) => a + b, 0) / dayVols.length
+  }
+
+  return result
+}
+
 // Delete candles older than `daysToKeep`. Called once per day by the cron.
 export async function deleteOldCandles(daysToKeep = 95): Promise<void> {
   const supabase = createAdminSupabaseClient()

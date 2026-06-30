@@ -687,7 +687,6 @@ export function buildIntradayQuestionContext(
 
     let [_, h, m, ap] = match
     let hour = parseInt(h)
-    const minute = parseInt(m)
 
     if (ap.toLowerCase() === 'pm' && hour !== 12) hour += 12
     if (ap.toLowerCase() === 'am' && hour === 12) hour = 0
@@ -852,11 +851,38 @@ export function formatAnalystRatings(ratings: AnalystRating[], symbol: string): 
 
 export function formatOptionsFlow(flow: OptionsFlow[], symbol: string): string {
   if (!flow.length) return ''
-  const lines = [`OPTIONS FLOW — ${symbol} (high volume contracts):`]
+  const lines = [`OPTIONS CHAIN — ${symbol} (high-volume contracts, sorted by volume):`]
+
   for (const o of flow) {
-    const premium = o.premium >= 1_000_000 ? `$${(o.premium / 1_000_000).toFixed(1)}M` : `$${(o.premium / 1_000).toFixed(0)}K`
-    lines.push(`  ${o.expiry}  $${o.strike}${o.type.toUpperCase()}  ${o.sentiment.toUpperCase()}  Vol:${o.volume.toLocaleString()}  OI:${o.openInterest.toLocaleString()}  Premium:${premium}  IV:${(o.impliedVolatility * 100).toFixed(1)}%`)
+    const premium = o.premium >= 1_000_000
+      ? `$${(o.premium / 1_000_000).toFixed(1)}M`
+      : `$${(o.premium / 1_000).toFixed(0)}K`
+
+    // Volume/OI ratio > 1 means today's volume exceeds existing open interest —
+    // a strong signal of new positioning (sweep-like), not just rolling existing contracts
+    const volOiRatio = o.openInterest > 0 ? o.volume / o.openInterest : 0
+    const sweepFlag = volOiRatio > 1 ? ' ⚡UNUSUAL (vol > OI — new positioning)' : ''
+
+    lines.push(
+      `  ${o.expiry}  $${o.strike}${o.type.toUpperCase()}  ${o.sentiment.toUpperCase()}` +
+      `  Vol:${o.volume.toLocaleString()}  OI:${o.openInterest.toLocaleString()}` +
+      `  V/OI:${volOiRatio.toFixed(1)}x  Premium:${premium}  IV:${(o.impliedVolatility * 100).toFixed(1)}%${sweepFlag}`
+    )
   }
+
+  // Aggregate lean: calls vs puts by premium weight
+  const callPremium = flow.filter(o => o.type === 'call').reduce((a, o) => a + o.premium, 0)
+  const putPremium  = flow.filter(o => o.type === 'put').reduce((a, o) => a + o.premium, 0)
+  const totalPremium = callPremium + putPremium
+  if (totalPremium > 0) {
+    const callPct = (callPremium / totalPremium * 100).toFixed(0)
+    const putPct  = (putPremium  / totalPremium * 100).toFixed(0)
+    const lean = callPremium > putPremium * 1.5 ? 'CALL-HEAVY (bullish lean)'
+      : putPremium > callPremium * 1.5 ? 'PUT-HEAVY (bearish lean / hedging)'
+      : 'BALANCED'
+    lines.push(`  Premium lean: ${callPct}% calls / ${putPct}% puts — ${lean}`)
+  }
+
   return lines.join('\n')
 }
 
@@ -941,6 +967,7 @@ export interface SymbolSignals {
   vwapDaily: number
   vwapDailyDiffPct: number
   volumeRatio: number
+  historicalVolRatio?: number     // today's pace vs 20-session avg daily volume
   hod: number
   lod: number
   nearHod: boolean
@@ -948,12 +975,21 @@ export interface SymbolSignals {
   trend: 'higher_highs' | 'lower_lows' | 'ranging'
   momentum: 'accelerating' | 'decelerating' | 'steady'
   relativeStrengthVsSpy: number | null
+  prevDayHigh?: number            // prior session high — key intraday reference level
+  prevDayLow?: number             // prior session low
+  prevDayClose?: number           // prior session close
 }
 
 export function computeSignals(
   ticker: string,
   candles: Candle[],
-  spyCandles?: Candle[]
+  spyCandles?: Candle[],
+  opts?: {
+    historicalAvgDailyVolume?: number  // 20-session avg daily volume from Supabase
+    prevDayHigh?: number
+    prevDayLow?: number
+    prevDayClose?: number
+  }
 ): SymbolSignals | null {
   if (!candles.length) return null
 
@@ -1037,6 +1073,23 @@ export function computeSignals(
   const recentVolume = nums[nums.length - 1].volume
   const volumeRatio = avgVolume > 0 ? recentVolume / avgVolume : 1
 
+  // Historical relative volume: pace-adjusted today vs 20-session avg daily vol.
+  // Projects full-day volume at current run rate so the ratio is comparable during
+  // an in-progress session (otherwise a 2-hour session always looks light vs. a full day).
+  const historicalAvgDailyVol = opts?.historicalAvgDailyVolume
+  const historicalVolRatio = (() => {
+    if (!historicalAvgDailyVol || historicalAvgDailyVol <= 0) return undefined
+    // Infer how many regular-session minutes have elapsed from the last 9:30+ candle
+    const lastRegular = regularSessionCandles[regularSessionCandles.length - 1]
+    if (!lastRegular) return undefined
+    const timePart = lastRegular.datetime?.split(' ')[1]?.slice(0, 5) ?? ''
+    const [hh, mm] = timePart.split(':').map(Number)
+    const elapsedMins = Math.min(390, Math.max(1, hh * 60 + mm - 570))
+    // Annualise to a full 390-min session then compare to historical avg
+    const projectedDailyVol = (totalVol / elapsedMins) * 390
+    return projectedDailyVol / historicalAvgDailyVol
+  })()
+
   // ── TREND (last 6 candles) ────────────────────────────────────────────────
   const recent = nums.slice(-6)
   let higherHighs = 0
@@ -1086,6 +1139,7 @@ export function computeSignals(
     vwapDaily,
     vwapDailyDiffPct,
     volumeRatio,
+    historicalVolRatio,
     hod,
     lod,
     nearHod,
@@ -1093,6 +1147,9 @@ export function computeSignals(
     trend,
     momentum,
     relativeStrengthVsSpy,
+    prevDayHigh:  opts?.prevDayHigh,
+    prevDayLow:   opts?.prevDayLow,
+    prevDayClose: opts?.prevDayClose,
   }
 }
 
@@ -1111,10 +1168,14 @@ export function formatSignals(signals: SymbolSignals[]): string {
       s.trend === 'higher_highs' ? 'higher highs and higher lows' :
       s.trend === 'lower_lows' ? 'lower highs and lower lows' : 'ranging'
     const volNote =
-      s.volumeRatio >= 2 ? `${s.volumeRatio.toFixed(1)}x avg (very elevated)` :
-      s.volumeRatio >= 1.3 ? `${s.volumeRatio.toFixed(1)}x avg (elevated)` :
-      s.volumeRatio <= 0.7 ? `${s.volumeRatio.toFixed(1)}x avg (light)` :
-      `${s.volumeRatio.toFixed(1)}x avg (normal)`
+      s.volumeRatio >= 2 ? `${s.volumeRatio.toFixed(1)}x session avg (very elevated)` :
+      s.volumeRatio >= 1.3 ? `${s.volumeRatio.toFixed(1)}x session avg (elevated)` :
+      s.volumeRatio <= 0.7 ? `${s.volumeRatio.toFixed(1)}x session avg (light)` :
+      `${s.volumeRatio.toFixed(1)}x session avg (normal)`
+
+    const histVolNote = s.historicalVolRatio != null
+      ? ` | ${s.historicalVolRatio.toFixed(1)}x 20-day avg pace`
+      : ''
 
     lines.push(`\n${s.ticker}:`)
     lines.push(`  Price: $${s.price.toFixed(2)} (${changeSign}${s.sessionChangePct.toFixed(2)}% session)`)
@@ -1124,8 +1185,16 @@ export function formatSignals(signals: SymbolSignals[]): string {
     if (s.relativeStrengthVsSpy != null) {
       lines.push(`  vs SPY: ${rsSign}${s.relativeStrengthVsSpy.toFixed(2)}% relative strength`)
     }
-    lines.push(`  Volume: ${volNote}`)
+    lines.push(`  Volume: ${volNote}${histVolNote}`)
     lines.push(`  Range: $${s.lod.toFixed(2)} – $${s.hod.toFixed(2)} (${hodLodNote})`)
+    if (s.prevDayHigh != null && s.prevDayLow != null) {
+      const priceVsPrior = s.price > s.prevDayHigh
+        ? 'ABOVE prior high'
+        : s.price < s.prevDayLow
+        ? 'BELOW prior low'
+        : 'within prior range'
+      lines.push(`  Prior day: H $${s.prevDayHigh.toFixed(2)} / L $${s.prevDayLow.toFixed(2)} | price ${priceVsPrior}`)
+    }
     lines.push(`  Trend: ${trendNote}, momentum ${s.momentum}`)
   }
 

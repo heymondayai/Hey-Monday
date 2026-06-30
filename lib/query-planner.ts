@@ -14,6 +14,7 @@ export type TopicType =
   | 'briefing'       // eod briefing, session recap, catch me up
   | 'sector'         // sector rotation / performance
   | 'technical'      // signals, momentum, technical levels
+  | 'setup_analysis' // trade setup: entry zone, stop, target, R/R
   | 'historical'     // specific past date
   | 'casual'         // greeting / non-market chat
 
@@ -38,6 +39,7 @@ export type CompileStep =
   | 'volume_spikes'          // candles with volume > 2× avg
   | 'momentum_score'         // trend direction from last 5 candles
   | 'news_price_correlation' // map news timestamps to price moves
+  | 'setup_analysis'         // opening range, key levels, setup structure for trade ideas
 
 export interface TimeRange {
   type: 'session' | 'range' | 'specific_date' | 'yesterday' | 'week' | 'month'
@@ -53,7 +55,7 @@ export interface QueryPlan {
   timeRange: TimeRange
   fetch: DataFetchType[]
   compile: CompileStep[]
-  outputFormat: 'prose' | 'candle_list' | 'summary' | 'one_liner' | 'briefing'
+  outputFormat: 'prose' | 'candle_list' | 'summary' | 'one_liner' | 'briefing' | 'setup'
   detailLevel: 'brief' | 'standard' | 'detailed'
   maxTokens: number
   isHistorical: boolean
@@ -66,7 +68,7 @@ const PLANNER_SYSTEM = `You are a query planner for a stock market AI assistant.
 
 Schema:
 {
-  "topic": intraday|price|news_catalyst|macro|earnings|options|insider|analyst|briefing|sector|technical|historical|casual,
+  "topic": intraday|price|news_catalyst|macro|earnings|options|insider|analyst|briefing|sector|technical|setup_analysis|historical|casual,
   "symbols": [uppercase ticker strings — include watchlist tickers for general market questions],
   "timeRange": {
     "type": session|range|specific_date|yesterday|week|month,
@@ -76,8 +78,8 @@ Schema:
     "endTime": "HH:MM" (24h ET, only if question specifies an end time)
   },
   "fetch": [candles|live_prices|news|macro|calendar|earnings_calendar|sector|insider|analyst|options|historical_context|market_state],
-  "compile": [session_summary|candle_range_detail|biggest_move|volume_spikes|momentum_score|news_price_correlation],
-  "outputFormat": prose|candle_list|summary|one_liner|briefing,
+  "compile": [session_summary|candle_range_detail|biggest_move|volume_spikes|momentum_score|news_price_correlation|setup_analysis],
+  "outputFormat": prose|candle_list|summary|one_liner|briefing|setup,
   "detailLevel": brief|standard|detailed,
   "maxTokens": integer,
   "isHistorical": boolean,
@@ -91,6 +93,7 @@ TOPIC RULES:
 - "why did X move/drop/spike/rally" → news_catalyst, fetch:[candles,news], compile:[biggest_move,news_price_correlation], requiresSearch:true
 - "what is the price / where is X" → price, fetch:[live_prices], compile:[], outputFormat:one_liner
 - "briefing/summary/recap/how did market do" → briefing, fetch:[candles,live_prices,news,sector,macro,market_state], compile:[session_summary,biggest_move], outputFormat:briefing
+- "setup/entry/trade idea/where would you enter/is this a good setup/what's the play/where's the stop/where's the target/give me levels/trade this/risk reward/r:r/R/R" → setup_analysis, fetch:[candles,news,options,analyst,insider], compile:[setup_analysis,session_summary,biggest_move,volume_spikes], outputFormat:setup, detailLevel:detailed, maxTokens:500
 - macro/calendar/events/fed/cpi → macro, fetch:[calendar,macro,market_state], compile:[]
 - earnings → earnings, fetch:[earnings_calendar], compile:[]
 - insider → insider, fetch:[insider], compile:[]
@@ -106,6 +109,7 @@ TOKEN BUDGET:
 - candle_list (per-candle detail): 400
 - briefing/detailed: 380
 - news_catalyst with search: 320
+- setup_analysis: 500
 
 DETAIL LEVEL:
 - detailLevel:detailed → always use the higher token budget; do NOT cap at 2-3 sentences
@@ -184,22 +188,25 @@ export function buildFallbackPlan(
   const isCandle = /candle|ohlc|from \d/.test(lower)
   const isDetailedNarrative = /describe|walk me through|explain.*price|price movement|open to close|open.*close|full session|full day/.test(lower)
   const isPrice = /price|where is|how much/.test(lower) && lower.split(' ').length < 8
+  const isSetup = /setup|entry|trade idea|where.*enter|good setup|what.*play|where.*stop|where.*target|give me levels|trade this|risk.?reward|r[:/]r\b/i.test(lower)
 
   return {
-    topic: isCasual ? 'casual' : isBriefing ? 'briefing' : (isCandle || isDetailedNarrative) ? 'intraday' : isPrice ? 'price' : 'intraday',
+    topic: isCasual ? 'casual' : isBriefing ? 'briefing' : isSetup ? 'setup_analysis' : (isCandle || isDetailedNarrative) ? 'intraday' : isPrice ? 'price' : 'intraday',
     symbols: watchlistTickers,
     timeRange: { type: 'session', startDate: todayEt, endDate: todayEt },
     fetch: isCasual ? [] : isBriefing
       ? ['candles', 'live_prices', 'news', 'macro', 'calendar', 'sector', 'market_state']
+      : isSetup ? ['candles', 'news', 'options', 'analyst', 'insider']
       : ['candles', 'live_prices', 'news', 'market_state'],
     compile: isCasual ? [] : isBriefing
       ? ['session_summary', 'biggest_move']
       : isCandle ? ['candle_range_detail']
+      : isSetup ? ['setup_analysis', 'session_summary', 'biggest_move', 'volume_spikes']
       : isDetailedNarrative ? ['session_summary', 'biggest_move', 'volume_spikes']
       : ['session_summary', 'biggest_move'],
-    outputFormat: isCasual ? 'one_liner' : isBriefing ? 'briefing' : isCandle ? 'candle_list' : 'prose',
-    detailLevel: (isBriefing || isDetailedNarrative) ? 'detailed' : 'standard',
-    maxTokens: isCasual ? 50 : isBriefing ? 380 : isDetailedNarrative ? 650 : isCandle ? 400 : 150,
+    outputFormat: isCasual ? 'one_liner' : isBriefing ? 'briefing' : isSetup ? 'setup' : isCandle ? 'candle_list' : 'prose',
+    detailLevel: (isBriefing || isDetailedNarrative || isSetup) ? 'detailed' : 'standard',
+    maxTokens: isCasual ? 50 : isBriefing ? 380 : isSetup ? 500 : isDetailedNarrative ? 650 : isCandle ? 400 : 150,
     isHistorical: false,
     requiresSearch: false,
   }
