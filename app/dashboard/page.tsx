@@ -3462,14 +3462,17 @@ const visibleDaySummaries = useMemo(() => {
             <div style={{ flex: 1, overflowY: 'auto', padding: '10px 0' }}>
               <div style={{ padding: '8px 18px 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontSize: '10px', letterSpacing: '0.25em', textTransform: 'uppercase', color: T.goldText, fontWeight: 600 }}>Watchlist</div>
-                <div onClick={() => { setWlSearch(''); setWlSearchResults([]); setShowWlEditor(true) }} style={{ color: T.goldText, cursor: 'pointer', fontSize: '18px', lineHeight: 1, padding: '0 2px' }}>+</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div onClick={() => openTradeLog(watchlist[activeWl]?.ticker, watchlist[activeWl]?.price?.replace(/[^0-9.]/g, ''))} title="Log trade for selected ticker" style={{ color: T.goldText, cursor: 'pointer', fontSize: '14px', lineHeight: 1, padding: '0 2px', opacity: watchlist.length ? 1 : 0.3 }}>✎</div>
+                  <div onClick={() => { setWlSearch(''); setWlSearchResults([]); setShowWlEditor(true) }} style={{ color: T.goldText, cursor: 'pointer', fontSize: '18px', lineHeight: 1, padding: '0 2px' }}>+</div>
+                </div>
               </div>
 
               {watchlist.map((s, i) => (
                 <div key={s.ticker} onClick={() => setActiveWl(i)}
                   style={{ display: 'flex', alignItems: 'center', padding: '8px 18px', cursor: 'pointer', gap: '7px', borderLeft: i === activeWl ? `2px solid ${T.gold}` : '2px solid transparent', background: i === activeWl ? T.wlActive : 'transparent', transition: 'all 0.15s', position: 'relative' }}
-                  onMouseEnter={(e) => { const el = e.currentTarget as HTMLDivElement; const rm = el.querySelector('.wl-remove') as HTMLElement; const lg = el.querySelector('.wl-log') as HTMLElement; if (rm) rm.style.opacity = '1'; if (lg) lg.style.opacity = '1' }}
-                  onMouseLeave={(e) => { const el = e.currentTarget as HTMLDivElement; const rm = el.querySelector('.wl-remove') as HTMLElement; const lg = el.querySelector('.wl-log') as HTMLElement; if (rm) rm.style.opacity = '0'; if (lg) lg.style.opacity = '0' }}>
+                  onMouseEnter={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.wl-remove') as HTMLElement; if (rm) rm.style.opacity = '1' }}
+                  onMouseLeave={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.wl-remove') as HTMLElement; if (rm) rm.style.opacity = '0' }}>
                   <div style={{ fontWeight: 600, fontSize: '14px', width: '40px', color: i === activeWl ? T.gold : T.text3, fontFamily: "'DM Mono', monospace", letterSpacing: '0.06em', flexShrink: 0 }}>{s.ticker}</div>
                   <div style={{ flex: 1, height: '20px', display: 'flex', alignItems: 'flex-end', gap: '1px' }}>
                     {s.bars.map((h, j) => (
@@ -3478,7 +3481,6 @@ const visibleDaySummaries = useMemo(() => {
                   </div>
                   <div style={{ fontSize: '12.5px', color: T.textMuted, fontFamily: "'DM Mono', monospace", minWidth: '46px', textAlign: 'right' }}>{s.price ?? '—'}</div>
                   <div style={{ fontSize: '12.5px', color: s.change ? (s.up ? T.green : T.red) : T.text8, fontFamily: "'DM Mono', monospace", minWidth: '48px', textAlign: 'right', fontWeight: 600 }}>{s.change ?? '—'}</div>
-                  <div className="wl-log" onClick={(e) => { e.stopPropagation(); openTradeLog(s.ticker, s.price?.replace(/[^0-9.]/g, '')) }} style={{ position: 'absolute', right: '34px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: T.goldText, cursor: 'pointer', padding: '2px 5px', opacity: 0, transition: 'opacity 0.15s', background: T.goldFaint2, border: `1px solid ${T.goldFaint7}` }}>+</div>
                   <div className="wl-remove" onClick={(e) => { e.stopPropagation(); removeFromWatchlist(s.ticker) }} style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: T.red, cursor: 'pointer', padding: '2px 5px', opacity: 0, transition: 'opacity 0.15s', background: T.wlRemoveBg, border: `1px solid ${T.redBorder2}` }}>✕</div>
                 </div>
               ))}
@@ -3532,7 +3534,6 @@ const visibleDaySummaries = useMemo(() => {
             })()}
             <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div onClick={() => router.push('/dashboard/settings')} style={{ fontSize: '11px', color: T.goldText, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Settings</div>
-              <div onClick={() => openTradeLog(watchlist[activeWl]?.ticker, watchlist[activeWl]?.price?.replace(/[^0-9.]/g, ''))} style={{ fontSize: '11px', color: T.gold, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase', padding: '4px 8px', border: `1px solid ${T.goldFaint7}`, background: T.goldFaint2 }}>+ Log Trade</div>
               <div onClick={handleLogout} style={{ fontSize: '11px', color: T.text6, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Sign Out</div>
             </div>
           </div>
