@@ -930,6 +930,16 @@ function handleTouchEnd(e: React.TouchEvent) {
   const [wlSearchResults, setWlSearchResults] = useState<{ sym: string; name: string; type: string }[]>([])
   const [wlSearching, setWlSearching] = useState(false)
 
+  const [showTradeLog, setShowTradeLog] = useState(false)
+  const [tradeLogTicker, setTradeLogTicker] = useState('')
+  const [tradeLogEntry, setTradeLogEntry] = useState('')
+  const [tradeLogExit, setTradeLogExit] = useState('')
+  const [tradeLogSide, setTradeLogSide] = useState<'long' | 'short'>('long')
+  const [tradeLogShares, setTradeLogShares] = useState('')
+  const [tradeLogNotes, setTradeLogNotes] = useState('')
+  const [tradeLogSaving, setTradeLogSaving] = useState(false)
+  const [tradeLogSaved, setTradeLogSaved] = useState(false)
+
   const initialDateTime = getDateTimeInputDefaults()
   const [scheduledSummaries, setScheduledSummaries] = useState<ScheduledSummary[]>([])
   const [pastBriefings, setPastBriefings] = useState<PastBriefing[]>([])
@@ -2042,6 +2052,54 @@ function startThinkingChimes(): () => void {
   router.replace('/login')
   router.refresh()
 }
+
+  function openTradeLog(ticker?: string, price?: string) {
+    setTradeLogTicker(ticker ?? '')
+    setTradeLogEntry(price ?? '')
+    setTradeLogExit('')
+    setTradeLogShares('')
+    setTradeLogNotes('')
+    setTradeLogSide('long')
+    setTradeLogSaving(false)
+    setTradeLogSaved(false)
+    setShowTradeLog(true)
+  }
+
+  async function handleSubmitTrade() {
+    if (!tradeLogTicker || !tradeLogEntry) return
+    setTradeLogSaving(true)
+    try {
+      const entry = parseFloat(tradeLogEntry)
+      const exit = tradeLogExit ? parseFloat(tradeLogExit) : undefined
+      const shares = tradeLogShares ? parseInt(tradeLogShares) : undefined
+      let pnl: number | undefined
+      if (exit !== undefined && shares) {
+        pnl = tradeLogSide === 'long' ? (exit - entry) * shares : (entry - exit) * shares
+      }
+      await fetch('/api/journal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.id,
+          ticker: tradeLogTicker.toUpperCase(),
+          direction: tradeLogSide,
+          entryPrice: entry,
+          exitPrice: exit,
+          shares,
+          pnl,
+          notes: tradeLogNotes || undefined,
+          date: new Date().toISOString().split('T')[0],
+        }),
+      })
+      setTradeLogSaved(true)
+      setTimeout(() => {
+        setShowTradeLog(false)
+        setTradeLogTicker(''); setTradeLogEntry(''); setTradeLogExit('')
+        setTradeLogShares(''); setTradeLogNotes(''); setTradeLogSide('long')
+        setTradeLogSaving(false); setTradeLogSaved(false)
+      }, 1200)
+    } catch { setTradeLogSaving(false) }
+  }
 
   async function addToWatchlist(sym: string, name?: string) {
     const upper = sym.toUpperCase(); if (watchlist.some((w) => w.ticker === upper)) return; if (watchlist.length >= 20) return
@@ -3410,8 +3468,8 @@ const visibleDaySummaries = useMemo(() => {
               {watchlist.map((s, i) => (
                 <div key={s.ticker} onClick={() => setActiveWl(i)}
                   style={{ display: 'flex', alignItems: 'center', padding: '8px 18px', cursor: 'pointer', gap: '7px', borderLeft: i === activeWl ? `2px solid ${T.gold}` : '2px solid transparent', background: i === activeWl ? T.wlActive : 'transparent', transition: 'all 0.15s', position: 'relative' }}
-                  onMouseEnter={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.wl-remove') as HTMLElement; if (rm) rm.style.opacity = '1' }}
-                  onMouseLeave={(e) => { const rm = (e.currentTarget as HTMLDivElement).querySelector('.wl-remove') as HTMLElement; if (rm) rm.style.opacity = '0' }}>
+                  onMouseEnter={(e) => { const el = e.currentTarget as HTMLDivElement; const rm = el.querySelector('.wl-remove') as HTMLElement; const lg = el.querySelector('.wl-log') as HTMLElement; if (rm) rm.style.opacity = '1'; if (lg) lg.style.opacity = '1' }}
+                  onMouseLeave={(e) => { const el = e.currentTarget as HTMLDivElement; const rm = el.querySelector('.wl-remove') as HTMLElement; const lg = el.querySelector('.wl-log') as HTMLElement; if (rm) rm.style.opacity = '0'; if (lg) lg.style.opacity = '0' }}>
                   <div style={{ fontWeight: 600, fontSize: '14px', width: '40px', color: i === activeWl ? T.gold : T.text3, fontFamily: "'DM Mono', monospace", letterSpacing: '0.06em', flexShrink: 0 }}>{s.ticker}</div>
                   <div style={{ flex: 1, height: '20px', display: 'flex', alignItems: 'flex-end', gap: '1px' }}>
                     {s.bars.map((h, j) => (
@@ -3420,6 +3478,7 @@ const visibleDaySummaries = useMemo(() => {
                   </div>
                   <div style={{ fontSize: '12.5px', color: T.textMuted, fontFamily: "'DM Mono', monospace", minWidth: '46px', textAlign: 'right' }}>{s.price ?? '—'}</div>
                   <div style={{ fontSize: '12.5px', color: s.change ? (s.up ? T.green : T.red) : T.text8, fontFamily: "'DM Mono', monospace", minWidth: '48px', textAlign: 'right', fontWeight: 600 }}>{s.change ?? '—'}</div>
+                  <div className="wl-log" onClick={(e) => { e.stopPropagation(); openTradeLog(s.ticker, s.price?.replace(/[^0-9.]/g, '')) }} style={{ position: 'absolute', right: '34px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: T.goldText, cursor: 'pointer', padding: '2px 5px', opacity: 0, transition: 'opacity 0.15s', background: T.goldFaint2, border: `1px solid ${T.goldFaint7}` }}>+</div>
                   <div className="wl-remove" onClick={(e) => { e.stopPropagation(); removeFromWatchlist(s.ticker) }} style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: T.red, cursor: 'pointer', padding: '2px 5px', opacity: 0, transition: 'opacity 0.15s', background: T.wlRemoveBg, border: `1px solid ${T.redBorder2}` }}>✕</div>
                 </div>
               ))}
@@ -3473,6 +3532,7 @@ const visibleDaySummaries = useMemo(() => {
             })()}
             <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div onClick={() => router.push('/dashboard/settings')} style={{ fontSize: '11px', color: T.goldText, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Settings</div>
+              <div onClick={() => openTradeLog(watchlist[activeWl]?.ticker, watchlist[activeWl]?.price?.replace(/[^0-9.]/g, ''))} style={{ fontSize: '11px', color: T.gold, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase', padding: '4px 8px', border: `1px solid ${T.goldFaint7}`, background: T.goldFaint2 }}>+ Log Trade</div>
               <div onClick={handleLogout} style={{ fontSize: '11px', color: T.text6, cursor: 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Sign Out</div>
             </div>
           </div>
@@ -4319,6 +4379,73 @@ const visibleDaySummaries = useMemo(() => {
               <div style={{ padding: '14px 24px', borderTop: `1px solid ${T.borderFaint}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ fontSize: '12px', color: T.text6 }}>Changes save automatically</div>
                 <div onClick={() => setShowWlEditor(false)} style={{ padding: '9px 22px', background: T.goldFaint3, border: `1px solid ${T.goldFaint8}`, color: T.gold, fontSize: '13px', fontWeight: 600, cursor: 'pointer', letterSpacing: '0.08em' }}>Done</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Trade log modal ── */}
+        {showTradeLog && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 210, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div onClick={() => setShowTradeLog(false)} style={{ position: 'absolute', inset: 0, background: T.backdropBlur, backdropFilter: 'blur(4px)' }} />
+            <div style={{ position: 'relative', zIndex: 1, background: T.overlayBg, border: `1px solid ${T.border}`, width: '100%', maxWidth: '400px', margin: '0 20px' }}>
+              <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${T.borderFaint}`, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '18px', fontStyle: 'italic', fontWeight: 500, color: T.text }}>Log Trade</div>
+                  {tradeLogTicker && <div style={{ fontSize: '13px', color: T.gold, fontFamily: "'DM Mono', monospace", marginTop: '3px', fontWeight: 600 }}>{tradeLogTicker}</div>}
+                </div>
+                <div onClick={() => setShowTradeLog(false)} style={{ fontSize: '18px', color: T.text6, cursor: 'pointer', padding: '4px' }}>✕</div>
+              </div>
+              <div style={{ padding: '18px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {!tradeLogTicker && (
+                  <div>
+                    <div style={{ fontSize: '10px', color: T.text6, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: '6px' }}>Ticker</div>
+                    <input autoFocus value={tradeLogTicker} onChange={(e) => setTradeLogTicker(e.target.value.toUpperCase())} placeholder="e.g. NVDA" style={{ width: '100%', background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '9px 12px', fontSize: '14px', fontFamily: "'DM Mono', monospace", outline: 'none', boxSizing: 'border-box' as const }} />
+                  </div>
+                )}
+                <div>
+                  <div style={{ fontSize: '10px', color: T.text6, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: '6px' }}>Direction</div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {(['long', 'short'] as const).map((side) => (
+                      <div key={side} onClick={() => setTradeLogSide(side)} style={{ flex: 1, padding: '9px', textAlign: 'center', cursor: 'pointer', fontSize: '13px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', border: `1px solid ${tradeLogSide === side ? (side === 'long' ? T.greenBorder2 : T.redBorder2) : T.borderItem}`, background: tradeLogSide === side ? (side === 'long' ? T.greenFaint : T.redFaint4) : 'transparent', color: tradeLogSide === side ? (side === 'long' ? T.green : T.red) : T.text6, transition: 'all 0.15s' }}>{side === 'long' ? '▲ Long' : '▼ Short'}</div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <div style={{ fontSize: '10px', color: T.text6, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: '6px' }}>Entry Price</div>
+                    <input value={tradeLogEntry} onChange={(e) => setTradeLogEntry(e.target.value)} placeholder="0.00" type="number" step="0.01" style={{ width: '100%', background: T.inputBg, border: `1px solid ${T.goldFaint7}`, color: T.text, padding: '9px 12px', fontSize: '14px', fontFamily: "'DM Mono', monospace", outline: 'none', boxSizing: 'border-box' as const }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '10px', color: T.text6, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: '6px' }}>Exit Price <span style={{ color: T.text7, textTransform: 'none', letterSpacing: 0 }}>(opt)</span></div>
+                    <input value={tradeLogExit} onChange={(e) => setTradeLogExit(e.target.value)} placeholder="0.00" type="number" step="0.01" style={{ width: '100%', background: T.inputBg, border: `1px solid ${T.borderItem}`, color: T.text, padding: '9px 12px', fontSize: '14px', fontFamily: "'DM Mono', monospace", outline: 'none', boxSizing: 'border-box' as const }} />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '10px', color: T.text6, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: '6px' }}>Shares / Contracts <span style={{ color: T.text7, textTransform: 'none', letterSpacing: 0 }}>(opt)</span></div>
+                  <input value={tradeLogShares} onChange={(e) => setTradeLogShares(e.target.value)} placeholder="100" type="number" step="1" style={{ width: '100%', background: T.inputBg, border: `1px solid ${T.borderItem}`, color: T.text, padding: '9px 12px', fontSize: '14px', fontFamily: "'DM Mono', monospace", outline: 'none', boxSizing: 'border-box' as const }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '10px', color: T.text6, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: '6px' }}>Notes <span style={{ color: T.text7, textTransform: 'none', letterSpacing: 0 }}>(opt)</span></div>
+                  <textarea value={tradeLogNotes} onChange={(e) => setTradeLogNotes(e.target.value)} placeholder="Setup, reason, what you noticed..." rows={2} style={{ width: '100%', background: T.inputBg, border: `1px solid ${T.borderItem}`, color: T.text, padding: '9px 12px', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", outline: 'none', resize: 'none', boxSizing: 'border-box' as const }} />
+                </div>
+                {tradeLogExit && tradeLogEntry && tradeLogShares && (
+                  <div style={{ padding: '10px 14px', background: T.goldFaint, border: `1px solid ${T.goldFaint6}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ fontSize: '11px', color: T.text6, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Est. P&L</div>
+                    {(() => {
+                      const pnl = tradeLogSide === 'long'
+                        ? (parseFloat(tradeLogExit) - parseFloat(tradeLogEntry)) * parseInt(tradeLogShares)
+                        : (parseFloat(tradeLogEntry) - parseFloat(tradeLogExit)) * parseInt(tradeLogShares)
+                      return <div style={{ fontFamily: "'DM Mono', monospace", fontWeight: 700, fontSize: '14px', color: pnl >= 0 ? T.green : T.red }}>{pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}</div>
+                    })()}
+                  </div>
+                )}
+              </div>
+              <div style={{ padding: '14px 24px', borderTop: `1px solid ${T.borderFaint}`, display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div onClick={() => setShowTradeLog(false)} style={{ padding: '9px 16px', border: `1px solid ${T.borderItem}`, color: T.text6, fontSize: '13px', cursor: 'pointer', letterSpacing: '0.06em' }}>Cancel</div>
+                <div onClick={handleSubmitTrade} style={{ flex: 1, padding: '9px 16px', background: tradeLogSaved ? T.greenFaint : T.goldFaint3, border: `1px solid ${tradeLogSaved ? T.greenBorder2 : T.goldFaint8}`, color: tradeLogSaved ? T.green : T.gold, fontSize: '13px', fontWeight: 600, cursor: tradeLogSaving ? 'default' : 'pointer', textAlign: 'center', letterSpacing: '0.06em', transition: 'all 0.2s' }}>
+                  {tradeLogSaved ? '✓ Logged' : tradeLogSaving ? 'Saving…' : 'Log Trade'}
+                </div>
               </div>
             </div>
           </div>
