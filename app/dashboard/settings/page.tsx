@@ -169,6 +169,10 @@ function SettingsPageInner() {
   const [savedEventAlertResults, setSavedEventAlertResults] = useState(false)
   const [savedEventAlertImpactFilter, setSavedEventAlertImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('HIGH')
 
+  const [webhookUrl, setWebhookUrl] = useState('')
+  const [webhookLoading, setWebhookLoading] = useState(false)
+  const [webhookCopied, setWebhookCopied] = useState(false)
+
   useEffect(() => {
     let mounted = true
 
@@ -467,6 +471,25 @@ function SettingsPageInner() {
     setSigningOut(true)
     await supabase.auth.signOut()
     window.location.href = '/login'
+  }
+
+  async function loadWebhookUrl() {
+    if (!userId || webhookUrl) return
+    setWebhookLoading(true)
+    try {
+      const res = await fetch(`/api/webhook/key?uid=${userId}`)
+      const data = await res.json()
+      if (data.webhookUrl) setWebhookUrl(data.webhookUrl)
+    } finally {
+      setWebhookLoading(false)
+    }
+  }
+
+  async function copyWebhookUrl() {
+    if (!webhookUrl) return
+    await navigator.clipboard.writeText(webhookUrl)
+    setWebhookCopied(true)
+    setTimeout(() => setWebhookCopied(false), 2000)
   }
 
   const pillStyles = subscriptionMeta.tone === 'green'
@@ -937,6 +960,74 @@ function SettingsPageInner() {
                   All changes require Save Changes · Only fires if voice replies are on.
                 </div>
               </div>
+            </div>
+
+            <div style={sectionCard}>
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ color: T.text, fontSize: 20, fontWeight: 700, marginBottom: 6 }}>TradingView Webhook</div>
+                <div style={{ color: T.text4, fontSize: 13 }}>Auto-log trades fired from TradingView alerts directly to your journal.</div>
+              </div>
+
+              {!webhookUrl ? (
+                <button
+                  onClick={loadWebhookUrl}
+                  disabled={webhookLoading}
+                  style={{ ...actionBtn(false), opacity: webhookLoading ? 0.6 : 1 }}
+                >
+                  {webhookLoading ? 'Generating…' : 'Show Webhook URL'}
+                </button>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+                    <input
+                      readOnly
+                      value={webhookUrl}
+                      style={{ ...inputStyle, flex: 1, fontSize: 11, fontFamily: "'DM Mono', monospace", padding: '10px 12px', color: T.text3 }}
+                      onFocus={(e) => e.currentTarget.select()}
+                    />
+                    <button
+                      onClick={copyWebhookUrl}
+                      style={{ ...actionBtn(webhookCopied), flexShrink: 0, padding: '10px 16px', background: webhookCopied ? T.greenBg : undefined, border: webhookCopied ? `1px solid ${T.greenBorder}` : undefined, color: webhookCopied ? T.green : undefined }}
+                    >
+                      {webhookCopied ? '✓ Copied' : 'Copy'}
+                    </button>
+                  </div>
+
+                  <div style={{ background: T.panelBg2, border: `1px solid ${T.border}`, padding: '14px 16px', borderRadius: 4 }}>
+                    <div style={{ fontSize: 11, color: T.text3, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 10 }}>How to set up in TradingView</div>
+                    <ol style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {[
+                        'Open a chart for the instrument you trade (e.g. NQ1!, NVDA)',
+                        'Click the clock icon → Create Alert',
+                        'Under Notifications, enable Webhook URL and paste your URL above',
+                        'Set the Message body to the JSON template below',
+                        'Save — every time the alert fires, the trade logs automatically',
+                      ].map((step, i) => (
+                        <li key={i} style={{ fontSize: 12, color: T.text4, lineHeight: 1.5 }}>{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+
+                  <div style={{ background: T.panelBg2, border: `1px solid ${T.border}`, borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ padding: '8px 14px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ fontSize: 11, color: T.text3, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase' }}>Alert Message Template</div>
+                      <div style={{ fontSize: 10, color: T.text4 }}>paste into the Message field</div>
+                    </div>
+                    <pre style={{ margin: 0, padding: '12px 14px', fontSize: 11, color: T.gold, fontFamily: "'DM Mono', monospace", lineHeight: 1.6, overflowX: 'auto', background: 'transparent' }}>{`{
+  "ticker": "{{ticker}}",
+  "action": "buy",
+  "price": {{close}},
+  "qty": 1,
+  "notes": "enter reason here"
+}`}</pre>
+                    <div style={{ padding: '8px 14px', borderTop: `1px solid ${T.border}`, fontSize: 11, color: T.text4 }}>
+                      Replace <span style={{ color: T.text3, fontFamily: "'DM Mono', monospace" }}>"action"</span> with:{' '}
+                      <span style={{ color: T.green, fontFamily: "'DM Mono', monospace" }}>buy</span> · <span style={{ color: T.red, fontFamily: "'DM Mono', monospace" }}>sell</span> · <span style={{ color: T.red, fontFamily: "'DM Mono', monospace" }}>short</span> · <span style={{ color: T.green, fontFamily: "'DM Mono', monospace" }}>cover</span>.
+                      For Pine strategies use <span style={{ color: T.text3, fontFamily: "'DM Mono', monospace" }}>{`{{strategy.order.action}}`}</span> and <span style={{ color: T.text3, fontFamily: "'DM Mono', monospace" }}>{`{{strategy.order.contracts}}`}</span>.
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div style={sectionCard}>
