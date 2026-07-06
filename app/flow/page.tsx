@@ -40,7 +40,7 @@ interface FlowData {
   vwap:number|null; hod:number|null; lod:number|null
   strikes:StrikeData[]; volProfile:VolBucket[]; unusualFlow:UnusualFlow[]; updatedAt:string
 }
-type FlowView = 'heatmap'|'terrain'|'wells'|'grid'|'gauge'
+type FlowView = 'heatmap'|'terrain'|'wells'|'grid'|'gauge'|'terrain-tape'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (n:number|null, d=2) => n==null ? '—' : n.toFixed(d)
@@ -464,13 +464,168 @@ function VolProfile({profile,livePrice,C,isDark}:{profile:VolBucket[];livePrice:
   )
 }
 
+// ── VIEW: Terrain + Live Tape (Bookmap-style) ────────────────────────────────
+function TerrainTapeView({data,C,isDark}:{data:FlowData;C:CT;isDark:boolean}) {
+  const canvasRef=useRef<HTMLCanvasElement>(null)
+  const MIN_S=data.strikes[0]?.strike??531
+  const MAX_S=data.strikes[data.strikes.length-1]?.strike??558
+  const BUCKET=0.25
+  const priceBuckets:number[]=[]
+  for(let p=MIN_S-1;p<=MAX_S+1;p+=BUCKET) priceBuckets.push(Math.round(p*4)/4)
+
+  const terrainCol=priceBuckets.map(p=>
+    data.strikes.reduce((s,st)=>s+(st.callOI-st.putOI)*Math.exp(-((st.strike-p)**2)/(2*2**2)),0)
+  )
+  const maxG=Math.max(...terrainCol.map(Math.abs),1)
+
+  const stRef=useRef<{
+    entries:{id:number;ts:number;price:number;size:number;side:'buy'|'sell';dark:boolean;large:boolean}[]
+    price:number; colHistory:number[][]; nid:number
+  }>({entries:[],price:data.livePrice??543,colHistory:[],nid:20000})
+
+  const rafRef=useRef<number>(0)
+
+  useEffect(()=>{
+    const canvas=canvasRef.current;if(!canvas)return
+    const ctx=canvas.getContext('2d');if(!ctx)return
+    // pre-fill terrain history
+    const MAX_COLS=200
+    const noise=()=>1+(Math.random()-0.5)*0.05
+    if(!stRef.current.colHistory.length){
+      for(let i=0;i<MAX_COLS;i++) stRef.current.colHistory.push(terrainCol.map(v=>v*noise()))
+    }
+    const tapeIv=setInterval(()=>{
+      const cur=stRef.current.price
+      const p=Math.round((cur+(Math.random()-0.49)*0.12)*100)/100
+      const sz=Math.floor(Math.random()*14000)+100
+      const side:'buy'|'sell'=Math.random()>0.5?'buy':'sell'
+      const dark=Math.random()<0.07,large=sz>9000
+      stRef.current.price=p
+      stRef.current.entries.unshift({id:stRef.current.nid++,ts:Date.now(),price:p,size:sz,side,dark,large})
+      if(stRef.current.entries.length>800) stRef.current.entries.pop()
+    },180)
+    const colIv=setInterval(()=>{
+      stRef.current.colHistory.push(terrainCol.map(v=>v*noise()))
+      if(stRef.current.colHistory.length>MAX_COLS) stRef.current.colHistory.shift()
+    },2000)
+    const ro=new ResizeObserver(()=>{canvas.width=canvas.offsetWidth;canvas.height=canvas.offsetHeight})
+    ro.observe(canvas);canvas.width=canvas.offsetWidth;canvas.height=canvas.offsetHeight
+
+    const render=()=>{
+      const W=canvas.width,H=canvas.height;if(!W||!H){rafRef.current=requestAnimationFrame(render);return}
+      const st=stRef.current,cur=st.price
+      const pL=44,pR=80,pT=22,pB=32
+      const plotW=W-pL-pR,plotH=H-pT-pB
+      const VIEW_RANGE=10 // ±$5 from current price
+      const dMin=cur-VIEW_RANGE/2,dMax=cur+VIEW_RANGE/2
+      const dRange=dMax-dMin
+      const py=(p:number)=>pT+(1-(p-dMin)/dRange)*plotH
+
+      ctx.fillStyle=isDark?'#080808':'#f8f7f5'
+      ctx.fillRect(0,0,W,H)
+
+      // terrain heatmap
+      const cols=st.colHistory,colW=Math.max(1,plotW/Math.max(cols.length,1))
+      const rowH=plotH/(dRange/BUCKET)
+      cols.forEach((col,ci)=>{
+        const x=pL+ci*colW
+        priceBuckets.forEach((p,pi)=>{
+          if(p<dMin-BUCKET||p>dMax+BUCKET)return
+          const y=py(p)
+          const norm=col[pi]/maxG
+          const a=Math.min(Math.abs(norm)*0.72,0.68)
+          if(a<0.02)return
+          ctx.fillStyle=norm>0
+            ?(isDark?`rgba(74,222,128,${a.toFixed(2)})`:`rgba(22,163,74,${a.toFixed(2)})`)
+            :(isDark?`rgba(248,113,113,${a.toFixed(2)})`:`rgba(220,38,38,${a.toFixed(2)})`)
+          ctx.fillRect(x,y-rowH*0.5,colW+0.5,rowH+0.5)
+        })
+      })
+
+      // horizontal price grid lines
+      for(let p=Math.ceil(dMin);p<=Math.floor(dMax);p++){
+        const y=py(p)
+        ctx.strokeStyle=isDark?'rgba(255,255,255,0.07)':'rgba(0,0,0,0.07)'
+        ctx.lineWidth=1;ctx.setLineDash([])
+        ctx.beginPath();ctx.moveTo(pL,y);ctx.lineTo(W-pR,y);ctx.stroke()
+        ctx.fillStyle=isDark?'rgba(255,255,255,0.35)':'rgba(0,0,0,0.40)'
+        ctx.font='10px monospace';ctx.textAlign='right'
+        ctx.fillText(`$${p}`,pL-4,y+4)
+      }
+
+      // tape dots
+      const now=Date.now(),timeWindow=cols.length*2000
+      st.entries.forEach(e=>{
+        const age=now-e.ts;if(age>timeWindow)return
+        if(e.price<dMin||e.price>dMax)return
+        const x=pL+plotW*(1-age/timeWindow)
+        const y=py(e.price)
+        const r=e.large?5:e.dark?4:2.5
+        const alpha=Math.max(0.15,1-age/timeWindow*0.75)
+        const col=e.dark?(isDark?'#c084fc':'#9333ea'):e.side==='buy'?(isDark?'#4ade80':'#16a34a'):(isDark?'#f87171':'#dc2626')
+        ctx.globalAlpha=alpha
+        ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=col;ctx.fill()
+        if(e.large||e.dark){
+          ctx.globalAlpha=alpha*0.25
+          ctx.beginPath();ctx.arc(x,y,r*3,0,Math.PI*2);ctx.fillStyle=col;ctx.fill()
+        }
+      })
+      ctx.globalAlpha=1
+
+      // gamma wall dashed lines
+      data.strikes.filter(s=>s.gammaWall&&s.strike>=dMin&&s.strike<=dMax).forEach(s=>{
+        const y=py(s.strike)
+        ctx.strokeStyle=isDark?'rgba(232,184,75,0.40)':'rgba(184,117,12,0.40)'
+        ctx.lineWidth=1.5;ctx.setLineDash([5,7])
+        ctx.beginPath();ctx.moveTo(pL,y);ctx.lineTo(W-pR,y);ctx.stroke()
+        ctx.setLineDash([])
+        ctx.fillStyle=isDark?'#e8b84b':'#b8750c'
+        ctx.font='bold 10px monospace';ctx.textAlign='left'
+        ctx.fillText(`Γ $${s.strike}`,W-pR+4,y+4)
+      })
+
+      // current price line
+      if(cur>=dMin&&cur<=dMax){
+        const y=py(cur)
+        ctx.strokeStyle=isDark?'#e8b84b':'#b8750c';ctx.lineWidth=2.5;ctx.setLineDash([])
+        ctx.beginPath();ctx.moveTo(pL,y);ctx.lineTo(W-pR,y);ctx.stroke()
+        ctx.fillStyle=isDark?'#e8b84b':'#b8750c'
+        ctx.font='bold 12px monospace';ctx.textAlign='left'
+        ctx.fillText(`$${cur.toFixed(2)}`,W-pR+4,y-4)
+      }
+
+      // legend
+      ctx.font='10px sans-serif';ctx.textAlign='left'
+      const leg:[string,string,string][]=[
+        [isDark?'rgba(74,222,128,0.8)':'rgba(22,163,74,0.8)','■','Call gamma zone'],
+        [isDark?'rgba(248,113,113,0.8)':'rgba(220,38,38,0.8)','■','Put gamma zone'],
+        [isDark?'#4ade80':'#16a34a','●','Buy print'],
+        [isDark?'#f87171':'#dc2626','●','Sell print'],
+        [isDark?'#c084fc':'#9333ea','●','Dark pool'],
+      ]
+      let lx=pL
+      leg.forEach(([col,sym,txt])=>{
+        ctx.fillStyle=col;ctx.fillText(sym,lx,H-10);lx+=12
+        ctx.fillStyle=isDark?'rgba(255,255,255,0.35)':'rgba(0,0,0,0.40)';ctx.fillText(txt,lx,H-10);lx+=ctx.measureText(txt).width+16
+      })
+
+      rafRef.current=requestAnimationFrame(render)
+    }
+    rafRef.current=requestAnimationFrame(render)
+    return()=>{clearInterval(tapeIv);clearInterval(colIv);cancelAnimationFrame(rafRef.current);ro.disconnect()}
+  },[isDark])
+
+  return <canvas ref={canvasRef} style={{flex:1,width:'100%',display:'block'}}/>
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const VIEWS:{id:FlowView;label:string;desc:string}[]=[
   {id:'heatmap',label:'Heat Map',   desc:'OI bars by strike — classic bookmap'},
   {id:'terrain',label:'Terrain',    desc:'Mountain range of call vs put OI'},
   {id:'wells',  label:'Gravity Wells',desc:'OI as gravitational wells around price'},
   {id:'grid',   label:'Time × Strike',desc:'OI heatmap across all expiries'},
-  {id:'gauge',  label:'Γ Gauge',    desc:'Net gamma pressure — long vs short'},
+  {id:'gauge',       label:'Γ Gauge',      desc:'Net gamma pressure — long vs short'},
+  {id:'terrain-tape',label:'Terrain + Tape',desc:'Bookmap-style: scrolling gamma terrain with live tape prints overlay'},
 ]
 
 export default function FlowMapPage() {
@@ -567,7 +722,8 @@ export default function FlowMapPage() {
         {view==='terrain'&&<TerrainView data={data} C={C} isDark={isDark}/>}
         {view==='wells'  &&<GravityWellsView data={data} C={C} isDark={isDark}/>}
         {view==='grid'   &&<TimeGridView data={data} C={C} isDark={isDark}/>}
-        {view==='gauge'  &&<GaugeView data={data} C={C} isDark={isDark}/>}
+        {view==='gauge'        &&<GaugeView       data={data} C={C} isDark={isDark}/>}
+        {view==='terrain-tape' &&<TerrainTapeView data={data} C={C} isDark={isDark}/>}
       </div>
 
       {/* Unusual flow — shown for heatmap and terrain */}

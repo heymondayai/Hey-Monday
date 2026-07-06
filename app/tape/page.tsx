@@ -41,7 +41,7 @@ interface TapeEntry {
   large:boolean; dark:boolean; narrative:string
 }
 interface L2Level { price:number; bidSize:number; askSize:number }
-type TapeView = 'table'|'ekg'|'particles'|'clusters'|'timeline'
+type TapeView = 'table'|'ekg'|'particles'|'clusters'|'timeline'|'battlefield'|'seismic'
 
 // ── Mock data ─────────────────────────────────────────────────────────────────
 let mockId=1
@@ -359,6 +359,247 @@ function TimelineView({tape,C,isDark}:{tape:TapeEntry[];C:CT;isDark:boolean}) {
   )
 }
 
+// ── VIEW: Battlefield ────────────────────────────────────────────────────────
+interface Impact{id:number;price:number;side:'buy'|'sell'|'unknown';large:boolean;dark:boolean;born:number}
+function BattlefieldView({tape,l2,price,C,isDark}:{tape:TapeEntry[];l2:L2Level[];price:number;C:CT;isDark:boolean}) {
+  const [impacts,setImpacts]=useState<Impact[]>([])
+  const lastIdRef=useRef(0)
+
+  useEffect(()=>{
+    const newE=tape.filter(e=>e.id>lastIdRef.current)
+    if(newE.length){
+      lastIdRef.current=tape[0]?.id??0
+      setImpacts(prev=>[...prev,...newE.slice(0,6).map(e=>({id:e.id,price:e.price,side:e.side,large:e.large,dark:e.dark,born:Date.now()}))].slice(-60))
+    }
+  },[tape])
+
+  useEffect(()=>{
+    const iv=setInterval(()=>setImpacts(p=>p.filter(i=>Date.now()-i.born<1800)),80)
+    return()=>clearInterval(iv)
+  },[])
+
+  const maxSize=Math.max(...l2.flatMap(l=>[l.bidSize,l.askSize]),1)
+  const allPrices=[...new Set(l2.map(l=>l.price))].sort((a,b)=>b-a)
+  const minP=allPrices[allPrices.length-1]??price-0.40
+  const maxP=allPrices[0]??price+0.40
+  const pRange=Math.max(maxP-minP,0.2)
+  const W=560,H=500,cx=W/2,pL=56,pR=56,pT=30,pB=30
+  const plotH=H-pT-pB,maxBarW=(cx-pL)*0.92
+  const yOf=(p:number)=>pT+(1-(p-minP)/pRange)*plotH
+
+  return (
+    <div style={{flex:1,display:'flex',flexDirection:'column',padding:'8px 16px',gap:8,overflow:'hidden'}}>
+      <div style={{fontSize:10,color:C.text3,display:'flex',gap:16}}>
+        <span style={{color:C.green}}>■ Bids (defending, left)</span>
+        <span style={{color:C.red}}>■ Asks (attacking, right)</span>
+        <span style={{color:C.gold}}>— Current price battle line</span>
+        <span style={{color:C.text4}}>Ripples = live tape prints hitting the book</span>
+      </div>
+      <div style={{flex:1,overflow:'hidden',position:'relative'}}>
+        <style>{`
+          @keyframes ripple{0%{r:4;opacity:0.9}100%{r:28;opacity:0}}
+          @keyframes bigRipple{0%{r:8;opacity:0.85}100%{r:50;opacity:0}}
+          @keyframes darkRipple{0%{r:6;opacity:1}100%{r:36;opacity:0}}
+        `}</style>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'100%'}} preserveAspectRatio="xMidYMid meet">
+          {/* Background grid */}
+          {allPrices.filter((_,i)=>i%2===0).map(p=>(
+            <line key={p} x1={pL} y1={yOf(p)} x2={W-pR} y2={yOf(p)} stroke={C.borderFt} strokeWidth="1"/>
+          ))}
+          {/* Center axis */}
+          <line x1={cx} y1={pT} x2={cx} y2={H-pB} stroke={C.border} strokeWidth="1.5"/>
+
+          {/* Bid bars (left) */}
+          {l2.map(l=>{
+            const y=yOf(l.price),barW=(l.bidSize/maxSize)*maxBarW
+            return <g key={`b${l.price}`}>
+              <rect x={cx-barW} y={y-7} width={barW} height={14}
+                fill={isDark?'rgba(74,222,128,0.18)':'rgba(22,163,74,0.14)'} rx="1"/>
+              <rect x={cx-barW} y={y-7} width={3} height={14}
+                fill={C.green} rx="1"/>
+              <text x={cx-barW-4} y={y+4} textAnchor="end" fill={C.text4} fontSize="9" fontFamily="monospace">
+                {(l.bidSize/1000).toFixed(0)}K
+              </text>
+            </g>
+          })}
+          {/* Ask bars (right) */}
+          {l2.map(l=>{
+            const y=yOf(l.price),barW=(l.askSize/maxSize)*maxBarW
+            return <g key={`a${l.price}`}>
+              <rect x={cx} y={y-7} width={barW} height={14}
+                fill={isDark?'rgba(248,113,113,0.18)':'rgba(220,38,38,0.14)'} rx="1"/>
+              <rect x={cx+barW-3} y={y-7} width={3} height={14}
+                fill={C.red} rx="1"/>
+              <text x={cx+barW+4} y={y+4} textAnchor="start" fill={C.text4} fontSize="9" fontFamily="monospace">
+                {(l.askSize/1000).toFixed(0)}K
+              </text>
+            </g>
+          })}
+
+          {/* Price labels */}
+          {allPrices.map(p=>(
+            <text key={p} x={cx} y={yOf(p)-10} textAnchor="middle" fill={Math.abs(p-price)<0.01?C.gold:C.text4} fontSize="9" fontFamily="monospace">
+              ${p.toFixed(2)}
+            </text>
+          ))}
+
+          {/* Impact ripples */}
+          {impacts.map(imp=>{
+            const y=price+(imp.price-price)/(pRange/plotH)*0 || yOf(Math.max(minP,Math.min(maxP,imp.price)))
+            if(y<pT||y>H-pB)return null
+            const x=imp.side==='buy'?cx-30:cx+30
+            const anim=imp.dark?'darkRipple':imp.large?'bigRipple':'ripple'
+            const col=imp.dark?C.purple:imp.side==='buy'?C.green:C.red
+            const dur=imp.dark?'1.4s':imp.large?'1.6s':'1.0s'
+            return <circle key={imp.id} cx={x} cy={y} r="4" fill="none"
+              stroke={col} strokeWidth={imp.large?2.5:1.5}
+              style={{animation:`${anim} ${dur} ease-out forwards`}}/>
+          })}
+
+          {/* Current price battle line */}
+          {(()=>{
+            const y=yOf(Math.max(minP,Math.min(maxP,price)))
+            return <>
+              <line x1={pL} y1={y} x2={W-pR} y2={y} stroke={C.gold} strokeWidth="2.5"/>
+              <text x={W-pR+2} y={y+4} fill={C.gold} fontSize="11" fontFamily="monospace" fontWeight="700">${price.toFixed(2)}</text>
+              <text x={pL-2} y={y+4} textAnchor="end" fill={C.gold} fontSize="11" fontFamily="monospace" fontWeight="700">${price.toFixed(2)}</text>
+            </>
+          })()}
+
+          {/* Axis labels */}
+          <text x={cx/2} y={pT-10} textAnchor="middle" fill={C.green} fontSize="10" fontWeight="700">← BIDS (buyers defending)</text>
+          <text x={cx+cx/2} y={pT-10} textAnchor="middle" fill={C.red}   fontSize="10" fontWeight="700">(sellers attacking) ASKS →</text>
+        </svg>
+      </div>
+    </div>
+  )
+}
+
+// ── VIEW: Seismic Monitor ─────────────────────────────────────────────────────
+function SeismicView({tape,price,C,isDark}:{tape:TapeEntry[];price:number;C:CT;isDark:boolean}) {
+  const canvasRef=useRef<HTMLCanvasElement>(null)
+  const dataRef=useRef<{
+    imbalance:number[]; prints:number[]; velocity:number[]
+    lastPrice:number; lastPriceAt:number; lastTapeId:number
+  }>({imbalance:[],prints:[],velocity:[],lastPrice:price,lastPriceAt:Date.now(),lastTapeId:0})
+  const rafRef=useRef<number>(0)
+
+  useEffect(()=>{
+    const canvas=canvasRef.current;if(!canvas)return
+    const ctx=canvas.getContext('2d');if(!ctx)return
+    const MAX=300
+    // Seed initial silence
+    const d=dataRef.current
+    if(!d.imbalance.length){for(let i=0;i<MAX;i++){d.imbalance.push(0);d.prints.push(0);d.velocity.push(0)}}
+
+    // Data sampler: push new values every 200ms
+    const sampleIv=setInterval(()=>{
+      const now=Date.now()
+      const recentTape=tape.filter(e=>e.id>d.lastTapeId&&Date.now()-e.ts<300)
+      if(tape[0])d.lastTapeId=tape[0].id
+      // channel 1: buy/sell imbalance (±1)
+      const buyV=recentTape.filter(e=>e.side==='buy').reduce((s,e)=>s+e.size,0)
+      const sellV=recentTape.filter(e=>e.side==='sell').reduce((s,e)=>s+e.size,0)
+      const totalV=buyV+sellV
+      d.imbalance.push(totalV?((buyV-sellV)/totalV):0)
+      if(d.imbalance.length>MAX)d.imbalance.shift()
+      // channel 2: print intensity (0–1, log-weighted)
+      const maxSz=recentTape.reduce((m,e)=>Math.max(m,e.size),0)
+      const intensity=maxSz>0?Math.min(Math.log10(maxSz)/Math.log10(15000),1):0
+      const darkBoost=recentTape.some(e=>e.dark)?0.3:0
+      d.prints.push(Math.min(intensity+darkBoost,1))
+      if(d.prints.length>MAX)d.prints.shift()
+      // channel 3: price velocity
+      const elapsed=(now-d.lastPriceAt)/1000
+      const vel=elapsed>0?(price-d.lastPrice)/elapsed:0
+      d.velocity.push(Math.max(-1,Math.min(1,vel/0.15)))
+      if(d.velocity.length>MAX)d.velocity.shift()
+      d.lastPrice=price;d.lastPriceAt=now
+    },200)
+
+    const ro=new ResizeObserver(()=>{canvas.width=canvas.offsetWidth;canvas.height=canvas.offsetHeight})
+    ro.observe(canvas);canvas.width=canvas.offsetWidth;canvas.height=canvas.offsetHeight
+
+    const CHANNELS=[
+      {key:'imbalance' as const,label:'Buy/Sell Imbalance',bipolar:true,posCol:isDark?'#4ade80':'#16a34a',negCol:isDark?'#f87171':'#dc2626'},
+      {key:'prints'    as const,label:'Print Intensity (size × dark pool)',bipolar:false,posCol:isDark?'#e8b84b':'#b8750c',negCol:''},
+      {key:'velocity'  as const,label:'Price Velocity',bipolar:true,posCol:isDark?'#93c5fd':'#3b82f6',negCol:isDark?'#f87171':'#dc2626'},
+    ]
+
+    const render=()=>{
+      const W=canvas.width,H=canvas.height;if(!W||!H){rafRef.current=requestAnimationFrame(render);return}
+      ctx.fillStyle=isDark?'#080808':'#f8f7f5';ctx.fillRect(0,0,W,H)
+
+      const pL=8,pR=8,gapY=28,labelH=16
+      const chH=Math.floor((H-gapY*(CHANNELS.length-1)-labelH*CHANNELS.length)/CHANNELS.length)
+
+      CHANNELS.forEach((ch,ci)=>{
+        const yTop=ci*(chH+gapY+labelH)+labelH
+        const vals=d[ch.key]
+        const cW=Math.max(1,(W-pL-pR)/Math.max(vals.length,1))
+
+        // label
+        ctx.fillStyle=ch.posCol;ctx.font='bold 10px monospace';ctx.textAlign='left'
+        ctx.fillText(`CH${ci+1}: ${ch.label}`,pL,yTop-3)
+
+        // bg panel
+        ctx.fillStyle=isDark?'rgba(255,255,255,0.02)':'rgba(0,0,0,0.02)'
+        ctx.fillRect(pL,yTop,W-pL-pR,chH)
+        // center or zero line
+        const midY=ch.bipolar?yTop+chH/2:yTop+chH
+        ctx.strokeStyle=isDark?'rgba(255,255,255,0.10)':'rgba(0,0,0,0.10)'
+        ctx.lineWidth=1;ctx.setLineDash([])
+        ctx.beginPath();ctx.moveTo(pL,midY);ctx.lineTo(W-pR,midY);ctx.stroke()
+
+        // bars
+        vals.forEach((v,i)=>{
+          const x=pL+i*cW
+          const half=chH/2
+          const col=v>=0?ch.posCol:ch.negCol||ch.posCol
+          const barH=ch.bipolar?Math.abs(v)*half*0.9:(Math.abs(v)*chH*0.9)
+          const barY=ch.bipolar?(v>=0?midY-barH:midY):yTop+chH-barH
+          ctx.fillStyle=col
+          ctx.globalAlpha=0.35+Math.abs(v)*0.55
+          ctx.fillRect(x,barY,Math.max(cW-0.5,1),barH)
+        })
+        ctx.globalAlpha=1
+
+        // glow on latest value
+        const latest=vals[vals.length-1]??0
+        if(Math.abs(latest)>0.05){
+          const x=pL+(vals.length-1)*cW
+          const col=latest>=0?ch.posCol:ch.negCol||ch.posCol
+          const half=chH/2
+          const barH=ch.bipolar?Math.abs(latest)*half*0.9:(Math.abs(latest)*chH*0.9)
+          const barY=ch.bipolar?(latest>=0?midY-barH:midY):yTop+chH-barH
+          ctx.shadowColor=col;ctx.shadowBlur=8
+          ctx.fillStyle=col;ctx.globalAlpha=0.9
+          ctx.fillRect(x,barY,Math.max(cW-0.5,1),barH)
+          ctx.shadowBlur=0;ctx.globalAlpha=1
+        }
+
+        // value readout
+        ctx.fillStyle=isDark?'rgba(255,255,255,0.50)':'rgba(0,0,0,0.45)'
+        ctx.font='9px monospace';ctx.textAlign='right'
+        ctx.fillText((latest*100).toFixed(0)+'%',W-pR-2,yTop+chH-4)
+      })
+
+      // time axis
+      ctx.fillStyle=isDark?'rgba(255,255,255,0.18)':'rgba(0,0,0,0.25)'
+      ctx.font='9px monospace';ctx.textAlign='left'
+      ctx.fillText('← 60s ago',pL,H-4)
+      ctx.textAlign='right'
+      ctx.fillText('now →',W-pR,H-4)
+
+      rafRef.current=requestAnimationFrame(render)
+    }
+    rafRef.current=requestAnimationFrame(render)
+    return()=>{clearInterval(sampleIv);cancelAnimationFrame(rafRef.current);ro.disconnect()}
+  },[isDark,price,tape])
+
+  return <canvas ref={canvasRef} style={{flex:1,width:'100%',display:'block'}}/>
+}
+
 // ── Original table sub-components ─────────────────────────────────────────────
 function TapeRow({entry,C}:{entry:TapeEntry;C:CT}) {
   const color=entry.side==='buy'?C.green:entry.side==='sell'?C.red:C.text3
@@ -412,7 +653,9 @@ const TAPE_VIEWS:{id:TapeView;label:string;desc:string}[]=[
   {id:'ekg',      label:'EKG',            desc:'Heartbeat spikes — buy up, sell down, height = log(size)'},
   {id:'particles',label:'Particles',      desc:'Animated particles drift up (buy) or down (sell)'},
   {id:'clusters', label:'Clusters',       desc:'Bubble chart — price × time, size = volume'},
-  {id:'timeline', label:'60s Timeline',   desc:'Per-second buy/sell heatmap + imbalance meter'},
+  {id:'timeline',    label:'60s Timeline',  desc:'Per-second buy/sell heatmap + imbalance meter'},
+  {id:'battlefield', label:'Battlefield',   desc:'L2 depth as opposing forces — bid/ask troops, tape impacts'},
+  {id:'seismic',     label:'Seismic',       desc:'3-channel scrolling monitor: imbalance, print intensity, price velocity'},
 ]
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -542,7 +785,9 @@ export default function TapeReaderPage() {
         {view==='ekg'       &&<EKGView      tape={tape} C={C} isDark={isDark}/>}
         {view==='particles' &&<ParticleView tape={tape} C={C} isDark={isDark}/>}
         {view==='clusters'  &&<ClusterView  tape={tape} C={C} isDark={isDark}/>}
-        {view==='timeline'  &&<TimelineView tape={tape} C={C} isDark={isDark}/>}
+        {view==='timeline'    &&<TimelineView  tape={tape} C={C} isDark={isDark}/>}
+        {view==='battlefield' &&<BattlefieldView tape={tape} l2={l2} price={price} C={C} isDark={isDark}/>}
+        {view==='seismic'     &&<SeismicView tape={tape} price={price} C={C} isDark={isDark}/>}
       </div>
 
       {/* Status bar */}
