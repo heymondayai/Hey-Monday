@@ -3184,6 +3184,9 @@ const visibleDaySummaries = useMemo(() => {
                   {[
                     { href: '/flow', label: 'Flow Map' },
                     { href: '/tape', label: 'Tape Reader' },
+                    { href: '/terrain', label: 'Terrain' },
+                    { href: '/battlefield', label: 'Battlefield' },
+                    { href: '/proview', label: 'Pro View' },
                   ].map(t => (
                     <div key={t.href} onClick={() => { router.push(t.href); setMobileDrawerOpen(false) }}
                       style={{ flex: 1, padding: '6px 4px', textAlign: 'center' as const, fontSize: '10px', color: T.text5, cursor: 'pointer', border: `1px solid ${T.borderFaint}`, letterSpacing: '0.10em', textTransform: 'uppercase' as const, fontFamily: "'DM Mono', monospace" }}>
@@ -3645,6 +3648,9 @@ const visibleDaySummaries = useMemo(() => {
               const TOOLS: { href: string; label: string; title: string; icon: React.ReactNode }[] = [
                 { href: '/flow', label: 'Flow', title: 'Options Flow Map', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="1" width="3.5" height="5" fill="currentColor" rx="0.5" opacity="0.5"/><rect x="5.25" y="1" width="3.5" height="8" fill="currentColor" rx="0.5" opacity="0.8"/><rect x="9.5" y="1" width="3.5" height="12" fill="currentColor" rx="0.5"/><rect x="1" y="8" width="3.5" height="5" fill="currentColor" rx="0.5" opacity="0.3"/><rect x="5.25" y="11" width="3.5" height="2" fill="currentColor" rx="0.5" opacity="0.4"/></svg> },
                 { href: '/tape', label: 'Tape', title: 'Tape Reader', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="2.5" width="12" height="1.5" fill="currentColor" rx="0.5"/><rect x="1" y="6" width="8" height="1.5" fill="currentColor" rx="0.5" opacity="0.6"/><rect x="1" y="9.5" width="10" height="1.5" fill="currentColor" rx="0.5" opacity="0.8"/><rect x="1" y="13" width="6" height="1" fill="currentColor" rx="0.5" opacity="0.4"/></svg> },
+                { href: '/terrain',     label: 'Terrain',     title: 'Gamma Terrain',   icon: <svg width="14" height="14" viewBox="0 0 14 14"><polyline points="1,12 4,6 7,9 10,3 13,7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg> },
+                { href: '/battlefield', label: 'Battlefield', title: 'Battlefield L2',   icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="4" width="5" height="6" fill="currentColor" opacity="0.45" rx="0.5"/><rect x="8" y="4" width="5" height="6" fill="currentColor" opacity="0.45" rx="0.5"/><rect x="6" y="1" width="2" height="12" fill="currentColor" rx="0.5"/></svg> },
+                { href: '/proview',     label: 'Pro View',    title: 'Unified Pro View', icon: <svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.2"/><circle cx="7" cy="7" r="2.5" fill="currentColor" opacity="0.6"/><line x1="7" y1="1.5" x2="7" y2="4.5" stroke="currentColor" strokeWidth="1.2"/><line x1="7" y1="9.5" x2="7" y2="12.5" stroke="currentColor" strokeWidth="1.2"/></svg> },
               ]
               return (
                 <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', height: '36px', borderBottom: `1px solid ${T.borderFaint2}`, background: T.headerBg }}>
