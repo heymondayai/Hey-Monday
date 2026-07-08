@@ -1,456 +1,934 @@
-'use client'
+'use client';
 
-// Pro View — three clear panels, one thing each
-//
-//  LEFT PANEL  — Options context: where are the gamma walls and what do they mean
-//  CENTER      — Battlefield order book (same concept as /battlefield)
-//  RIGHT PANEL — Live tape pulse: what is actually executing right now
+/**
+ * PROVIEW — Structure vs. Flow
+ * ----------------------------
+ * One shared vertical price axis. Three horizons of the same market:
+ *
+ *   LEFT   — GAMMA STRUCTURE (slow):  options OI per strike. Big put OI = floor,
+ *            big call OI = ceiling. These move once a day, not once a second.
+ *   MIDDLE — LIVE FLOW (fast): a Bookmap-style liquidity heat trail (last 60s of
+ *            L2 snapshots), the resting book right now, the price line, and the
+ *            tape hitting those levels.
+ *   RIGHT  — TAPE + 60s pressure.
+ *
+ * Because everything shares one y-axis, the three signals that matter literally
+ * line up on screen:
+ *   CONFLUENCE  = a gold beam when live L2 size stacks exactly on a gamma strike.
+ *   ABSORPTION  = a pulsing chip when the tape keeps hitting a wall that won't move.
+ *   SWEEP       = a red/green shatter flash when resting size vanishes under a print.
+ * A verdict engine turns those into one sentence at the top: what to do, right now.
+ *
+ * Constraints honored: no chart libs, no Tailwind/CSS files, canvas + rAF,
+ * per-frame state in refs, ResizeObserver, full cleanup, instant demo data.
+ */
 
-import React, { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
-const DARK_C = {
-  pageBg:'#080808', panelBg:'#0a0a0a', cardBg:'#0e0e0e',
-  border:'rgba(232,184,75,0.18)', borderFt:'rgba(232,184,75,0.07)',
-  gold:'#e8b84b', goldFt:'rgba(232,184,75,0.10)',
-  green:'#4ade80', greenFt:'rgba(74,222,128,0.12)',
-  red:'#f87171',   redFt:'rgba(248,113,113,0.12)',
-  blue:'#93c5fd',  purple:'#c084fc',
-  text:'#ffffff',  text2:'rgba(255,255,255,0.72)',
-  text3:'rgba(255,255,255,0.42)', text4:'rgba(255,255,255,0.20)',
+/* ——————————————————————————— design tokens ——————————————————————————— */
+
+const DARK = { pageBg: '#080808', gold: '#e8b84b', green: '#4ade80', red: '#f87171', purple: '#c084fc', text: '#ffffff' };
+const LIGHT = { pageBg: '#f5f4f1', gold: '#b8750c', green: '#16a34a', red: '#dc2626', purple: '#9333ea', text: '#1a1a1a' };
+type Tok = { pageBg: string; gold: string; green: string; red: string; purple: string; text: string };
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
+const PREFS_KEY = 'heymonday_dashboard_prefs_v1';
+
+function alpha(hex: string, a: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${a})`;
 }
-const LIGHT_C = {
-  pageBg:'#f5f4f1', panelBg:'#ffffff', cardBg:'#eeece8',
-  border:'rgba(0,0,0,0.14)', borderFt:'rgba(0,0,0,0.07)',
-  gold:'#b8750c', goldFt:'rgba(184,117,12,0.10)',
-  green:'#16a34a', greenFt:'rgba(22,163,74,0.10)',
-  red:'#dc2626',   redFt:'rgba(220,38,38,0.10)',
-  blue:'#3b82f6',  purple:'#9333ea',
-  text:'#1a1a1a',  text2:'rgba(0,0,0,0.70)',
-  text3:'rgba(0,0,0,0.45)', text4:'rgba(0,0,0,0.22)',
-}
-type CT = typeof DARK_C
-
-const fmtK = (n:number) => n>=1000000 ? `${(n/1000000).toFixed(1)}M` : n>=1000 ? `${(n/1000).toFixed(0)}K` : String(n)
-
-// ── Options chain data (demo) ─────────────────────────────────────────────────
-const STRIKES = [
-  {strike:531,callOI:7800, putOI:38400,gammaWall:false},
-  {strike:532,callOI:9200, putOI:42600,gammaWall:false},
-  {strike:533,callOI:11400,putOI:46200,gammaWall:false},
-  {strike:534,callOI:14200,putOI:54800,gammaWall:false},
-  {strike:535,callOI:18600,putOI:72400,gammaWall:true },
-  {strike:536,callOI:15800,putOI:56000,gammaWall:false},
-  {strike:537,callOI:17600,putOI:48400,gammaWall:false},
-  {strike:538,callOI:22800,putOI:54200,gammaWall:false},
-  {strike:539,callOI:29400,putOI:62600,gammaWall:false},
-  {strike:540,callOI:46800,putOI:91200,gammaWall:true },
-  {strike:541,callOI:44200,putOI:60800,gammaWall:false},
-  {strike:542,callOI:56400,putOI:42600,gammaWall:false},
-  {strike:543,callOI:68200,putOI:50400,gammaWall:false},
-  {strike:544,callOI:54600,putOI:36200,gammaWall:false},
-  {strike:545,callOI:82400,putOI:26800,gammaWall:true },
-  {strike:546,callOI:64800,putOI:21200,gammaWall:false},
-  {strike:547,callOI:52400,putOI:17400,gammaWall:false},
-  {strike:548,callOI:42800,putOI:14200,gammaWall:false},
-  {strike:549,callOI:36200,putOI:11600,gammaWall:false},
-  {strike:550,callOI:88600,putOI:16800,gammaWall:true },
-]
-const DEMO_PRICE = 543.28
-
-// ── Generators ────────────────────────────────────────────────────────────────
-let _tid = 1
-function mockTape(lastPrice:number) {
-  const price = Math.round((lastPrice+(Math.random()-0.49)*0.10)*100)/100
-  const size  = Math.floor(Math.random()*14000)+100
-  const side:'buy'|'sell' = Math.random()>0.5 ? 'buy' : 'sell'
-  const dark  = Math.random()<0.07
-  const large = size>9000
-  return {id:_tid++,ts:Date.now(),price,size,side,dark,large}
+function clamp(v: number, lo: number, hi: number) { return v < lo ? lo : v > hi ? hi : v; }
+function fmtK(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(n >= 9950 ? 0 : 1)}K` : `${Math.round(n)}`; }
+function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const rad = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rad, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rad);
+  ctx.arcTo(x + w, y + h, x, y + h, rad);
+  ctx.arcTo(x, y + h, x, y, rad);
+  ctx.arcTo(x, y, x + w, y, rad);
+  ctx.closePath();
 }
 
-function mockL2(center:number) {
-  return Array.from({length:16},(_,i)=>{
-    const price = Math.round((center-0.32+i*0.04)*100)/100
-    const prox  = 1-Math.abs(i-8)/8
-    const base  = 5000+prox*85000
-    const wall  = Math.random()<0.06 ? 3.5+Math.random()*2 : 1
-    return {
-      price,
-      bid:  price<center  ? Math.floor(base*(0.4+Math.random()*0.6)*wall) : 0,
-      ask:  price>=center ? Math.floor(base*(0.4+Math.random()*0.6)*wall) : 0,
+/* ——————————————————————————— demo market structure ——————————————————————————— */
+
+interface KeyWall { price: number; side: 'put' | 'call'; oi: number }
+const KEY_WALLS: KeyWall[] = [
+  { price: 535, side: 'put', oi: 72000 },
+  { price: 540, side: 'put', oi: 91000 },
+  { price: 545, side: 'call', oi: 82000 },
+  { price: 550, side: 'call', oi: 89000 },
+];
+const MAX_OI = 91000;
+
+interface ChainRow { strike: number; call: number; put: number }
+const CHAIN: ChainRow[] = (() => {
+  const rows: ChainRow[] = [];
+  for (let s = 531; s <= 558; s++) {
+    const h1 = Math.abs(Math.sin(s * 12.9898) * 43758.5453) % 1;
+    const h2 = Math.abs(Math.sin(s * 78.2330) * 12543.1230) % 1;
+    let call = Math.round(3500 + h1 * 19000);
+    let put = Math.round(3500 + h2 * 19000);
+    const kw = KEY_WALLS.find(k => k.price === s);
+    if (kw) {
+      if (kw.side === 'call') { call = kw.oi; put = Math.round(6000 + h2 * 9000); }
+      else { put = kw.oi; call = Math.round(6000 + h1 * 9000); }
     }
-  })
+    rows.push({ strike: s, call, put });
+  }
+  return rows;
+})();
+
+/* ——————————————————————————— simulation ——————————————————————————— */
+
+interface Print { t: number; price: number; size: number; side: 1 | -1; dark: boolean; large: boolean }
+interface Lvl { price: number; size: number; wall: boolean; gamma: boolean }
+interface Snap { t: number; bids: Lvl[]; asks: Lvl[] }
+interface Sweep { t: number; price: number; side: 'bid' | 'ask'; size: number }
+interface Sim {
+  price: number;
+  tape: Print[];
+  hist: { t: number; p: number }[];
+  book: { bids: Lvl[]; asks: Lvl[] };
+  snaps: Snap[];
+  sweeps: Sweep[];
+  hits: Record<number, { t: number; size: number }[]>;
+  liq: { bid: { price: number; until: number } | null; ask: { price: number; until: number } | null };
+  viewCenter: number;
 }
 
-// ── LEFT PANEL: Options context ───────────────────────────────────────────────
-function OptionsPanel({price,C,isDark}:{price:number;C:CT;isDark:boolean}) {
-  const walls = STRIKES.filter(s=>s.gammaWall).map(s=>({
-    ...s,
-    net:s.callOI-s.putOI,
-    dist:Math.abs(s.strike-price),
-    above:s.strike>price,
-  })).sort((a,b)=>a.dist-b.dist)
+const T0 = 62; // seconds of prefilled history so the page is "alive" on first paint
 
-  const pcRatio = STRIKES.reduce((s,st)=>s+st.putOI,0)/Math.max(STRIKES.reduce((s,st)=>s+st.callOI,0),1)
-  const bias    = pcRatio>1.1?'bearish':pcRatio<0.9?'bullish':'neutral'
-
-  const nearestCallWall = walls.find(w=>w.above&&w.net>0)
-  const nearestPutWall  = walls.find(w=>!w.above&&w.net<0)
-
-  return (
-    <div style={{width:210,flexShrink:0,borderRight:`1px solid ${C.border}`,background:C.cardBg,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{padding:'10px 14px 8px',borderBottom:`1px solid ${C.borderFt}`,flexShrink:0}}>
-        <div style={{fontSize:10,fontWeight:700,color:C.gold,letterSpacing:'0.10em',textTransform:'uppercase',marginBottom:8}}>Options Context</div>
-        {/* P/C ratio */}
-        <div style={{marginBottom:10}}>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
-            <span style={{fontSize:10,color:C.text3}}>Put/Call ratio</span>
-            <span style={{fontSize:11,fontFamily:'monospace',fontWeight:700,color:pcRatio>1.1?C.red:pcRatio<0.9?C.green:C.text2}}>{pcRatio.toFixed(2)}</span>
-          </div>
-          <div style={{height:5,background:isDark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.07)',borderRadius:3,overflow:'hidden'}}>
-            <div style={{height:'100%',width:`${Math.min(pcRatio/2*100,100)}%`,background:pcRatio>1.1?C.red:pcRatio<0.9?C.green:C.gold,borderRadius:3,transition:'width 0.4s'}}/>
-          </div>
-          <div style={{fontSize:10,color:pcRatio>1.1?C.red:pcRatio<0.9?C.green:C.text3,fontWeight:600,marginTop:4}}>
-            {bias==='bearish'?'↓ Market positioned bearish':bias==='bullish'?'↑ Market positioned bullish':'→ Neutral positioning'}
-          </div>
-        </div>
-        {/* Nearest walls */}
-        {nearestCallWall&&(
-          <div style={{marginBottom:6,padding:'7px 10px',background:isDark?'rgba(74,222,128,0.07)':'rgba(22,163,74,0.07)',border:`1px solid ${isDark?'rgba(74,222,128,0.20)':'rgba(22,163,74,0.20)'}`,borderRadius:4}}>
-            <div style={{fontSize:9,color:C.green,fontWeight:700,letterSpacing:'0.08em',marginBottom:2}}>CALL WALL ABOVE ↑</div>
-            <div style={{fontSize:14,fontFamily:'monospace',fontWeight:700,color:C.green}}>${nearestCallWall.strike}</div>
-            <div style={{fontSize:10,color:C.text3,marginTop:2}}>+${(nearestCallWall.strike-price).toFixed(2)} away · {fmtK(nearestCallWall.callOI)} calls</div>
-            <div style={{fontSize:9,color:C.text4,marginTop:3,lineHeight:1.4}}>Market makers sell calls here → they must short stock as price rises → natural ceiling</div>
-          </div>
-        )}
-        {nearestPutWall&&(
-          <div style={{marginBottom:6,padding:'7px 10px',background:isDark?'rgba(248,113,113,0.07)':'rgba(220,38,38,0.07)',border:`1px solid ${isDark?'rgba(248,113,113,0.20)':'rgba(220,38,38,0.20)'}`,borderRadius:4}}>
-            <div style={{fontSize:9,color:C.red,fontWeight:700,letterSpacing:'0.08em',marginBottom:2}}>PUT WALL BELOW ↓</div>
-            <div style={{fontSize:14,fontFamily:'monospace',fontWeight:700,color:C.red}}>${nearestPutWall.strike}</div>
-            <div style={{fontSize:10,color:C.text3,marginTop:2}}>${(price-nearestPutWall.strike).toFixed(2)} below · {fmtK(nearestPutWall.putOI)} puts</div>
-            <div style={{fontSize:9,color:C.text4,marginTop:3,lineHeight:1.4}}>Market makers sell puts here → they must buy stock as price falls → natural floor</div>
-          </div>
-        )}
-      </div>
-      {/* All gamma walls list */}
-      <div style={{flex:1,overflowY:'auto',padding:'8px 14px'}}>
-        <div style={{fontSize:9,fontWeight:700,color:C.text4,letterSpacing:'0.10em',textTransform:'uppercase',marginBottom:6}}>All Gamma Walls</div>
-        {walls.map(w=>{
-          const isCall=w.net>0
-          return (
-            <div key={w.strike} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:`1px solid ${C.borderFt}`}}>
-              <div style={{width:6,height:6,borderRadius:'50%',background:isCall?C.green:C.red,flexShrink:0}}/>
-              <div style={{flex:1}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
-                  <span style={{fontFamily:'monospace',fontSize:12,fontWeight:600,color:w.dist<1?C.text:C.text3}}>${w.strike}</span>
-                  <span style={{fontSize:9,color:isCall?C.green:C.red,fontWeight:700}}>{isCall?'CALL':'PUT'}</span>
-                </div>
-                <div style={{display:'flex',justifyContent:'space-between',marginTop:1}}>
-                  <span style={{fontSize:9,color:C.text4}}>{w.above?'↑':'↓'} {w.dist.toFixed(2)} away</span>
-                  <span style={{fontSize:9,color:C.text4,fontFamily:'monospace'}}>{fmtK(Math.max(w.callOI,w.putOI))}</span>
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-      {/* Confluence alert */}
-      <div style={{padding:'8px 14px',borderTop:`1px solid ${C.borderFt}`,flexShrink:0}}>
-        <div style={{fontSize:9,color:C.gold,fontWeight:700,letterSpacing:'0.06em',marginBottom:4}}>★ CONFLUENCE TIP</div>
-        <div style={{fontSize:9,color:C.text3,lineHeight:1.5}}>
-          When a HEAVY WALL in the order book (center) lines up with a gamma wall (this panel), that price level is defended by <i>both</i> institutional orders AND market-maker hedging. Highest probability trade.
-        </div>
-      </div>
-    </div>
-  )
+function targetPrice(t: number) {
+  const u = t - T0;
+  return 542.7 + 2.3 * Math.sin(u * 0.072 + 0.26) + 0.45 * Math.sin(u * 0.31);
 }
 
-// ── CENTER: Battlefield order book ────────────────────────────────────────────
-function BattlefieldCenter({
-  l2, price, impacts, hitMap, C, isDark
-}: {
-  l2:{price:number;bid:number;ask:number}[]
-  price:number
-  impacts:{id:number;price:number;side:'buy'|'sell';large:boolean;dark:boolean;born:number}[]
-  hitMap:Map<number,{count:number;side:'buy'|'sell';size:number}>
-  C:CT; isDark:boolean
-}) {
-  const maxBid  = Math.max(...l2.map(l=>l.bid),1)
-  const maxAsk  = Math.max(...l2.map(l=>l.ask),1)
-  const maxBar  = Math.max(maxBid,maxAsk)
-  const gammaWalls = STRIKES.filter(s=>s.gammaWall)
+function stepTape(sim: Sim, t: number) {
+  const tgt = targetPrice(t);
+  let d = (tgt - sim.price) * 0.05 + (Math.random() - 0.5) * 0.075;
+  d = clamp(d, -0.1, 0.1);
+  // gamma walls defend: crossing attempts usually get damped (this *is* absorption)
+  for (const kw of KEY_WALLS) {
+    const before = sim.price - kw.price;
+    const after = sim.price + d - kw.price;
+    if (Math.sign(before) !== Math.sign(after) && Math.random() < 0.72) d *= 0.12;
+  }
+  sim.price = Math.round((sim.price + d) * 100) / 100;
 
-  return (
-    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
-      <div style={{padding:'6px 14px 4px',background:C.cardBg,borderBottom:`1px solid ${C.borderFt}`,display:'grid',gridTemplateColumns:'1fr 90px 1fr',flexShrink:0}}>
-        <div style={{textAlign:'right',fontSize:11,color:C.green,fontWeight:700,paddingRight:10}}>← BUYERS (bids)</div>
-        <div style={{textAlign:'center',fontSize:10,color:C.text4}}>PRICE</div>
-        <div style={{fontSize:11,color:C.red,fontWeight:700,paddingLeft:10}}>SELLERS (asks) →</div>
-      </div>
-      <div style={{flex:1,overflowY:'auto',position:'relative'}}>
-        {/* Impact animations */}
-        {impacts.map(imp=>{
-          const idx=l2.findIndex(l=>Math.abs(l.price-imp.price)<0.06)
-          if(idx<0) return null
-          const col=imp.dark?(isDark?'#c084fc':'#9333ea'):imp.side==='buy'?(isDark?'#4ade80':'#16a34a'):(isDark?'#f87171':'#dc2626')
-          return (
-            <div key={imp.id} style={{position:'absolute',top:`${(idx/l2.length)*100}%`,left:'50%',transform:'translateX(-50%)',pointerEvents:'none',zIndex:10}}>
-              <div style={{width:imp.large?32:20,height:imp.large?32:20,borderRadius:'50%',border:`2px solid ${col}`,animation:`${imp.large?'rippleLg':'rippleOut'} 1.4s ease-out forwards`}}/>
-            </div>
-          )
-        })}
+  let pBuy = 0.5 + clamp((tgt - sim.price) * 0.55, -0.22, 0.22);
+  for (const kw of KEY_WALLS) {
+    const dist = sim.price - kw.price;
+    if (kw.side === 'put' && dist >= -0.05 && dist < 0.3) pBuy += 0.12;
+    if (kw.side === 'call' && dist <= 0.05 && dist > -0.3) pBuy -= 0.12;
+  }
+  const side: 1 | -1 = Math.random() < pBuy ? 1 : -1;
+  const large = Math.random() < 0.10;
+  const size = large
+    ? Math.round(9000 + Math.random() * 5000)
+    : Math.round(100 + Math.pow(Math.random(), 2.4) * 8800);
+  const dark = Math.random() < 0.07;
+  const px = Math.round((sim.price + (Math.random() - 0.5) * 0.02) * 100) / 100;
 
-        {l2.sort((a,b)=>b.price-a.price).map(level=>{
-          const isPrice   = Math.abs(level.price-price)<0.02
-          const gw        = gammaWalls.find(g=>Math.abs(g.strike-level.price)<0.15)
-          const isHeavyBid= level.bid>maxBid*0.55
-          const isHeavyAsk= level.ask>maxAsk*0.55
-          const isThinBid = level.bid>0&&level.bid<maxBid*0.15
-          const isThinAsk = level.ask>0&&level.ask<maxAsk*0.15
-          const bucket    = Math.round(level.price/0.04)*0.04
-          const hitInfo   = hitMap.get(bucket)
-          const isCall    = gw?(gw.callOI>gw.putOI):false
+  sim.tape.unshift({ t, price: px, size, side, dark, large });
+  if (sim.tape.length > 420) sim.tape.length = 420;
 
-          const rowBg = isPrice
-            ? (isDark?'rgba(232,184,75,0.07)':'rgba(184,117,12,0.06)')
-            : gw ? (isDark?'rgba(255,255,255,0.02)':'rgba(0,0,0,0.02)')
-            : 'transparent'
+  sim.hist.push({ t, p: sim.price });
+  while (sim.hist.length && t - sim.hist[0].t > 66) sim.hist.shift();
 
-          return (
-            <div key={level.price} style={{
-              display:'grid',gridTemplateColumns:'1fr 90px 1fr',
-              alignItems:'center',minHeight:38,padding:'2px 0',
-              borderBottom:`1px solid ${isDark?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.05)'}`,
-              background:rowBg,
-              borderLeft:isPrice?`3px solid ${C.gold}`:gw?`3px solid ${isCall?C.green:C.red}`:'3px solid transparent',
-            }}>
-              {/* Bid side */}
-              <div style={{display:'flex',alignItems:'center',gap:8,justifyContent:'flex-end',padding:'0 10px 0 6px'}}>
-                <div style={{fontSize:10,textAlign:'right',flexShrink:0,lineHeight:1.25}}>
-                  {isHeavyBid&&<div style={{color:C.green,fontWeight:700,fontSize:9,letterSpacing:'0.05em'}}>HEAVY WALL</div>}
-                  {isThinBid&&<div style={{color:C.text4,fontSize:9}}>light</div>}
-                  {hitInfo&&hitInfo.side==='sell'&&hitInfo.count>=2&&<div style={{color:C.red,fontSize:9,fontWeight:700}}>HIT {hitInfo.count}×</div>}
-                </div>
-                {level.bid>0&&<span style={{fontSize:11,fontFamily:'monospace',color:isHeavyBid?C.green:C.text3,fontWeight:isHeavyBid?700:400,minWidth:30,textAlign:'right',flexShrink:0}}>{fmtK(level.bid)}</span>}
-                <div style={{flex:1,display:'flex',justifyContent:'flex-end',alignItems:'center',minHeight:18}}>
-                  {level.bid>0&&<div style={{width:`${Math.min(level.bid/maxBar*100,100)}%`,height:isHeavyBid?20:13,background:isDark?`rgba(74,222,128,${isHeavyBid?0.48:0.20})`:`rgba(22,163,74,${isHeavyBid?0.45:0.18})`,borderRight:`3px solid ${C.green}`,borderRadius:'2px 0 0 2px',transition:'width 0.6s ease',boxShadow:isHeavyBid?(isDark?'2px 0 14px rgba(74,222,128,0.30)':'2px 0 8px rgba(22,163,74,0.22)'):undefined}}/>}
-                </div>
-              </div>
-
-              {/* Price */}
-              <div style={{textAlign:'center',padding:'0 2px'}}>
-                {gw&&<div style={{fontSize:8,fontWeight:700,letterSpacing:'0.06em',color:isCall?C.green:C.red,marginBottom:1}}>Γ {isCall?'CALL':'PUT'} WALL</div>}
-                <div style={{fontSize:isPrice?13:11,fontWeight:isPrice?700:500,fontFamily:'monospace',color:isPrice?C.gold:gw?C.text2:C.text3}}>
-                  ${level.price.toFixed(2)}
-                </div>
-                {isPrice&&<div style={{fontSize:8,color:C.gold,fontWeight:700,letterSpacing:'0.08em',marginTop:1}}>◄ LIVE PRICE</div>}
-              </div>
-
-              {/* Ask side */}
-              <div style={{display:'flex',alignItems:'center',gap:8,padding:'0 6px 0 10px'}}>
-                <div style={{flex:1,display:'flex',justifyContent:'flex-start',alignItems:'center',minHeight:18}}>
-                  {level.ask>0&&<div style={{width:`${Math.min(level.ask/maxBar*100,100)}%`,height:isHeavyAsk?20:13,background:isDark?`rgba(248,113,113,${isHeavyAsk?0.48:0.20})`:`rgba(220,38,38,${isHeavyAsk?0.45:0.18})`,borderLeft:`3px solid ${C.red}`,borderRadius:'0 2px 2px 0',transition:'width 0.6s ease',boxShadow:isHeavyAsk?(isDark?'-2px 0 14px rgba(248,113,113,0.30)':'-2px 0 8px rgba(220,38,38,0.22)'):undefined}}/>}
-                </div>
-                {level.ask>0&&<span style={{fontSize:11,fontFamily:'monospace',color:isHeavyAsk?C.red:C.text3,fontWeight:isHeavyAsk?700:400,minWidth:30,flexShrink:0}}>{fmtK(level.ask)}</span>}
-                <div style={{fontSize:10,flexShrink:0,lineHeight:1.25}}>
-                  {isHeavyAsk&&<div style={{color:C.red,fontWeight:700,fontSize:9,letterSpacing:'0.05em'}}>HEAVY WALL</div>}
-                  {isThinAsk&&<div style={{color:C.text4,fontSize:9}}>light</div>}
-                  {hitInfo&&hitInfo.side==='buy'&&hitInfo.count>=2&&<div style={{color:C.green,fontSize:9,fontWeight:700}}>THRU {hitInfo.count}×</div>}
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
+  for (const kw of KEY_WALLS) {
+    if (Math.abs(px - kw.price) <= 0.15) {
+      if (!sim.hits[kw.price]) sim.hits[kw.price] = [];
+      sim.hits[kw.price].push({ t, size });
+    }
+    const arr = sim.hits[kw.price];
+    if (arr) while (arr.length && t - arr[0].t > 10) arr.shift();
+  }
 }
 
-// ── RIGHT PANEL: Tape pulse ───────────────────────────────────────────────────
-function TapePanel({tape,price,C,isDark}:{
-  tape:{id:number;ts:number;price:number;size:number;side:'buy'|'sell';dark:boolean;large:boolean}[]
-  price:number; C:CT; isDark:boolean
-}) {
-  const recent60 = tape.filter(e=>Date.now()-e.ts<60000)
-  const buyVol   = recent60.filter(e=>e.side==='buy').reduce((s,e)=>s+e.size,0)
-  const sellVol  = recent60.filter(e=>e.side==='sell').reduce((s,e)=>s+e.size,0)
-  const totalVol = Math.max(buyVol+sellVol,1)
-  const buyPct   = Math.round(buyVol/totalVol*100)
-  const largeList= tape.filter(e=>e.large).slice(0,8)
-  const darkList = tape.filter(e=>e.dark).slice(0,5)
-  const dominant = buyPct>55?'BUYERS':'sellers dominant'
-  const domColor = buyPct>55?C.green:buyPct<45?C.red:C.gold
-
-  return (
-    <div style={{width:200,flexShrink:0,borderLeft:`1px solid ${C.border}`,background:C.cardBg,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{padding:'10px 14px 8px',borderBottom:`1px solid ${C.borderFt}`,flexShrink:0}}>
-        <div style={{fontSize:10,fontWeight:700,color:C.gold,letterSpacing:'0.10em',textTransform:'uppercase',marginBottom:8}}>Live Tape Pulse</div>
-
-        {/* Buy/sell pressure */}
-        <div style={{marginBottom:10}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
-            <span style={{fontSize:10,color:C.text3}}>Last 60 seconds</span>
-            <span style={{fontSize:11,fontWeight:700,color:domColor,fontFamily:'monospace'}}>{buyPct}% buy</span>
-          </div>
-          <div style={{height:8,background:isDark?'rgba(255,255,255,0.05)':'rgba(0,0,0,0.07)',borderRadius:4,overflow:'hidden',display:'flex'}}>
-            <div style={{width:`${buyPct}%`,background:C.green,borderRadius:'4px 0 0 4px',transition:'width 0.5s'}}/>
-            <div style={{flex:1,background:C.red,borderRadius:'0 4px 4px 0'}}/>
-          </div>
-          <div style={{fontSize:11,color:domColor,fontWeight:700,marginTop:5}}>
-            {buyPct>55?'↑ BUYERS IN CONTROL':buyPct<45?'↓ SELLERS IN CONTROL':'→ BALANCED — wait for signal'}
-          </div>
-        </div>
-
-        {/* Volume stats */}
-        <div style={{display:'flex',gap:4,marginBottom:8}}>
-          <div style={{flex:1,padding:'6px 8px',background:isDark?'rgba(74,222,128,0.07)':'rgba(22,163,74,0.07)',border:`1px solid ${isDark?'rgba(74,222,128,0.15)':'rgba(22,163,74,0.15)'}`,borderRadius:4}}>
-            <div style={{fontSize:9,color:C.green,fontWeight:700,marginBottom:2}}>BUY VOL</div>
-            <div style={{fontSize:13,fontFamily:'monospace',fontWeight:700,color:C.green}}>{fmtK(buyVol)}</div>
-          </div>
-          <div style={{flex:1,padding:'6px 8px',background:isDark?'rgba(248,113,113,0.07)':'rgba(220,38,38,0.07)',border:`1px solid ${isDark?'rgba(248,113,113,0.15)':'rgba(220,38,38,0.15)'}`,borderRadius:4}}>
-            <div style={{fontSize:9,color:C.red,fontWeight:700,marginBottom:2}}>SELL VOL</div>
-            <div style={{fontSize:13,fontFamily:'monospace',fontWeight:700,color:C.red}}>{fmtK(sellVol)}</div>
-          </div>
-        </div>
-
-        {/* Net delta */}
-        <div style={{padding:'6px 10px',background:isDark?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.04)',borderRadius:4,marginBottom:4}}>
-          <div style={{fontSize:9,color:C.text4,marginBottom:2}}>NET DELTA (buy − sell)</div>
-          <div style={{fontSize:14,fontFamily:'monospace',fontWeight:700,color:buyVol>sellVol?C.green:C.red}}>
-            {buyVol>=sellVol?'+':'-'}{fmtK(Math.abs(buyVol-sellVol))}
-          </div>
-        </div>
-      </div>
-
-      {/* Large prints */}
-      <div style={{flex:1,overflowY:'auto',padding:'8px 14px'}}>
-        {largeList.length>0&&<>
-          <div style={{fontSize:9,fontWeight:700,color:C.text4,letterSpacing:'0.10em',textTransform:'uppercase',marginBottom:6}}>Large Prints (10K+)</div>
-          {largeList.map(e=>(
-            <div key={e.id} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 0',borderBottom:`1px solid ${C.borderFt}`}}>
-              <div style={{width:4,height:4,borderRadius:'50%',background:e.side==='buy'?C.green:C.red,flexShrink:0}}/>
-              <div style={{flex:1}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
-                  <span style={{fontFamily:'monospace',fontSize:11,fontWeight:700,color:e.side==='buy'?C.green:C.red}}>{fmtK(e.size)}</span>
-                  <span style={{fontSize:9,color:C.text4}}>{e.side.toUpperCase()}</span>
-                </div>
-                <div style={{fontSize:9,color:C.text4,fontFamily:'monospace'}}>${e.price.toFixed(2)}</div>
-              </div>
-            </div>
-          ))}
-        </>}
-
-        {darkList.length>0&&<>
-          <div style={{fontSize:9,fontWeight:700,color:C.text4,letterSpacing:'0.10em',textTransform:'uppercase',marginTop:10,marginBottom:6}}>Dark Pool Prints</div>
-          {darkList.map(e=>(
-            <div key={e.id} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 0',borderBottom:`1px solid ${C.borderFt}`}}>
-              <div style={{width:4,height:4,borderRadius:'50%',background:isDark?C.purple:C.purple,flexShrink:0}}/>
-              <div style={{flex:1}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
-                  <span style={{fontFamily:'monospace',fontSize:11,fontWeight:700,color:isDark?C.purple:C.purple}}>{fmtK(e.size)}</span>
-                  <span style={{fontSize:9,color:C.text4}}>DARK</span>
-                </div>
-                <div style={{fontSize:9,color:C.text4,fontFamily:'monospace'}}>${e.price.toFixed(2)}</div>
-              </div>
-            </div>
-          ))}
-        </>}
-
-        {largeList.length===0&&darkList.length===0&&(
-          <div style={{fontSize:11,color:C.text4,marginTop:8,lineHeight:1.6}}>Large prints and dark pool activity will appear here as they hit the tape.</div>
-        )}
-      </div>
-
-      {/* Confluence tip (dynamic) */}
-      <div style={{padding:'8px 14px',borderTop:`1px solid ${C.borderFt}`,flexShrink:0}}>
-        <div style={{fontSize:9,color:C.text4,lineHeight:1.5}}>
-          {buyPct>60?(<><b style={{color:C.green}}>↑ Buyers aggressive.</b> Look for a heavy bid wall in the order book as an entry — buyers are trying to push it up.</>)
-          :buyPct<40?(<><b style={{color:C.red}}>↓ Sellers aggressive.</b> Look for a heavy ask wall in the order book as an entry — sellers are trying to push it down.</>)
-          :(<><b style={{color:C.gold}}>→ Balanced.</b> No edge yet. Wait for the buy/sell pressure to break clearly above 60% or below 40%.</>)}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Page ──────────────────────────────────────────────────────────────────────
-export default function ProViewPage() {
-  const router = useRouter()
-  const [isDark,setIsDark] = useState(true)
-  useEffect(()=>{
-    try{ const p=JSON.parse(localStorage.getItem('heymonday_dashboard_prefs_v1')||'{}')
-      if(typeof p.isDark==='boolean') setIsDark(p.isDark) }catch{}
-  },[])
-  const C = isDark ? DARK_C : LIGHT_C
-
-  const [l2,      setL2     ] = useState<{price:number;bid:number;ask:number}[]>([])
-  const [price,   setPrice  ] = useState(DEMO_PRICE)
-  const [tape,    setTape   ] = useState<{id:number;ts:number;price:number;size:number;side:'buy'|'sell';dark:boolean;large:boolean}[]>([])
-  const [impacts, setImpacts] = useState<{id:number;price:number;side:'buy'|'sell';large:boolean;dark:boolean;born:number}[]>([])
-  const [hitMap,  setHitMap ] = useState<Map<number,{count:number;side:'buy'|'sell';size:number}>>(new Map())
-  const priceRef = useRef(DEMO_PRICE)
-
-  useEffect(()=>{ setL2(mockL2(priceRef.current)) },[])
-
-  useEffect(()=>{
-    const l2Iv=setInterval(()=>setL2(mockL2(priceRef.current)),900)
-    const tapeIv=setInterval(()=>{
-      const e=mockTape(priceRef.current)
-      priceRef.current=e.price
-      setPrice(e.price)
-      setTape(prev=>[e,...prev].slice(0,400))
-      const bucket=Math.round(e.price/0.04)*0.04
-      setHitMap(prev=>{const m=new Map(prev);const c=m.get(bucket)??{count:0,side:e.side,size:e.size};m.set(bucket,{count:c.count+1,side:e.side,size:e.size});return m})
-      if(e.large||e.dark) setImpacts(prev=>[...prev,{id:e.id,price:e.price,side:e.side,large:e.large,dark:e.dark,born:Date.now()}].slice(-30))
-    },160)
-    const cleanIv=setInterval(()=>setImpacts(prev=>prev.filter(i=>Date.now()-i.born<1600)),100)
-    return()=>{ clearInterval(l2Iv); clearInterval(tapeIv); clearInterval(cleanIv) }
-  },[])
-
-  function toggleTheme(){
-    const n=!isDark; setIsDark(n)
-    try{ const p=JSON.parse(localStorage.getItem('heymonday_dashboard_prefs_v1')||'{}')
-      localStorage.setItem('heymonday_dashboard_prefs_v1',JSON.stringify({...p,isDark:n})) }catch{}
+function stepBook(sim: Sim, t: number) {
+  const grid = Math.round(sim.price / 0.04) * 0.04;
+  const mk = (price: number, i: number): Lvl => ({
+    price: Math.round(price * 100) / 100,
+    size: Math.round((4600 - i * 360) * (0.65 + Math.random() * 0.7)),
+    wall: false,
+    gamma: false,
+  });
+  const bids: Lvl[] = [];
+  const asks: Lvl[] = [];
+  for (let i = 1; i <= 9; i++) {
+    bids.push(mk(grid - i * 0.04, i));
+    asks.push(mk(grid + i * 0.04, i));
   }
 
-  const recentTape=tape.filter(e=>Date.now()-e.ts<60000)
-  const buyPct=recentTape.length>0?Math.round(recentTape.filter(e=>e.side==='buy').length/recentTape.length*100):50
+  // transient liquidity walls: appear, sit, then either fade or get SWEPT
+  (['bid', 'ask'] as const).forEach(key => {
+    const w = sim.liq[key];
+    if (w) {
+      if (t > w.until) {
+        sim.liq[key] = null;
+        if (Math.random() < 0.6) {
+          const sz = Math.round(9000 + Math.random() * 5000);
+          sim.sweeps.push({ t, price: w.price, side: key, size: sz });
+          sim.tape.unshift({ t, price: w.price, size: sz, side: key === 'bid' ? -1 : 1, dark: false, large: true });
+        }
+      } else {
+        const arr = key === 'bid' ? bids : asks;
+        const lvl = arr.find(l => Math.abs(l.price - w.price) < 0.021);
+        if (lvl) { lvl.size = Math.round(lvl.size * (3.4 + Math.random() * 1.4)); lvl.wall = true; }
+        else sim.liq[key] = null; // price drifted away; wall out of visible range
+      }
+    } else if (Math.random() < 0.055) {
+      const off = (3 + Math.floor(Math.random() * 5)) * 0.04;
+      sim.liq[key] = {
+        price: Math.round((key === 'bid' ? grid - off : grid + off) * 100) / 100,
+        until: t + 7 + Math.random() * 13,
+      };
+    }
+  });
+
+  // structural anchors: when a gamma strike is inside L2 range, real size rests there.
+  // This is CONFLUENCE — options structure + live book at the same level.
+  for (const kw of KEY_WALLS) {
+    const arr = kw.side === 'put' ? bids : asks;
+    const lvl = arr.find(l => Math.abs(l.price - kw.price) < 0.021);
+    if (lvl) { lvl.size = Math.round(lvl.size * (4 + Math.random() * 1.2)); lvl.wall = true; lvl.gamma = true; }
+  }
+
+  sim.book = { bids, asks };
+  sim.snaps.push({ t, bids, asks });
+  while (sim.snaps.length && t - sim.snaps[0].t > 62) sim.snaps.shift();
+  while (sim.sweeps.length && t - sim.sweeps[0].t > 5) sim.sweeps.shift();
+}
+
+function initSim(): Sim {
+  const sim: Sim = {
+    price: 543.28, tape: [], hist: [], book: { bids: [], asks: [] },
+    snaps: [], sweeps: [], hits: {}, liq: { bid: null, ask: null }, viewCenter: 543.28,
+  };
+  let bookT = 0;
+  for (let t = 0; t <= T0; t += 0.16) {
+    stepTape(sim, t);
+    if (t - bookT >= 0.3) { stepBook(sim, t); bookT = t; }
+  }
+  sim.viewCenter = sim.price;
+  return sim;
+}
+
+/* ——————————————————————————— signal engines ——————————————————————————— */
+
+function absorbState(sim: Sim, kw: KeyWall) {
+  const arr = sim.hits[kw.price] || [];
+  let vol = 0;
+  for (const h of arr) vol += h.size;
+  const defending = kw.side === 'put' ? sim.price >= kw.price - 0.06 : sim.price <= kw.price + 0.06;
+  return { active: arr.length >= 7 && vol >= 22000 && defending, vol, n: arr.length };
+}
+
+interface Verdict {
+  title: string; sub: string; tone: 'buy' | 'sell' | 'warn' | 'wait';
+  putW: KeyWall; callW: KeyWall; dP: number; dC: number;
+  buy: number; sell: number;
+}
+function computeVerdict(sim: Sim, t: number): Verdict {
+  const price = sim.price;
+  const putW = KEY_WALLS.filter(k => k.side === 'put' && k.price <= price).sort((a, b) => b.price - a.price)[0] || KEY_WALLS[0];
+  const callW = KEY_WALLS.filter(k => k.side === 'call' && k.price >= price).sort((a, b) => a.price - b.price)[0] || KEY_WALLS[KEY_WALLS.length - 1];
+  const dP = price - putW.price;
+  const dC = callW.price - price;
+
+  let buy = 0, sell = 0;
+  for (const p of sim.tape) {
+    if (t - p.t > 60) break;
+    if (p.side === 1) buy += p.size; else sell += p.size;
+  }
+
+  const bidSweep = sim.sweeps.find(s => s.side === 'bid' && t - s.t < 4.5);
+  const askSweep = sim.sweeps.find(s => s.side === 'ask' && t - s.t < 4.5);
+  const aP = absorbState(sim, putW);
+  const aC = absorbState(sim, callW);
+
+  if (bidSweep) return {
+    title: `BIDS SWEPT @ ${bidSweep.price.toFixed(2)}`,
+    sub: `${fmtK(bidSweep.size)} print pulled the support wall — stand aside, breakdown risk toward $${putW.price}`,
+    tone: 'warn', putW, callW, dP, dC, buy, sell,
+  };
+  if (askSweep) return {
+    title: `OFFERS SWEPT @ ${askSweep.price.toFixed(2)}`,
+    sub: `${fmtK(askSweep.size)} print cleared the resistance wall — breakout watch above, next lid $${callW.price}`,
+    tone: 'buy', putW, callW, dP, dC, buy, sell,
+  };
+  if (dP < 0.45 && aP.active && buy >= sell * 0.85) return {
+    title: `BUY ZONE · $${putW.price} HOLDING`,
+    sub: `put wall absorbed ${fmtK(aP.vol)} of selling in 10s and hasn't moved — bids stacked on structure, risk is defined below`,
+    tone: 'buy', putW, callW, dP, dC, buy, sell,
+  };
+  if (dP < 0.45) return {
+    title: `TESTING $${putW.price} SUPPORT`,
+    sub: `tape is hitting the ${fmtK(putW.oi)} put wall — wait for absorption before entering`,
+    tone: 'wait', putW, callW, dP, dC, buy, sell,
+  };
+  if (dC < 0.45 && aC.active && sell >= buy * 0.85) return {
+    title: `FADE ZONE · $${callW.price} CAPPING`,
+    sub: `call wall absorbed ${fmtK(aC.vol)} of buying — trim longs into strength, don't chase this level`,
+    tone: 'sell', putW, callW, dP, dC, buy, sell,
+  };
+  if (dC < 0.45) return {
+    title: `TESTING $${callW.price} RESISTANCE`,
+    sub: `buyers pressing the ${fmtK(callW.oi)} call wall — needs a sweep to break, otherwise it caps price`,
+    tone: 'wait', putW, callW, dP, dC, buy, sell,
+  };
+  return {
+    title: 'WAIT · MID-RANGE',
+    sub: `no edge between walls — next decision at $${putW.price} below or $${callW.price} above`,
+    tone: 'wait', putW, callW, dP, dC, buy, sell,
+  };
+}
+
+/* ——————————————————————————— the page ——————————————————————————— */
+
+export default function ProViewPage() {
+  const router = useRouter();
+  const [isDark, setIsDark] = useState(true);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const simRef = useRef<Sim | null>(null);
+  const tokRef = useRef<Tok>(DARK);
+  const reducedRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      const prefs = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+      if (typeof prefs.isDark === 'boolean') setIsDark(prefs.isDark);
+    } catch { /* keep default */ }
+    try {
+      reducedRef.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { tokRef.current = isDark ? DARK : LIGHT; }, [isDark]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    if (!simRef.current) simRef.current = initSim();
+    const sim = simRef.current;
+    const startMs = performance.now();
+    const now = () => T0 + (performance.now() - startMs) / 1000;
+
+    let cssW = 0, cssH = 0;
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) {
+        const dpr = window.devicePixelRatio || 1;
+        cssW = e.contentRect.width;
+        cssH = e.contentRect.height;
+        canvas.width = Math.max(1, Math.round(cssW * dpr));
+        canvas.height = Math.max(1, Math.round(cssH * dpr));
+        canvas.style.width = `${cssW}px`;
+        canvas.style.height = `${cssH}px`;
+      }
+    });
+    ro.observe(wrap);
+
+    const tapeTimer = window.setInterval(() => stepTape(sim, now()), 160);
+    const bookTimer = window.setInterval(() => stepBook(sim, now()), 300);
+
+    let raf = 0;
+    const frame = () => {
+      raf = requestAnimationFrame(frame);
+      if (cssW < 40 || cssH < 40) return;
+      const dpr = window.devicePixelRatio || 1;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      draw(ctx, cssW, cssH, now(), sim, tokRef.current, tokRef.current === DARK, reducedRef.current);
+    };
+    raf = requestAnimationFrame(frame);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      clearInterval(tapeTimer);
+      clearInterval(bookTimer);
+      ro.disconnect();
+    };
+  }, []);
+
+  const T = isDark ? DARK : LIGHT;
+  const border = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.12)';
+  const dim = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)';
+
+  const toggleTheme = () => {
+    const next = !isDark;
+    setIsDark(next);
+    try {
+      const prefs = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ ...prefs, isDark: next }));
+    } catch { /* ignore */ }
+  };
+
+  const legendDot = (color: string, label: string) => (
+    <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ width: 8, height: 8, borderRadius: 2, background: color, display: 'inline-block' }} />
+      <span style={{ fontSize: 10, letterSpacing: '0.08em', color: dim }}>{label}</span>
+    </span>
+  );
 
   return (
-    <div style={{height:'100vh',background:C.pageBg,color:C.text,fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <style>{`
-        @keyframes rippleOut{0%{transform:scale(1);opacity:0.9}100%{transform:scale(5);opacity:0}}
-        @keyframes rippleLg {0%{transform:scale(1);opacity:0.85}100%{transform:scale(8);opacity:0}}
-      `}</style>
-      {/* Header */}
-      <div style={{padding:'9px 18px',borderBottom:`1px solid ${C.border}`,background:C.panelBg,display:'flex',alignItems:'center',gap:16,flexShrink:0,flexWrap:'wrap'}}>
-        <button onClick={()=>router.push('/dashboard')} style={{background:'none',border:'none',color:C.text3,cursor:'pointer',fontSize:12,padding:0}}>← Monday</button>
-        <span style={{fontSize:13,fontWeight:700,color:C.gold,letterSpacing:'0.08em'}}>PRO VIEW</span>
-        <div style={{height:14,width:1,background:C.border}}/>
-        <span style={{fontSize:11,color:C.text3}}>Options Context</span>
-        <span style={{fontSize:10,color:C.text4}}>+</span>
-        <span style={{fontSize:11,color:C.text3}}>Order Book</span>
-        <span style={{fontSize:10,color:C.text4}}>+</span>
-        <span style={{fontSize:11,color:C.text3}}>Live Tape</span>
-        <span style={{fontSize:18,fontWeight:700,fontFamily:'monospace',color:C.text,marginLeft:8}}>${price.toFixed(2)}</span>
-        <div style={{display:'flex',gap:4,alignItems:'center',marginLeft:4}}>
-          <div style={{width:52,height:6,background:isDark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.07)',borderRadius:3,overflow:'hidden'}}>
-            <div style={{height:'100%',width:`${buyPct}%`,background:C.green,borderRadius:3,transition:'width 0.4s'}}/>
-          </div>
-          <span style={{fontSize:10,color:buyPct>55?C.green:buyPct<45?C.red:C.gold,fontWeight:600}}>{buyPct}% buy</span>
+    <div style={{
+      position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column',
+      background: T.pageBg, color: T.text, fontFamily: MONO,
+      transition: 'background 200ms ease, color 200ms ease',
+    }}>
+      <header style={{
+        display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
+        padding: '10px 16px', borderBottom: `1px solid ${border}`, flex: '0 0 auto',
+      }}>
+        <button
+          onClick={() => router.push('/dashboard')}
+          style={{
+            fontFamily: MONO, fontSize: 13, fontWeight: 700, letterSpacing: '0.04em',
+            color: T.gold, background: 'transparent', border: `1px solid ${alpha(T.gold, 0.45)}`,
+            borderRadius: 8, padding: '6px 14px', cursor: 'pointer',
+          }}
+        >
+          ← Monday
+        </button>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+          <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '0.14em' }}>PROVIEW</span>
+          <span style={{ fontSize: 11, letterSpacing: '0.1em', color: dim }}>STRUCTURE + FLOW · SPY 0DTE</span>
         </div>
-        <div style={{marginLeft:'auto'}}>
-          <button onClick={toggleTheme} style={{background:'transparent',border:`1px solid ${C.border}`,padding:'5px 10px',color:C.text3,fontSize:13,cursor:'pointer'}}>{isDark?'☀':'◑'}</button>
+        <span style={{
+          fontSize: 10, letterSpacing: '0.12em', color: T.gold,
+          border: `1px solid ${alpha(T.gold, 0.35)}`, borderRadius: 999, padding: '3px 10px',
+        }}>
+          ● LIVE · DEMO FEED
+        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          {legendDot(T.green, 'BIDS / BUYS')}
+          {legendDot(T.red, 'ASKS / SELLS')}
+          {legendDot(T.gold, 'GAMMA STRUCTURE')}
+          {legendDot(T.purple, 'DARK POOL')}
+          <button
+            onClick={toggleTheme}
+            aria-label="Toggle light or dark mode"
+            style={{
+              fontFamily: MONO, fontSize: 12, color: T.text, background: 'transparent',
+              border: `1px solid ${border}`, borderRadius: 8, padding: '5px 10px', cursor: 'pointer',
+            }}
+          >
+            {isDark ? '☀' : '☾'}
+          </button>
         </div>
-      </div>
+      </header>
 
-      {/* Three-panel body */}
-      <div style={{flex:1,display:'flex',overflow:'hidden'}}>
-        <OptionsPanel  price={price} C={C} isDark={isDark}/>
-        <BattlefieldCenter l2={l2} price={price} impacts={impacts} hitMap={hitMap} C={C} isDark={isDark}/>
-        <TapePanel tape={tape} price={price} C={C} isDark={isDark}/>
+      <div ref={wrapRef} style={{ flex: '1 1 auto', position: 'relative', minHeight: 0 }}>
+        <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, display: 'block' }} />
       </div>
     </div>
-  )
+  );
+}
+
+/* ——————————————————————————— renderer ——————————————————————————— */
+
+function draw(
+  ctx: CanvasRenderingContext2D,
+  w: number, h: number, t: number,
+  sim: Sim, T: Tok, dark: boolean, reduced: boolean,
+) {
+  const price = sim.price;
+  const v = computeVerdict(sim, t);
+  const pulse = reduced ? 0.75 : 0.6 + 0.4 * Math.sin(t * 4.2);
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.textBaseline = 'middle';
+
+  const dimText = dark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)';
+  const faint = dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)';
+  const panelBg = dark ? '#0d0d0d' : '#ffffff';
+
+  const PAD = 12;
+  const narrow = w < 900;
+  const gammaW = narrow ? 168 : 216;
+  const tapeW = narrow ? 200 : 252;
+  const gX0 = PAD, gX1 = PAD + gammaW;
+  const tX1 = w - PAD, tX0 = tX1 - tapeW;
+  const mX0 = gX1 + 10, mX1 = tX0 - 10;
+
+  const panel = (x0: number, x1: number) => {
+    rr(ctx, x0, PAD, x1 - x0, h - PAD * 2, 12);
+    ctx.fillStyle = panelBg;
+    ctx.fill();
+    ctx.strokeStyle = faint;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  };
+  panel(gX0, gX1);
+  panel(mX0, mX1);
+  panel(tX0, tX1);
+
+  /* — shared vertical mapping for the flow view — */
+  sim.viewCenter += (price - sim.viewCenter) * 0.04;
+  const span = 6.2;
+  const chartY0 = PAD + 84;
+  const chartY1 = h - PAD - 96;
+  const chartH = Math.max(60, chartY1 - chartY0);
+  const yOf = (p: number) => chartY0 + ((sim.viewCenter + span / 2 - p) / span) * chartH;
+  const pxPerDollar = chartH / span;
+  const lvlH = Math.max(2, 0.04 * pxPerDollar - 0.5);
+
+  const labelW = 54;
+  const heatX0 = mX0 + 10;
+  const nowX = mX0 + (mX1 - mX0) * 0.56;
+  const depthX1 = mX1 - labelW - 8;
+  const heatW = nowX - heatX0;
+
+  /* ———————— MIDDLE · LIVE FLOW ———————— */
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(mX0 + 1, chartY0 - 6, mX1 - mX0 - 2, chartH + 12);
+  ctx.clip();
+
+  // gridlines every $0.50
+  ctx.font = `10px ${MONO}`;
+  const gridStart = Math.ceil((sim.viewCenter - span / 2) * 2) / 2;
+  for (let p = gridStart; p <= sim.viewCenter + span / 2; p += 0.5) {
+    const y = yOf(p);
+    ctx.strokeStyle = faint;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(heatX0, y);
+    ctx.lineTo(mX1 - 8, y);
+    ctx.stroke();
+    ctx.fillStyle = dimText;
+    ctx.textAlign = 'right';
+    ctx.fillText(p.toFixed(2), mX1 - 12, y - 6);
+  }
+
+  // liquidity heat trail (last 60s of L2 snapshots on absolute price)
+  const colW = Math.max(1.6, heatW / (62 / 0.3)) + 0.6;
+  for (const snap of sim.snaps) {
+    const x = nowX - ((t - snap.t) / 60) * heatW - colW;
+    if (x < heatX0 - colW) continue;
+    for (const lvl of snap.bids) {
+      const inten = clamp(lvl.size / 9000, 0, 1);
+      ctx.fillStyle = alpha(T.green, (lvl.wall ? 0.16 : 0.04) + inten * (lvl.wall ? 0.55 : 0.34));
+      ctx.fillRect(Math.max(x, heatX0), yOf(lvl.price) - lvlH / 2, colW, lvlH);
+    }
+    for (const lvl of snap.asks) {
+      const inten = clamp(lvl.size / 9000, 0, 1);
+      ctx.fillStyle = alpha(T.red, (lvl.wall ? 0.16 : 0.04) + inten * (lvl.wall ? 0.55 : 0.34));
+      ctx.fillRect(Math.max(x, heatX0), yOf(lvl.price) - lvlH / 2, colW, lvlH);
+    }
+  }
+
+  // gamma wall bands across the whole flow view
+  for (const kw of KEY_WALLS) {
+    const y = yOf(kw.price);
+    if (y < chartY0 - 30 || y > chartY1 + 30) continue;
+    const thick = 8 + (kw.oi / MAX_OI) * 26;
+    const c = kw.side === 'put' ? T.green : T.red;
+    const grad = ctx.createLinearGradient(0, y - thick, 0, y + thick);
+    grad.addColorStop(0, alpha(c, 0));
+    grad.addColorStop(0.5, alpha(c, 0.16));
+    grad.addColorStop(1, alpha(c, 0));
+    ctx.fillStyle = grad;
+    ctx.fillRect(heatX0, y - thick, mX1 - 8 - heatX0, thick * 2);
+    ctx.strokeStyle = alpha(T.gold, 0.85);
+    ctx.setLineDash([7, 5]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(heatX0, y);
+    ctx.lineTo(mX1 - 8, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.textAlign = 'left';
+    ctx.font = `700 11px ${MONO}`;
+    ctx.fillStyle = T.gold;
+    const tag = `$${kw.price} ${kw.side.toUpperCase()} WALL · ${fmtK(kw.oi)} OI`;
+    ctx.fillText(tag, heatX0 + 4, y - Math.max(10, thick * 0.55) - 4);
+
+    // absorption chip: tape keeps hitting the wall, wall isn't moving
+    const ab = absorbState(sim, kw);
+    if (ab.active) {
+      const txt = `ABSORBING ${fmtK(ab.vol)} · NOT MOVING`;
+      ctx.font = `700 10px ${MONO}`;
+      const tw = ctx.measureText(txt).width;
+      const bx = nowX + 10, by = y + (kw.side === 'put' ? 18 : -18);
+      rr(ctx, bx - 6, by - 9, tw + 12, 18, 9);
+      ctx.fillStyle = alpha(kw.side === 'put' ? T.green : T.red, 0.16 + 0.12 * pulse);
+      ctx.fill();
+      ctx.strokeStyle = alpha(kw.side === 'put' ? T.green : T.red, 0.5 + 0.4 * pulse);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = kw.side === 'put' ? T.green : T.red;
+      ctx.fillText(txt, bx, by + 0.5);
+    }
+  }
+
+  // sweep flashes: resting size vanished under a large print
+  for (const sw of sim.sweeps) {
+    const age = t - sw.t;
+    if (age > 2.8) continue;
+    const y = yOf(sw.price);
+    const k = age / 2.8;
+    const c = sw.side === 'bid' ? T.red : T.green;
+    ctx.fillStyle = alpha(c, 0.28 * (1 - k));
+    ctx.fillRect(heatX0, y - 4 - k * 26, mX1 - 8 - heatX0, 8 + k * 52);
+    ctx.font = `800 12px ${MONO}`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = alpha(c, 1 - k * 0.6);
+    ctx.fillText(`⚡ ${sw.side === 'bid' ? 'BIDS' : 'OFFERS'} SWEPT · ${fmtK(sw.size)}`, (heatX0 + depthX1) / 2, y - 18 - k * 14);
+  }
+
+  // resting book right now (bars grow rightward from the "now" line)
+  let maxSz = 1;
+  for (const l of sim.book.bids) maxSz = Math.max(maxSz, l.size);
+  for (const l of sim.book.asks) maxSz = Math.max(maxSz, l.size);
+  const depthW = depthX1 - nowX - 6;
+  const bar = (lvl: Lvl, c: string) => {
+    const y = yOf(lvl.price);
+    const len = Math.sqrt(lvl.size / maxSz) * depthW;
+    ctx.fillStyle = alpha(c, lvl.wall ? 0.85 : 0.42);
+    ctx.fillRect(nowX + 2, y - lvlH / 2, len, lvlH);
+    if (lvl.wall) {
+      ctx.strokeStyle = lvl.gamma ? T.gold : alpha(c, 0.9);
+      ctx.lineWidth = lvl.gamma ? 1.5 : 1;
+      ctx.strokeRect(nowX + 2, y - lvlH / 2, len, lvlH);
+      ctx.font = `700 10px ${MONO}`;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = lvl.gamma ? T.gold : c;
+      ctx.fillText(fmtK(lvl.size), nowX + 6 + len, y);
+    }
+  };
+  for (const l of sim.book.bids) bar(l, T.green);
+  for (const l of sim.book.asks) bar(l, T.red);
+
+  // price trail over the heat
+  ctx.beginPath();
+  let started = false;
+  for (const hpt of sim.hist) {
+    const x = nowX - ((t - hpt.t) / 60) * heatW;
+    if (x < heatX0) continue;
+    const y = yOf(hpt.p);
+    if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = alpha(T.gold, 0.9);
+  ctx.lineWidth = 1.6;
+  ctx.shadowColor = alpha(T.gold, 0.6);
+  ctx.shadowBlur = 6;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // recent prints hitting the now-line (buys/sells/dark pool)
+  for (const p of sim.tape) {
+    const age = t - p.t;
+    if (age > 1.6) break;
+    const y = yOf(p.price);
+    const r = 1.5 + Math.sqrt(p.size) / 22;
+    const c = p.dark ? T.purple : p.side === 1 ? T.green : T.red;
+    ctx.beginPath();
+    ctx.arc(nowX, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = alpha(c, 0.75 * (1 - age / 1.6));
+    ctx.fill();
+    if (p.large) {
+      ctx.beginPath();
+      ctx.arc(nowX, y, r + age * 16, 0, Math.PI * 2);
+      ctx.strokeStyle = alpha(c, 0.6 * (1 - age / 1.6));
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+
+  // current price line + tag
+  const py = yOf(price);
+  ctx.strokeStyle = alpha(T.gold, 0.95);
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(heatX0, py);
+  ctx.lineTo(depthX1, py);
+  ctx.stroke();
+  ctx.font = `800 13px ${MONO}`;
+  const ptxt = price.toFixed(2);
+  const ptw = ctx.measureText(ptxt).width;
+  rr(ctx, mX1 - 10 - ptw - 14, py - 11, ptw + 14, 22, 6);
+  ctx.fillStyle = T.gold;
+  ctx.fill();
+  ctx.fillStyle = dark ? '#080808' : '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.fillText(ptxt, mX1 - 10 - ptw - 7, py + 0.5);
+
+  // off-screen key walls — edge chips so you always know what's above/below
+  ctx.font = `700 10px ${MONO}`;
+  for (const kw of KEY_WALLS) {
+    const y = yOf(kw.price);
+    if (y >= chartY0 - 30 && y <= chartY1 + 30) continue;
+    const above = y < chartY0;
+    const txt = `${above ? '▲' : '▼'} $${kw.price} ${kw.side.toUpperCase()} WALL · ${fmtK(kw.oi)} · ${Math.abs(kw.price - price).toFixed(1)} AWAY`;
+    const tw = ctx.measureText(txt).width;
+    const cy = above ? chartY0 + 10 : chartY1 - 10;
+    rr(ctx, heatX0 + 2, cy - 9, tw + 14, 18, 9);
+    ctx.fillStyle = alpha(T.gold, 0.12);
+    ctx.fill();
+    ctx.strokeStyle = alpha(T.gold, 0.4);
+    ctx.stroke();
+    ctx.fillStyle = T.gold;
+    ctx.textAlign = 'left';
+    ctx.fillText(txt, heatX0 + 9, cy + 0.5);
+  }
+
+  ctx.restore();
+
+  // "now" divider between the heat trail and the resting book
+  ctx.strokeStyle = alpha(T.gold, 0.25);
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath();
+  ctx.moveTo(nowX, chartY0);
+  ctx.lineTo(nowX, chartY1);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = `9px ${MONO}`;
+  ctx.fillStyle = dimText;
+  ctx.textAlign = 'center';
+  ctx.fillText('←60s — LIQUIDITY HEAT', (heatX0 + nowX) / 2, chartY1 + 12);
+  ctx.fillText('RESTING BOOK NOW →', (nowX + depthX1) / 2, chartY1 + 12);
+
+  /* — CONFLUENCE beam: gamma strike + live L2 wall at the same price — */
+  for (const kw of KEY_WALLS) {
+    const arr = kw.side === 'put' ? sim.book.bids : sim.book.asks;
+    const lvl = arr.find(l => l.gamma && l.wall && Math.abs(l.price - kw.price) < 0.021);
+    if (!lvl) continue;
+    const y = yOf(kw.price);
+    if (y < chartY0 || y > chartY1) continue;
+    const grad = ctx.createLinearGradient(gX0, 0, depthX1, 0);
+    grad.addColorStop(0, alpha(T.gold, 0));
+    grad.addColorStop(0.5, alpha(T.gold, 0.10 + 0.10 * pulse));
+    grad.addColorStop(1, alpha(T.gold, 0));
+    ctx.fillStyle = grad;
+    ctx.fillRect(gX0 + 6, y - 9, depthX1 - gX0 - 12, 18);
+    ctx.strokeStyle = alpha(T.gold, 0.35 + 0.35 * pulse);
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(gX0 + 6, y - 9); ctx.lineTo(depthX1, y - 9); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(gX0 + 6, y + 9); ctx.lineTo(depthX1, y + 9); ctx.stroke();
+
+    const txt = `★ CONFLUENCE — ${fmtK(kw.oi)} OI + ${fmtK(lvl.size)} LIVE ${kw.side === 'put' ? 'BIDS' : 'OFFERS'}`;
+    ctx.font = `800 10px ${MONO}`;
+    const tw = ctx.measureText(txt).width;
+    const bx = heatX0 + 4, by = y + (kw.side === 'put' ? 26 : -26);
+    rr(ctx, bx - 6, by - 10, tw + 12, 20, 10);
+    ctx.fillStyle = dark ? '#141005' : '#fdf6e3';
+    ctx.fill();
+    ctx.strokeStyle = alpha(T.gold, 0.8);
+    ctx.stroke();
+    ctx.fillStyle = T.gold;
+    ctx.textAlign = 'left';
+    ctx.fillText(txt, bx, by + 0.5);
+  }
+
+  /* — verdict banner (the answer, not the homework) — */
+  const toneC = v.tone === 'buy' ? T.green : v.tone === 'sell' || v.tone === 'warn' ? T.red : T.gold;
+  const bY = PAD + 10, bH = 62;
+  rr(ctx, mX0 + 8, bY, mX1 - mX0 - 16, bH, 10);
+  ctx.fillStyle = alpha(toneC, dark ? 0.10 : 0.08);
+  ctx.fill();
+  ctx.strokeStyle = alpha(toneC, 0.55);
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  ctx.textAlign = 'left';
+  ctx.font = `800 ${narrow ? 15 : 19}px ${MONO}`;
+  ctx.fillStyle = toneC;
+  const arrow = v.tone === 'buy' ? '▲ ' : v.tone === 'sell' || v.tone === 'warn' ? '▼ ' : '◆ ';
+  ctx.fillText(arrow + v.title, mX0 + 22, bY + 20);
+  ctx.font = `11px ${MONO}`;
+  ctx.fillStyle = dimText;
+  const subMax = mX1 - mX0 - (narrow ? 44 : 250);
+  let sub = v.sub;
+  if (ctx.measureText(sub).width > subMax) {
+    while (sub.length > 4 && ctx.measureText(sub + '…').width > subMax) sub = sub.slice(0, -1);
+    sub += '…';
+  }
+  ctx.fillText(sub, mX0 + 22, bY + 43);
+
+  if (!narrow) {
+    ctx.textAlign = 'right';
+    ctx.font = `700 11px ${MONO}`;
+    ctx.fillStyle = T.red;
+    ctx.fillText(`▲ $${v.callW.price} CALL WALL · ${v.dC.toFixed(2)} AWAY`, mX1 - 22, bY + 18);
+    ctx.fillStyle = T.green;
+    ctx.fillText(`▼ $${v.putW.price} PUT WALL · ${v.dP.toFixed(2)} AWAY`, mX1 - 22, bY + 44);
+  }
+
+  /* — 60s pressure strip — */
+  const sY0 = h - PAD - 84;
+  ctx.textAlign = 'left';
+  ctx.font = `700 10px ${MONO}`;
+  ctx.fillStyle = dimText;
+  ctx.fillText('ORDER FLOW · LAST 60S', mX0 + 18, sY0 + 12);
+
+  const tot = Math.max(1, v.buy + v.sell);
+  const buyPct = v.buy / tot;
+  const barX0 = mX0 + 18, barX1 = mX1 - 18, barY = sY0 + 26, barH = 16;
+  rr(ctx, barX0, barY, barX1 - barX0, barH, 8);
+  ctx.fillStyle = faint;
+  ctx.fill();
+  ctx.save();
+  rr(ctx, barX0, barY, barX1 - barX0, barH, 8);
+  ctx.clip();
+  ctx.fillStyle = alpha(T.green, 0.8);
+  ctx.fillRect(barX0, barY, (barX1 - barX0) * buyPct, barH);
+  ctx.fillStyle = alpha(T.red, 0.8);
+  ctx.fillRect(barX0 + (barX1 - barX0) * buyPct, barY, (barX1 - barX0) * (1 - buyPct), barH);
+  ctx.restore();
+  ctx.strokeStyle = T.text;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(barX0 + (barX1 - barX0) * 0.5, barY - 3);
+  ctx.lineTo(barX0 + (barX1 - barX0) * 0.5, barY + barH + 3);
+  ctx.stroke();
+
+  ctx.font = `700 11px ${MONO}`;
+  ctx.fillStyle = T.green;
+  ctx.fillText(`BUY ${(buyPct * 100).toFixed(0)}% · ${fmtK(v.buy)}`, barX0, barY + barH + 14);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = T.red;
+  ctx.fillText(`${fmtK(v.sell)} · ${((1 - buyPct) * 100).toFixed(0)}% SELL`, barX1, barY + barH + 14);
+  const delta = v.buy - v.sell;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = delta >= 0 ? T.green : T.red;
+  ctx.fillText(`Δ ${delta >= 0 ? '+' : '-'}${fmtK(Math.abs(delta))}`, (barX0 + barX1) / 2, barY + barH + 14);
+
+  /* ———————— LEFT · GAMMA STRUCTURE ———————— */
+
+  ctx.textAlign = 'left';
+  ctx.font = `800 11px ${MONO}`;
+  ctx.fillStyle = T.text;
+  ctx.fillText('GAMMA STRUCTURE', gX0 + 14, PAD + 20);
+  ctx.font = `9px ${MONO}`;
+  ctx.fillStyle = dimText;
+  ctx.fillText('SPY OPTIONS OPEN INTEREST', gX0 + 14, PAD + 34);
+  ctx.fillStyle = alpha(T.green, 0.9);
+  ctx.fillText('■ PUT OI = FLOOR', gX0 + 14, PAD + 50);
+  ctx.fillStyle = alpha(T.red, 0.9);
+  ctx.fillText('■ CALL OI = CEILING', gX0 + 98, PAD + 50);
+
+  const lY0 = PAD + 66, lY1 = h - PAD - 16;
+  const sMin = 530.5, sMax = 558.5;
+  const lyOf = (s: number) => lY0 + ((sMax - s) / (sMax - sMin)) * (lY1 - lY0);
+  const rowH = (lY1 - lY0) / (sMax - sMin);
+  const barMax = gammaW - 78;
+  const lab = 40;
+
+  // view window of the flow panel, projected onto the ladder
+  const wy0 = lyOf(sim.viewCenter + span / 2);
+  const wy1 = lyOf(sim.viewCenter - span / 2);
+  ctx.fillStyle = alpha(T.gold, 0.06);
+  ctx.fillRect(gX0 + 4, wy0, gammaW - 8, wy1 - wy0);
+  ctx.strokeStyle = alpha(T.gold, 0.3);
+  ctx.setLineDash([2, 3]);
+  ctx.strokeRect(gX0 + 4, wy0, gammaW - 8, wy1 - wy0);
+  ctx.setLineDash([]);
+
+  for (const row of CHAIN) {
+    const y = lyOf(row.strike);
+    const isKey = KEY_WALLS.some(k => k.price === row.strike);
+    const bh = clamp(rowH * 0.34, 2.5, 7);
+    const putLen = (row.put / MAX_OI) * barMax;
+    const callLen = (row.call / MAX_OI) * barMax;
+    ctx.fillStyle = alpha(T.green, isKey ? 0.95 : 0.4);
+    ctx.fillRect(gX0 + lab + 14, y - bh - 1, putLen, bh);
+    ctx.fillStyle = alpha(T.red, isKey ? 0.95 : 0.4);
+    ctx.fillRect(gX0 + lab + 14, y + 1, callLen, bh);
+
+    ctx.font = `${isKey ? '800' : '400'} 9px ${MONO}`;
+    ctx.fillStyle = isKey ? T.gold : dimText;
+    ctx.textAlign = 'right';
+    ctx.fillText(String(row.strike), gX0 + lab + 8, y);
+
+    if (isKey) {
+      const kw = KEY_WALLS.find(k => k.price === row.strike)!;
+      ctx.textAlign = 'left';
+      ctx.font = `800 8.5px ${MONO}`;
+      ctx.fillStyle = T.gold;
+      const len = kw.side === 'put' ? putLen : callLen;
+      const yy = kw.side === 'put' ? y - bh / 2 - 1 : y + bh / 2 + 1;
+      ctx.fillText(`${kw.side.toUpperCase()} WALL ${fmtK(kw.oi)}`, gX0 + lab + 18 + len, yy);
+    }
+  }
+
+  // current price on the ladder
+  const lpy = clamp(lyOf(price), lY0, lY1);
+  ctx.strokeStyle = T.gold;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(gX0 + 8, lpy);
+  ctx.lineTo(gX1 - 8, lpy);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(gX0 + 8, lpy);
+  ctx.lineTo(gX0 + 14, lpy - 4);
+  ctx.lineTo(gX0 + 14, lpy + 4);
+  ctx.closePath();
+  ctx.fillStyle = T.gold;
+  ctx.fill();
+  ctx.font = `800 10px ${MONO}`;
+  ctx.textAlign = 'left';
+  ctx.fillText(price.toFixed(2), gX0 + 18, lpy - 8);
+
+  /* ———————— RIGHT · TAPE ———————— */
+
+  ctx.textAlign = 'left';
+  ctx.font = `800 11px ${MONO}`;
+  ctx.fillStyle = T.text;
+  ctx.fillText('TAPE · TIME & SALES', tX0 + 14, PAD + 20);
+  ctx.font = `9px ${MONO}`;
+  ctx.fillStyle = dimText;
+  ctx.fillText('EXECUTIONS HITTING THE LEVELS', tX0 + 14, PAD + 34);
+
+  const listY0 = PAD + 50;
+  const rowStep = 20;
+  const rows = Math.max(0, Math.floor((h - PAD - 14 - listY0) / rowStep));
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(tX0 + 1, listY0 - 8, tapeW - 2, h - PAD - listY0);
+  ctx.clip();
+
+  let i = 0;
+  for (const p of sim.tape) {
+    if (i >= rows) break;
+    const y = listY0 + i * rowStep + 8;
+    const c = p.dark ? T.purple : p.side === 1 ? T.green : T.red;
+    if (p.large) {
+      ctx.fillStyle = alpha(c, 0.10);
+      ctx.fillRect(tX0 + 6, y - 9, tapeW - 12, 18);
+    }
+    const dt = new Date(Date.now() - (t - p.t) * 1000);
+    const ts = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}:${String(dt.getSeconds()).padStart(2, '0')}`;
+    ctx.font = `9px ${MONO}`;
+    ctx.fillStyle = dimText;
+    ctx.textAlign = 'left';
+    ctx.fillText(ts, tX0 + 12, y);
+    ctx.font = `${p.large ? '800' : '400'} 10px ${MONO}`;
+    ctx.fillStyle = T.text;
+    ctx.fillText(p.price.toFixed(2), tX0 + (narrow ? 62 : 72), y);
+    ctx.fillStyle = c;
+    ctx.textAlign = 'right';
+    ctx.fillText(fmtK(p.size), tX1 - (narrow ? 34 : 48), y);
+    ctx.textAlign = 'left';
+    ctx.fillText(p.side === 1 ? '▲' : '▼', tX1 - (narrow ? 26 : 40), y);
+    if (p.dark && !narrow) {
+      ctx.fillStyle = T.purple;
+      ctx.font = `800 8px ${MONO}`;
+      ctx.fillText('DP', tX1 - 26, y);
+    }
+    i++;
+  }
+  ctx.restore();
 }
