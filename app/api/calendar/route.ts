@@ -29,18 +29,14 @@ export interface CalendarEvent {
   source?: 'benzinga' | 'provider'
 }
 
-interface BenzingaEconomicEvent {
-  date?: string
-  date_short?: string
-  time?: string
-  event_name?: string
-  event?: string
-  importance?: number | string
-  actual?: string | number | null
-  consensus?: string | number | null
-  forecast?: string | number | null
-  previous?: string | number | null
-  country?: string
+interface ForexFactoryEvent {
+  title: string
+  country: string  // currency code: USD, EUR, GBP, JPY, etc.
+  date: string     // ISO 8601 with offset: "2026-08-11T08:30:00-04:00"
+  impact: 'High' | 'Medium' | 'Low'
+  forecast: string
+  previous: string
+  actual?: string
 }
 
 const DASHBOARD_MAJOR_COUNTRIES = new Set([
@@ -109,13 +105,6 @@ function formatTimeET(raw: string): string {
   )
 }
 
-function normalizeValue(value: string | number | null | undefined): string | null {
-  if (value == null || value === '') return null
-  return String(value)
-}
-
-// Benzinga inconsistently sends some values in raw units (e.g. 652000) while
-// the display unit is K. Detect and divide down when the magnitude is wrong.
 function normalizeValueForUnit(raw: string | null, unit: string): string | null {
   if (raw == null) return null
   const num = parseFloat(raw)
@@ -157,84 +146,15 @@ function dedupeEvents(events: CalendarEvent[]): CalendarEvent[] {
   return Array.from(seen.values())
 }
 
-function normalizeBenzingaDate(raw?: string): string {
-  if (!raw) return ''
-
-  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/)
-  if (match) return match[1]
-
-  const parsed = new Date(raw)
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-  }
-
-  return raw.slice(0, 10)
-}
-
-function normalizeBenzingaTime(raw?: string): string {
-  if (!raw) return '--'
-
-  const hhmm = raw.match(/^(\d{2}):(\d{2})/)
-  if (hhmm) return `${hhmm[1]}:${hhmm[2]}`
-
-  const ampm = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-  if (ampm) {
-    let hour = parseInt(ampm[1], 10)
-    const minute = ampm[2]
-    const period = ampm[3].toUpperCase()
-
-    if (period === 'PM' && hour !== 12) hour += 12
-    if (period === 'AM' && hour === 12) hour = 0
-
-    return `${String(hour).padStart(2, '0')}:${minute}`
-  }
-
-  return '--'
-}
-
-function mapImportanceToImpact(value: number | string | undefined): CalendarEvent['impact'] {
-  const n = typeof value === 'string' ? parseInt(value, 10) : value
-  if (n === 3) return 'HIGH'
-  if (n === 2) return 'MEDIUM'
-  return 'LOW'
-}
-
-// Benzinga under-rates Fed events — force HIGH for anything clearly FOMC/Fed-critical
 function overrideFedImpact(name: string, impact: CalendarEvent['impact']): CalendarEvent['impact'] {
   if (/fomc|federal open market|rate decision|powell|fed chair|beige book/i.test(name)) return 'HIGH'
   return impact
 }
 
-// If the same event name appears on two dates ≤2 days apart, keep the later date.
-// Handles Benzinga duplicating events across a "tentative" and "actual" date.
-function dedupeByNameAcrossDays(events: CalendarEvent[]): CalendarEvent[] {
-  const byName = new Map<string, CalendarEvent[]>()
-  for (const e of events) {
-    const key = e.name.toLowerCase().trim()
-    if (!byName.has(key)) byName.set(key, [])
-    byName.get(key)!.push(e)
-  }
-
-  const toRemove = new Set<string>()
-  for (const [, group] of byName) {
-    if (group.length < 2) continue
-    const sorted = [...group].sort((a, b) => a.date.localeCompare(b.date))
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const earlier = sorted[i]
-      const later = sorted[i + 1]
-      const daysDiff =
-        (new Date(later.date).getTime() - new Date(earlier.date).getTime()) / 86_400_000
-      if (daysDiff <= 2) toRemove.add(earlier.id)
-    }
-  }
-
-  return events.filter((e) => !toRemove.has(e.id))
-}
-
 function normalizeCountry(country?: string): string {
   if (!country) return 'US'
   const v = country.trim().toUpperCase()
-  if (['UNITED STATES', 'UNITED STATES OF AMERICA', 'USA'].includes(v)) return 'US'
+  if (['UNITED STATES', 'UNITED STATES OF AMERICA', 'USA', 'USD'].includes(v)) return 'US'
   return v
 }
 
@@ -242,92 +162,70 @@ function isDashboardRelevantCountry(country?: string): boolean {
   return DASHBOARD_MAJOR_COUNTRIES.has(normalizeCountry(country))
 }
 
-function enumerateDates(from: string, to: string): string[] {
-  const out: string[] = []
-  const cursor = new Date(`${from}T12:00:00`)
-  const end = new Date(`${to}T12:00:00`)
-
-  while (cursor.getTime() <= end.getTime()) {
-    const y = cursor.getFullYear()
-    const m = String(cursor.getMonth() + 1).padStart(2, '0')
-    const d = String(cursor.getDate()).padStart(2, '0')
-    out.push(`${y}-${m}-${d}`)
-    cursor.setDate(cursor.getDate() + 1)
-  }
-
-  return out
-}
-
-async function fetchBenzingaEconomicCalendarForDay(day: string, fresh = false): Promise<CalendarEvent[]> {
-  const token = process.env.BENZINGA_API_KEY
-  if (!token) return []
-
-  try {
-    const params = new URLSearchParams({
-      token,
-      'parameters[date_from]': day,
-      'parameters[date_to]': day,
-      'parameters[importance]': '1',
-    })
-
-    const url = `https://api.benzinga.com/api/v2.1/calendar/economics?${params.toString()}`
-    const res = await fetch(url, {
-      headers: { accept: 'application/json' },
-      ...(fresh ? { cache: 'no-store' as const } : { next: { revalidate: 300 } }),
-    })
-
-    if (!res.ok) return []
-
-    const raw = await res.json()
-    const economics: BenzingaEconomicEvent[] = Array.isArray(raw?.economics) ? raw.economics : []
-
-    return economics
-      .map((e, idx): CalendarEvent | null => {
-        const name = (e.event_name ?? e.event ?? '').trim()
-        const date = normalizeBenzingaDate(e.date ?? e.date_short)
-        const time = normalizeBenzingaTime(e.time)
-        const unit = getUnit(name)
-
-        if (!name || !date) return null
-
-        return {
-          id: `eco-${date}-${time}-${idx}-${name.replace(/[^a-zA-Z0-9]+/g, '-')}`,
-          date,
-          time,
-          timeET: time === '--' ? '--' : formatTimeET(time),
-          name,
-          country: normalizeCountry(e.country),
-          impact: overrideFedImpact(name, mapImportanceToImpact(e.importance)),
-          category: categorize(name),
-          actual: normalizeValueForUnit(normalizeValue(e.actual), unit),
-          forecast: normalizeValueForUnit(normalizeValue(e.consensus ?? e.forecast), unit),
-          previous: normalizeValueForUnit(normalizeValue(e.previous), unit),
-          unit,
-          source: 'benzinga',
-        }
-      })
-      .filter((e): e is CalendarEvent => e !== null)
-  } catch {
-    return []
-  }
-}
-
-function offsetDate(date: string, days: number): string {
-  const d = new Date(`${date}T12:00:00`)
-  d.setDate(d.getDate() + days)
-  return d.toISOString().split('T')[0]
+function mapFFImpact(impact: string): CalendarEvent['impact'] {
+  if (impact === 'High') return 'HIGH'
+  if (impact === 'Medium') return 'MEDIUM'
+  return 'LOW'
 }
 
 async function getMacroCalendarEvents(from: string, to: string, fresh = false): Promise<CalendarEvent[]> {
-  // Fetch ±1 day beyond the requested range so cross-date dedup can see
-  // both copies of an event that Benzinga listed on two adjacent dates.
-  const expandedFrom = offsetDate(from, -1)
-  const expandedTo = offsetDate(to, 1)
-  const days = enumerateDates(expandedFrom, expandedTo)
-  const results = await Promise.all(days.map((day) => fetchBenzingaEconomicCalendarForDay(day, fresh)))
-  const deduped = dedupeByNameAcrossDays(results.flat())
-  // Filter back to the originally requested range after dedup
-  return deduped.filter((e) => e.date >= from && e.date <= to)
+  const fetchOpts = fresh
+    ? { cache: 'no-store' as const }
+    : { next: { revalidate: 300 } as const }
+
+  const [thisWeekRes, nextWeekRes] = await Promise.allSettled([
+    fetch('https://nfs.faireconomy.media/ff_calendar_thisweek.json', fetchOpts),
+    fetch('https://nfs.faireconomy.media/ff_calendar_nextweek.json', fetchOpts),
+  ])
+
+  const rawEvents: ForexFactoryEvent[] = []
+  if (thisWeekRes.status === 'fulfilled' && thisWeekRes.value.ok) {
+    const data = await thisWeekRes.value.json()
+    if (Array.isArray(data)) rawEvents.push(...data)
+  }
+  if (nextWeekRes.status === 'fulfilled' && nextWeekRes.value.ok) {
+    const data = await nextWeekRes.value.json()
+    if (Array.isArray(data)) rawEvents.push(...data)
+  }
+
+  return rawEvents
+    .map((e, idx): CalendarEvent | null => {
+      const name = (e.title ?? '').trim()
+      if (!name) return null
+
+      const dt = new Date(e.date)
+      if (isNaN(dt.getTime())) return null
+
+      const dateET = dt.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+      if (dateET < from || dateET > to) return null
+
+      const timeRaw = dt.toLocaleTimeString('en-US', {
+        timeZone: 'America/New_York',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+      // Some locales emit "24:xx" for midnight — normalize to "00:xx"
+      const time = timeRaw.startsWith('24') ? `00${timeRaw.slice(2)}` : timeRaw
+      const unit = getUnit(name)
+
+      return {
+        id: `eco-${dateET}-${time}-${idx}-${name.replace(/[^a-zA-Z0-9]+/g, '-')}`,
+        date: dateET,
+        time,
+        timeET: formatTimeET(time),
+        name,
+        country: normalizeCountry(e.country),
+        impact: overrideFedImpact(name, mapFFImpact(e.impact)),
+        category: categorize(name),
+        actual: normalizeValueForUnit(e.actual || null, unit),
+        forecast: normalizeValueForUnit(e.forecast || null, unit),
+        previous: normalizeValueForUnit(e.previous || null, unit),
+        unit,
+        source: 'benzinga',
+      }
+    })
+    .filter((e): e is CalendarEvent => e !== null)
 }
 
 function applyDashboardFilters(events: CalendarEvent[], today: string): CalendarEvent[] {
@@ -419,7 +317,7 @@ export async function GET(req: NextRequest) {
       from,
       to,
       meta: {
-        provider: 'benzinga',
+        provider: 'forexfactory',
         providerReady: true,
         view,
       },
