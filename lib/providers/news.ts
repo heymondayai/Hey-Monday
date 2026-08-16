@@ -1,7 +1,6 @@
 // VENDOR: Finnhub (FINNHUB_API_KEY)
 // To swap: replace fetchCompanyNews / fetchMarketNews bodies below. Keep exports identical.
 
-import Anthropic from '@anthropic-ai/sdk'
 
 export interface NewsArticle {
   externalId:  string
@@ -25,38 +24,10 @@ function sentimentKeyword(text: string): 'bullish' | 'bearish' | 'neutral' {
   return score > 0 ? 'bullish' : score < 0 ? 'bearish' : 'neutral'
 }
 
-// Batch-classify all headlines in a single Haiku call (~$0.0002 per batch).
-// Falls back to keyword scoring on any error so cron jobs never fail.
-async function classifyBatchSentiment(
+function classifyBatchSentiment(
   articles: { headline: string; summary: string }[],
-): Promise<('bullish' | 'bearish' | 'neutral')[]> {
-  if (!articles.length) return []
-  try {
-    const client = new Anthropic()
-    const prompt = articles
-      .map((a, i) => `${i + 1}. ${a.headline}${a.summary ? ' — ' + a.summary.slice(0, 100) : ''}`)
-      .join('\n')
-
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 200,
-      messages: [{
-        role: 'user',
-        content: `Classify each news headline as bullish, bearish, or neutral for US equity market sentiment. Reply with a JSON array only — one label per headline, same order. Example: ["bullish","neutral","bearish"]\n\n${prompt}`,
-      }],
-    })
-
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '[]'
-    const match = text.match(/\[[\s\S]*?\]/)
-    if (!match) throw new Error('no JSON array in response')
-    const parsed: string[] = JSON.parse(match[0])
-    return articles.map((_, i) => {
-      const s = parsed[i]?.toLowerCase()
-      return s === 'bullish' ? 'bullish' : s === 'bearish' ? 'bearish' : 'neutral'
-    })
-  } catch {
-    return articles.map(a => sentimentKeyword(a.headline + ' ' + a.summary))
-  }
+): ('bullish' | 'bearish' | 'neutral')[] {
+  return articles.map(a => sentimentKeyword(a.headline + ' ' + a.summary))
 }
 
 export async function fetchCompanyNews(tickers: string[]): Promise<NewsArticle[]> {
