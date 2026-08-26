@@ -210,7 +210,7 @@ export function buildFallbackPlan(
       : ['session_summary', 'biggest_move'],
     outputFormat: isCasual ? 'one_liner' : isBriefing ? 'briefing' : isSetup ? 'setup' : isCandle ? 'candle_list' : 'prose',
     detailLevel: (isBriefing || isDetailedNarrative || isSetup) ? 'detailed' : 'standard',
-    maxTokens: isCasual ? 50 : isBriefing ? 380 : isSetup ? 500 : isDetailedNarrative ? 650 : isCandle ? 400 : 150,
+    maxTokens: isCasual ? 80 : isBriefing ? 380 : isSetup ? 500 : isDetailedNarrative ? 650 : isCandle ? 400 : 350,
     isHistorical: false,
     requiresSearch: false,
   }

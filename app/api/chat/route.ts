@@ -184,7 +184,7 @@ export async function POST(req: Request) {
     // Safety floor: planner sometimes under-budgets detailed prose — guarantee enough room to finish.
     const maxTokens = plan.detailLevel === 'detailed'
       ? Math.max(plan.maxTokens, 700)
-      : plan.maxTokens
+      : Math.max(plan.maxTokens, 300)
 
     const badges = useSearch
       ? [{ label: 'search', source: 'search' as const }, ...compiledBadges]
