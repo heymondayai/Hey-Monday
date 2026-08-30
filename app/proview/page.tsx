@@ -97,7 +97,7 @@ function stepTape(sim: Sim, t: number) {
   sim.tape.unshift({ t, price:px, size, side, dark, large });
   if (sim.tape.length>420) sim.tape.length=420;
   sim.hist.push({ t, p:sim.price });
-  while (sim.hist.length && t-sim.hist[0].t>66) sim.hist.shift();
+  while (sim.hist.length && t-sim.hist[0].t>210) sim.hist.shift();
 
   for (const kw of KEY_WALLS) {
     if (Math.abs(px-kw.price)<=0.15) {
@@ -166,7 +166,7 @@ function stepBook(sim: Sim, t: number) {
 
   sim.book={bids,asks};
   sim.snaps.push({ t, bids, asks });
-  while (sim.snaps.length && t-sim.snaps[0].t>62) sim.snaps.shift();
+  while (sim.snaps.length && t-sim.snaps[0].t>210) sim.snaps.shift();
   while (sim.sweeps.length && t-sim.sweeps[0].t>5) sim.sweeps.shift();
 }
 
@@ -242,6 +242,7 @@ export default function ProViewPage() {
   const dragRef      = useRef({ active:false, startY:0, startPan:0 });
   const priceDragRef = useRef({ active:false, startY:0, startSpan:0 });
   const mouseRef     = useRef({ x:-1, y:-1 });
+  const timeWinRef   = useRef(60);   // visible heat window in seconds (20–180)
   const cssWRef    = useRef(0);
   const cssHRef    = useRef(0);
 
@@ -281,20 +282,31 @@ export default function ProViewPage() {
 
     const onWheel=(e: WheelEvent)=>{
       e.preventDefault();
-      const rect=canvas.getBoundingClientRect();
-      const cssY=e.clientY-rect.top;
-      const cY0=PAD+84, cY1=cssHRef.current-PAD-148, cH=Math.max(60,cY1-cY0);
-      const eff=sim.viewCenter+panRef.current;
-      const priceAt=eff+spanRef.current/2-((cssY-cY0)/cH)*spanRef.current;
-      // Smooth TradingView-like zoom: normalize delta so trackpad and mousewheel
-      // behave consistently — each discrete notch ≈ 6%
       const raw=e.deltaY;
-      const magnitude=Math.min(Math.abs(raw),120)/120; // 0-1
-      const dir=raw>0?1:-1;
-      const factor=1+dir*0.06*Math.max(magnitude,0.15);
-      const newSpan=clamp(spanRef.current*factor,1.5,20);
-      panRef.current=clamp(priceAt+newSpan*((cssY-cY0)/cH-0.5)-sim.viewCenter,-15,15);
-      spanRef.current=newSpan;
+      const absDelta=Math.abs(raw);
+
+      if (e.altKey) {
+        // Alt+scroll → Y axis zoom (manual price range), anchored to cursor
+        const rect=canvas.getBoundingClientRect();
+        const cssY=e.clientY-rect.top;
+        const cY0=PAD+84, cY1=cssHRef.current-PAD-148, cH=Math.max(60,cY1-cY0);
+        const eff=sim.viewCenter+panRef.current;
+        const priceAt=eff+spanRef.current/2-((cssY-cY0)/cH)*spanRef.current;
+        const magnitude=Math.min(absDelta,120)/120;
+        const dir=raw>0?1:-1;
+        const factor=1+dir*0.06*Math.max(magnitude,0.15);
+        const newSpan=clamp(spanRef.current*factor,1.5,20);
+        panRef.current=clamp(priceAt+newSpan*((cssY-cY0)/cH-0.5)-sim.viewCenter,-15,15);
+        spanRef.current=newSpan;
+      } else {
+        // Default: scroll / pinch / two-finger → X axis zoom (time window)
+        // Small delta = trackpad smooth scroll; large delta = mousewheel notch; ctrlKey = pinch
+        const magnitude=Math.min(absDelta,120)/120;
+        const dir=raw>0?1:-1;
+        // Each "notch" expands/contracts the visible window ~8%
+        const factor=1+dir*0.08*Math.max(magnitude,0.12);
+        timeWinRef.current=clamp(timeWinRef.current*factor,20,180);
+      }
     };
     const onMouseDown=(e: MouseEvent)=>{
       const rect=canvas.getBoundingClientRect();
@@ -334,14 +346,31 @@ export default function ProViewPage() {
       priceDragRef.current.active=false;
       canvas.style.cursor='crosshair';
     };
-    const fitAll=()=>{
-      const prices=[sim.price,...KEY_WALLS.map(k=>k.price)];
-      const minP=Math.min(...prices),maxP=Math.max(...prices);
+    // Auto-scale Y: TradingView behavior — fit all visible price data into the Y axis
+    const autoScaleY=()=>{
+      const tw=timeWinRef.current;
+      const curT=now();
+      const prices:number[]=[sim.price];
+      // Include all price-trail points within current time window
+      for (const hpt of sim.hist) { if (curT-hpt.t<=tw+2) prices.push(hpt.p); }
+      // Include resting book levels
+      for (const l of sim.book.bids) prices.push(l.price);
+      for (const l of sim.book.asks) prices.push(l.price);
+      if (prices.length<2) { panRef.current=0; return; }
+      const minP=Math.min(...prices), maxP=Math.max(...prices);
       const mid=(minP+maxP)/2;
-      spanRef.current=clamp((maxP-minP)*1.4,1.5,20);
+      const range=Math.max(maxP-minP,0.8)*1.18; // 18% vertical padding
+      spanRef.current=clamp(range,1.5,20);
       panRef.current=clamp(mid-sim.viewCenter,-15,15);
     };
-    const onDblClick=()=>{ fitAll(); };
+    const fitAll=()=>{
+      // Fit ALL gamma walls + price (used by header ⊡ button and A key)
+      const prices=[sim.price,...KEY_WALLS.map(k=>k.price)];
+      const minP=Math.min(...prices),maxP=Math.max(...prices);
+      spanRef.current=clamp((maxP-minP)*1.4,1.5,20);
+      panRef.current=clamp((minP+maxP)/2-sim.viewCenter,-15,15);
+    };
+    const onDblClick=()=>{ autoScaleY(); };  // double-click = TradingView auto-scale Y
     const onKeyDown=(e: KeyboardEvent)=>{
       if (e.key==='a'||e.key==='A') fitAll();
       if (e.key==='+'||e.key==='=') spanRef.current=clamp(spanRef.current*0.78,1.5,20);
@@ -365,7 +394,7 @@ export default function ProViewPage() {
       if (cssWRef.current<40||cssHRef.current<40) return;
       const dpr=window.devicePixelRatio||1;
       ctx.setTransform(dpr,0,0,dpr,0,0);
-      draw(ctx,cssWRef.current,cssHRef.current,now(),sim,tokRef.current,tokRef.current===DARK,reducedRef.current,spanRef.current,panRef.current,mouseRef.current);
+      draw(ctx,cssWRef.current,cssHRef.current,now(),sim,tokRef.current,tokRef.current===DARK,reducedRef.current,spanRef.current,panRef.current,mouseRef.current,timeWinRef.current);
     };
     raf=requestAnimationFrame(frame);
 
@@ -389,6 +418,8 @@ export default function ProViewPage() {
     spanRef.current=clamp((maxP-minP)*1.4,1.5,20);
     panRef.current=clamp((minP+maxP)/2-sim.viewCenter,-15,15);
   };
+  const zoomInX= ()=>{ timeWinRef.current=clamp(timeWinRef.current*0.78,20,180); };
+  const zoomOutX=()=>{ timeWinRef.current=clamp(timeWinRef.current*1.28,20,180); };
   const zoomIn= ()=>{ spanRef.current=clamp(spanRef.current*0.78,1.5,20); };
   const zoomOut=()=>{ spanRef.current=clamp(spanRef.current*1.28,1.5,20); };
 
@@ -419,10 +450,15 @@ export default function ProViewPage() {
           <span style={{fontSize:11,letterSpacing:'0.1em',color:dim}}>STRUCTURE + FLOW · SPY 0DTE</span>
         </div>
         <span style={{fontSize:10,letterSpacing:'0.12em',color:T.gold,border:`1px solid ${alpha(T.gold,0.35)}`,borderRadius:999,padding:'3px 10px'}}>● LIVE · DEMO FEED</span>
-        <span style={{fontSize:9,color:dim,letterSpacing:'0.06em'}}>scroll/pinch · drag · dbl-click or A=fit</span>
-        <div style={{display:'flex',gap:3}}>
+        <span style={{fontSize:9,color:dim,letterSpacing:'0.06em'}}>scroll=X zoom · alt+scroll=Y · drag=pan · dbl-click=fit Y</span>
+        <div style={{display:'flex',gap:3,alignItems:'center'}}>
+          <span style={{fontSize:9,color:dim,letterSpacing:'0.05em',marginRight:2}}>TIME</span>
+          {([['−',zoomOutX],['+',zoomInX]] as [string,()=>void][]).map(([lbl,fn])=>(
+            <button key={'t'+lbl} onClick={fn} style={{fontFamily:MONO,fontSize:13,fontWeight:700,color:dim,background:'transparent',border:`1px solid ${border}`,borderRadius:6,padding:'3px 9px',cursor:'pointer',lineHeight:1}}>{lbl}</button>
+          ))}
+          <span style={{fontSize:9,color:dim,letterSpacing:'0.05em',marginLeft:6,marginRight:2}}>PRICE</span>
           {([['−',zoomOut],['+',zoomIn],['⊡',fitView]] as [string,()=>void][]).map(([lbl,fn])=>(
-            <button key={lbl} onClick={fn} style={{fontFamily:MONO,fontSize:13,fontWeight:700,color:dim,background:'transparent',border:`1px solid ${border}`,borderRadius:6,padding:'3px 9px',cursor:'pointer',lineHeight:1}}>{lbl}</button>
+            <button key={'p'+lbl} onClick={fn} style={{fontFamily:MONO,fontSize:13,fontWeight:700,color:dim,background:'transparent',border:`1px solid ${border}`,borderRadius:6,padding:'3px 9px',cursor:'pointer',lineHeight:1}}>{lbl}</button>
           ))}
         </div>
         <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
@@ -442,7 +478,7 @@ export default function ProViewPage() {
 function draw(
   ctx: CanvasRenderingContext2D, w: number, h: number, t: number,
   sim: Sim, T: Tok, dark: boolean, reduced: boolean, span: number, pan: number,
-  mouse: { x: number; y: number },
+  mouse: { x: number; y: number }, timeWindow: number,
 ) {
   const price=sim.price;
   const v=getVerdict(sim,t);
@@ -497,7 +533,7 @@ function draw(
   // heat trail — gamma-curve intensity
   const colW=Math.max(1.6,heatW/(62/0.3))+0.6;
   for (const snap of sim.snaps) {
-    const x=nowX-((t-snap.t)/60)*heatW-colW;
+    const x=nowX-((t-snap.t)/timeWindow)*heatW-colW;
     if (x<heatX0-colW) continue;
     for (const lvl of snap.bids) {
       const inten=Math.pow(clamp(lvl.size/9000,0,1),0.45);
@@ -573,7 +609,7 @@ function draw(
   // price trail
   ctx.beginPath(); let started=false;
   for (const hpt of sim.hist) {
-    const x=nowX-((t-hpt.t)/60)*heatW; if (x<heatX0) continue;
+    const x=nowX-((t-hpt.t)/timeWindow)*heatW; if (x<heatX0) continue;
     const y=yOf(hpt.p);
     if (!started) { ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
   }
@@ -653,7 +689,7 @@ function draw(
 
     // Time-ago label below chart (only in heat zone)
     if (mx>=heatX0&&mx<=nowX) {
-      const secsAgo=Math.round(((nowX-mx)/heatW)*60);
+      const secsAgo=Math.round(((nowX-mx)/heatW)*timeWindow);
       ctx.font=`9px ${MONO}`; ctx.textAlign='center';
       ctx.fillStyle=dimText;
       ctx.fillText(secsAgo<=0?'NOW':`−${secsAgo}s`,mx,chartY1+12);
@@ -665,7 +701,7 @@ function draw(
   ctx.strokeStyle=alpha(T.gold,0.25); ctx.setLineDash([3,4]);
   ctx.beginPath(); ctx.moveTo(nowX,chartY0); ctx.lineTo(nowX,chartY1); ctx.stroke(); ctx.setLineDash([]);
   ctx.font=`9px ${MONO}`; ctx.fillStyle=dimText; ctx.textAlign='center';
-  ctx.fillText('←60s — LIQUIDITY HEAT',(heatX0+nowX)/2,chartY1+12);
+  ctx.fillText(`←${Math.round(timeWindow)}s — LIQUIDITY HEAT`,(heatX0+nowX)/2,chartY1+12);
   ctx.fillText('RESTING BOOK NOW →',(nowX+depthX1)/2,chartY1+12);
 
   // confluence beams
