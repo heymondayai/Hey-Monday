@@ -244,6 +244,7 @@ export default function ProViewPage() {
   const mouseRef     = useRef({ x:-1, y:-1 });
   const timeWinRef   = useRef(60);   // visible heat window in seconds (20–180)
   const timeOffRef   = useRef(0);    // seconds offset from live (0 = present, + = past)
+  const autoFitRef   = useRef(false); // Y auto-scale active (toggle via double-click)
   const cssWRef    = useRef(0);
   const cssHRef    = useRef(0);
 
@@ -283,23 +284,12 @@ export default function ProViewPage() {
 
     const onWheel=(e: WheelEvent)=>{
       e.preventDefault();
-      const absDX=Math.abs(e.deltaX), absDY=Math.abs(e.deltaY);
-
-      // ── Horizontal trackpad swipe → pan time axis (TradingView left/right) ──
-      // Require clearly horizontal intent: |deltaX| > |deltaY|
-      if (absDX>0 && absDX>=absDY && !e.ctrlKey) {
-        // Scale so dragging the full heat area (~400px) pans one full time window
-        const sensitivity=timeWinRef.current/400;
-        // deltaX > 0 = swipe right = newer data; deltaX < 0 = swipe left = older data
-        timeOffRef.current=clamp(timeOffRef.current-e.deltaX*sensitivity,0,200-timeWinRef.current);
-        return;
-      }
-
-      const raw=e.deltaY;
-      const absDelta=Math.abs(raw);
+      autoFitRef.current=false; // any scroll gesture exits auto-fit mode
 
       if (e.altKey) {
-        // Alt+vertical scroll → Y axis zoom (price range), anchored to cursor
+        // Alt+vertical → Y axis zoom anchored to cursor
+        const raw=e.deltaY;
+        const absDelta=Math.abs(raw);
         const rect=canvas.getBoundingClientRect();
         const cssY=e.clientY-rect.top;
         const cY0=PAD+84, cY1=cssHRef.current-PAD-148, cH=Math.max(60,cY1-cY0);
@@ -311,17 +301,27 @@ export default function ProViewPage() {
         const newSpan=clamp(spanRef.current*factor,1.5,20);
         panRef.current=clamp(priceAt+newSpan*((cssY-cY0)/cH-0.5)-sim.viewCenter,-15,15);
         spanRef.current=newSpan;
-      } else {
-        // Vertical scroll / pinch → X axis zoom (time window)
-        const magnitude=Math.min(absDelta,120)/120;
+        return;
+      }
+
+      // Apply horizontal (pan) and vertical (zoom) independently so diagonals do both.
+      // Two fingers left/right → pan time axis proportionally.
+      if (Math.abs(e.deltaX)>0.5) {
+        const sensitivity=timeWinRef.current/400;
+        timeOffRef.current=clamp(timeOffRef.current-e.deltaX*sensitivity,0,200-timeWinRef.current);
+      }
+      // Two fingers up/down (or pinch) → zoom time window, right-edge anchored.
+      if (Math.abs(e.deltaY)>0.5) {
+        const raw=e.deltaY;
+        const magnitude=Math.min(Math.abs(raw),120)/120;
         const dir=raw>0?1:-1;
         const factor=1+dir*0.08*Math.max(magnitude,0.12);
         timeWinRef.current=clamp(timeWinRef.current*factor,20,180);
-        // Keep offset within available buffer when window grows
         timeOffRef.current=clamp(timeOffRef.current,0,200-timeWinRef.current);
       }
     };
     const onMouseDown=(e: MouseEvent)=>{
+      autoFitRef.current=false; // manual drag exits auto-fit
       const rect=canvas.getBoundingClientRect();
       const cssX=e.clientX-rect.left;
       if (cssX>getMX1()-52) {
@@ -359,22 +359,18 @@ export default function ProViewPage() {
       priceDragRef.current.active=false;
       canvas.style.cursor='crosshair';
     };
-    // Auto-scale Y: TradingView behavior — fit all visible price data into the Y axis
+    // Auto-scale Y: fit the visible price trail's H/L to fill the screen (TradingView auto-scale).
     const autoScaleY=()=>{
       const tw=timeWinRef.current, off=timeOffRef.current;
       const curT=now();
       const viewEnd=curT-off, viewStart=viewEnd-tw;
-      const prices:number[]=[sim.price];
-      // Include price-trail points within the currently visible time window
+      const prices:number[]=[];
       for (const hpt of sim.hist) { if (hpt.t>=viewStart-1&&hpt.t<=viewEnd+1) prices.push(hpt.p); }
-      // Include resting book levels (always current)
-      for (const l of sim.book.bids) prices.push(l.price);
-      for (const l of sim.book.asks) prices.push(l.price);
-      if (prices.length<2) { panRef.current=0; return; }
+      if (prices.length===0) prices.push(sim.price);
       const minP=Math.min(...prices), maxP=Math.max(...prices);
       const mid=(minP+maxP)/2;
-      const range=Math.max(maxP-minP,0.8)*1.18; // 18% vertical padding
-      spanRef.current=clamp(range,1.5,20);
+      const range=Math.max(maxP-minP,0.2)*1.10; // 10% padding so H/L nearly touch edges
+      spanRef.current=clamp(range,0.3,20);
       panRef.current=clamp(mid-sim.viewCenter,-15,15);
     };
     const fitAll=()=>{
@@ -384,11 +380,19 @@ export default function ProViewPage() {
       spanRef.current=clamp((maxP-minP)*1.4,1.5,20);
       panRef.current=clamp((minP+maxP)/2-sim.viewCenter,-15,15);
     };
-    const onDblClick=()=>{ autoScaleY(); };  // double-click = TradingView auto-scale Y
+    // Toggle: first double-click fits H/L to screen; second exits without re-fitting.
+    const onDblClick=()=>{
+      if (autoFitRef.current) {
+        autoFitRef.current=false;
+      } else {
+        autoScaleY();
+        autoFitRef.current=true;
+      }
+    };
     const onKeyDown=(e: KeyboardEvent)=>{
       if (e.key==='a'||e.key==='A') fitAll();
-      if (e.key==='+'||e.key==='=') spanRef.current=clamp(spanRef.current*0.78,1.5,20);
-      if (e.key==='-') spanRef.current=clamp(spanRef.current*1.28,1.5,20);
+      if (e.key==='+'||e.key==='=') { autoFitRef.current=false; spanRef.current=clamp(spanRef.current*0.78,1.5,20); }
+      if (e.key==='-') { autoFitRef.current=false; spanRef.current=clamp(spanRef.current*1.28,1.5,20); }
     };
 
     canvas.addEventListener('wheel',onWheel,{passive:false});
@@ -406,6 +410,7 @@ export default function ProViewPage() {
     const frame=()=>{
       raf=requestAnimationFrame(frame);
       if (cssWRef.current<40||cssHRef.current<40) return;
+      if (autoFitRef.current) autoScaleY(); // continuously re-fit Y while active
       const dpr=window.devicePixelRatio||1;
       ctx.setTransform(dpr,0,0,dpr,0,0);
       draw(ctx,cssWRef.current,cssHRef.current,now(),sim,tokRef.current,tokRef.current===DARK,reducedRef.current,spanRef.current,panRef.current,mouseRef.current,timeWinRef.current,timeOffRef.current);
@@ -425,6 +430,7 @@ export default function ProViewPage() {
   },[]);
 
   const fitView=()=>{
+    autoFitRef.current=false;
     if (!simRef.current) return;
     const sim=simRef.current;
     const prices=[sim.price,...KEY_WALLS.map(k=>k.price)];
@@ -434,8 +440,8 @@ export default function ProViewPage() {
   };
   const zoomInX= ()=>{ timeWinRef.current=clamp(timeWinRef.current*0.78,20,180); };
   const zoomOutX=()=>{ timeWinRef.current=clamp(timeWinRef.current*1.28,20,180); };
-  const zoomIn= ()=>{ spanRef.current=clamp(spanRef.current*0.78,1.5,20); };
-  const zoomOut=()=>{ spanRef.current=clamp(spanRef.current*1.28,1.5,20); };
+  const zoomIn= ()=>{ autoFitRef.current=false; spanRef.current=clamp(spanRef.current*0.78,1.5,20); };
+  const zoomOut=()=>{ autoFitRef.current=false; spanRef.current=clamp(spanRef.current*1.28,1.5,20); };
 
   const T=isDark?DARK:LIGHT;
   const border=isDark?'rgba(255,255,255,0.10)':'rgba(0,0,0,0.12)';
