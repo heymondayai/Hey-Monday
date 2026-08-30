@@ -237,9 +237,11 @@ export default function ProViewPage() {
   const simRef     = useRef<Sim|null>(null);
   const tokRef     = useRef<Tok>(DARK);
   const reducedRef = useRef(false);
-  const spanRef    = useRef(6.2);
-  const panRef     = useRef(0);
-  const dragRef    = useRef({ active:false, startY:0, startPan:0 });
+  const spanRef      = useRef(6.2);
+  const panRef       = useRef(0);
+  const dragRef      = useRef({ active:false, startY:0, startPan:0 });
+  const priceDragRef = useRef({ active:false, startY:0, startSpan:0 });
+  const mouseRef     = useRef({ x:-1, y:-1 });
   const cssWRef    = useRef(0);
   const cssHRef    = useRef(0);
 
@@ -270,6 +272,13 @@ export default function ProViewPage() {
     });
     ro.observe(wrap);
 
+    // Compute mX1 from current canvas width (matches draw() layout logic)
+    const getMX1=()=>{
+      const w=cssWRef.current, narrow=w<900;
+      const tapeW=narrow?200:252;
+      return w-PAD-tapeW-10;
+    };
+
     const onWheel=(e: WheelEvent)=>{
       e.preventDefault();
       const rect=canvas.getBoundingClientRect();
@@ -277,24 +286,75 @@ export default function ProViewPage() {
       const cY0=PAD+84, cY1=cssHRef.current-PAD-148, cH=Math.max(60,cY1-cY0);
       const eff=sim.viewCenter+panRef.current;
       const priceAt=eff+spanRef.current/2-((cssY-cY0)/cH)*spanRef.current;
-      const newSpan=clamp(spanRef.current*(e.deltaY>0?1.12:0.89),1.5,20);
+      // Smooth TradingView-like zoom: normalize delta so trackpad and mousewheel
+      // behave consistently — each discrete notch ≈ 6%
+      const raw=e.deltaY;
+      const magnitude=Math.min(Math.abs(raw),120)/120; // 0-1
+      const dir=raw>0?1:-1;
+      const factor=1+dir*0.06*Math.max(magnitude,0.15);
+      const newSpan=clamp(spanRef.current*factor,1.5,20);
       panRef.current=clamp(priceAt+newSpan*((cssY-cY0)/cH-0.5)-sim.viewCenter,-15,15);
       spanRef.current=newSpan;
     };
-    const onMouseDown=(e: MouseEvent)=>{ dragRef.current={active:true,startY:e.clientY,startPan:panRef.current}; canvas.style.cursor='grabbing'; };
-    const onMouseMove=(e: MouseEvent)=>{
-      if (!dragRef.current.active) return;
-      const cH=Math.max(60,cssHRef.current-PAD-148-(PAD+84));
-      panRef.current=clamp(dragRef.current.startPan+(e.clientY-dragRef.current.startY)/cH*spanRef.current,-15,15);
+    const onMouseDown=(e: MouseEvent)=>{
+      const rect=canvas.getBoundingClientRect();
+      const cssX=e.clientX-rect.left;
+      if (cssX>getMX1()-52) {
+        // Price-axis zone: drag vertically to zoom span
+        priceDragRef.current={active:true,startY:e.clientY,startSpan:spanRef.current};
+        canvas.style.cursor='ns-resize';
+      } else {
+        dragRef.current={active:true,startY:e.clientY,startPan:panRef.current};
+        canvas.style.cursor='grabbing';
+      }
     };
-    const onMouseUp=()=>{ dragRef.current.active=false; canvas.style.cursor='crosshair'; };
-    const onDblClick=()=>{ panRef.current=0; };
+    const onMouseMove=(e: MouseEvent)=>{
+      const rect=canvas.getBoundingClientRect();
+      mouseRef.current={x:e.clientX-rect.left,y:e.clientY-rect.top};
+      if (dragRef.current.active) {
+        const cH=Math.max(60,cssHRef.current-PAD-148-(PAD+84));
+        panRef.current=clamp(dragRef.current.startPan+(e.clientY-dragRef.current.startY)/cH*spanRef.current,-15,15);
+      } else if (priceDragRef.current.active) {
+        const cH=Math.max(60,cssHRef.current-PAD-148-(PAD+84));
+        const dy=e.clientY-priceDragRef.current.startY;
+        // dragging down = zoom out, up = zoom in
+        const factor=1+dy/cH*2.2;
+        spanRef.current=clamp(priceDragRef.current.startSpan*factor,1.5,20);
+      } else {
+        const cssX=e.clientX-rect.left;
+        canvas.style.cursor=cssX>getMX1()-52?'ns-resize':'crosshair';
+      }
+    };
+    const onMouseLeave=()=>{
+      mouseRef.current={x:-1,y:-1};
+      if (!dragRef.current.active&&!priceDragRef.current.active) canvas.style.cursor='crosshair';
+    };
+    const onMouseUp=()=>{
+      dragRef.current.active=false;
+      priceDragRef.current.active=false;
+      canvas.style.cursor='crosshair';
+    };
+    const fitAll=()=>{
+      const prices=[sim.price,...KEY_WALLS.map(k=>k.price)];
+      const minP=Math.min(...prices),maxP=Math.max(...prices);
+      const mid=(minP+maxP)/2;
+      spanRef.current=clamp((maxP-minP)*1.4,1.5,20);
+      panRef.current=clamp(mid-sim.viewCenter,-15,15);
+    };
+    const onDblClick=()=>{ fitAll(); };
+    const onKeyDown=(e: KeyboardEvent)=>{
+      if (e.key==='a'||e.key==='A') fitAll();
+      if (e.key==='+'||e.key==='=') spanRef.current=clamp(spanRef.current*0.78,1.5,20);
+      if (e.key==='-') spanRef.current=clamp(spanRef.current*1.28,1.5,20);
+    };
 
     canvas.addEventListener('wheel',onWheel,{passive:false});
     canvas.addEventListener('mousedown',onMouseDown);
+    canvas.addEventListener('mouseleave',onMouseLeave);
     window.addEventListener('mousemove',onMouseMove);
     window.addEventListener('mouseup',onMouseUp);
     canvas.addEventListener('dblclick',onDblClick);
+    window.addEventListener('keydown',onKeyDown);
 
     const tapeTimer=window.setInterval(()=>stepTape(sim,now()),160);
     const bookTimer=window.setInterval(()=>stepBook(sim,now()),300);
@@ -305,17 +365,32 @@ export default function ProViewPage() {
       if (cssWRef.current<40||cssHRef.current<40) return;
       const dpr=window.devicePixelRatio||1;
       ctx.setTransform(dpr,0,0,dpr,0,0);
-      draw(ctx,cssWRef.current,cssHRef.current,now(),sim,tokRef.current,tokRef.current===DARK,reducedRef.current,spanRef.current,panRef.current);
+      draw(ctx,cssWRef.current,cssHRef.current,now(),sim,tokRef.current,tokRef.current===DARK,reducedRef.current,spanRef.current,panRef.current,mouseRef.current);
     };
     raf=requestAnimationFrame(frame);
 
     return ()=>{
       cancelAnimationFrame(raf); clearInterval(tapeTimer); clearInterval(bookTimer); ro.disconnect();
-      canvas.removeEventListener('wheel',onWheel); canvas.removeEventListener('mousedown',onMouseDown);
-      window.removeEventListener('mousemove',onMouseMove); window.removeEventListener('mouseup',onMouseUp);
+      canvas.removeEventListener('wheel',onWheel);
+      canvas.removeEventListener('mousedown',onMouseDown);
+      canvas.removeEventListener('mouseleave',onMouseLeave);
+      window.removeEventListener('mousemove',onMouseMove);
+      window.removeEventListener('mouseup',onMouseUp);
       canvas.removeEventListener('dblclick',onDblClick);
+      window.removeEventListener('keydown',onKeyDown);
     };
   },[]);
+
+  const fitView=()=>{
+    if (!simRef.current) return;
+    const sim=simRef.current;
+    const prices=[sim.price,...KEY_WALLS.map(k=>k.price)];
+    const minP=Math.min(...prices),maxP=Math.max(...prices);
+    spanRef.current=clamp((maxP-minP)*1.4,1.5,20);
+    panRef.current=clamp((minP+maxP)/2-sim.viewCenter,-15,15);
+  };
+  const zoomIn= ()=>{ spanRef.current=clamp(spanRef.current*0.78,1.5,20); };
+  const zoomOut=()=>{ spanRef.current=clamp(spanRef.current*1.28,1.5,20); };
 
   const T=isDark?DARK:LIGHT;
   const border=isDark?'rgba(255,255,255,0.10)':'rgba(0,0,0,0.12)';
@@ -344,7 +419,12 @@ export default function ProViewPage() {
           <span style={{fontSize:11,letterSpacing:'0.1em',color:dim}}>STRUCTURE + FLOW · SPY 0DTE</span>
         </div>
         <span style={{fontSize:10,letterSpacing:'0.12em',color:T.gold,border:`1px solid ${alpha(T.gold,0.35)}`,borderRadius:999,padding:'3px 10px'}}>● LIVE · DEMO FEED</span>
-        <span style={{fontSize:9,color:dim,letterSpacing:'0.06em'}}>scroll to zoom · drag to pan · dbl-click to recenter</span>
+        <span style={{fontSize:9,color:dim,letterSpacing:'0.06em'}}>scroll/pinch · drag · dbl-click or A=fit</span>
+        <div style={{display:'flex',gap:3}}>
+          {([['−',zoomOut],['+',zoomIn],['⊡',fitView]] as [string,()=>void][]).map(([lbl,fn])=>(
+            <button key={lbl} onClick={fn} style={{fontFamily:MONO,fontSize:13,fontWeight:700,color:dim,background:'transparent',border:`1px solid ${border}`,borderRadius:6,padding:'3px 9px',cursor:'pointer',lineHeight:1}}>{lbl}</button>
+          ))}
+        </div>
         <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
           {dot(T.green,'BIDS / BUYS')}{dot(T.red,'ASKS / SELLS')}{dot(T.gold,'GAMMA STRUCTURE')}{dot(T.purple,'DARK POOL')}
           <button onClick={toggleTheme} style={{fontFamily:MONO,fontSize:12,color:T.text,background:'transparent',border:`1px solid ${border}`,borderRadius:8,padding:'5px 10px',cursor:'pointer'}}>
@@ -362,6 +442,7 @@ export default function ProViewPage() {
 function draw(
   ctx: CanvasRenderingContext2D, w: number, h: number, t: number,
   sim: Sim, T: Tok, dark: boolean, reduced: boolean, span: number, pan: number,
+  mouse: { x: number; y: number },
 ) {
   const price=sim.price;
   const v=getVerdict(sim,t);
@@ -544,6 +625,41 @@ function draw(
   }
 
   ctx.restore();
+
+  /* ————— CROSSHAIR ————— */
+  if (mouse.x>mX0&&mouse.x<mX1&&mouse.y>chartY0&&mouse.y<chartY1) {
+    const mx=mouse.x, my=mouse.y;
+    const priceAtCursor=eff+span/2-((my-chartY0)/chartH)*span;
+
+    // Dashed crosshair lines
+    ctx.save();
+    ctx.strokeStyle=dark?'rgba(255,255,255,0.22)':'rgba(0,0,0,0.22)';
+    ctx.lineWidth=0.75;
+    ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(mX0+4,my); ctx.lineTo(mX1-4,my); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(mx,chartY0); ctx.lineTo(mx,chartY1); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Price label tag on right axis (TradingView-style filled chip)
+    ctx.font=`700 11px ${MONO}`;
+    const pLabel=priceAtCursor.toFixed(2);
+    const plW=ctx.measureText(pLabel).width;
+    const tagX=mX1-6-plW-10, tagY=my-10;
+    rr(ctx,tagX,tagY,plW+10,20,4);
+    ctx.fillStyle=dark?'rgba(40,40,40,0.92)':'rgba(220,220,220,0.92)'; ctx.fill();
+    ctx.strokeStyle=dark?'rgba(255,255,255,0.3)':'rgba(0,0,0,0.3)'; ctx.lineWidth=0.8; ctx.stroke();
+    ctx.fillStyle=T.text; ctx.textAlign='left';
+    ctx.fillText(pLabel,tagX+5,my+0.5);
+
+    // Time-ago label below chart (only in heat zone)
+    if (mx>=heatX0&&mx<=nowX) {
+      const secsAgo=Math.round(((nowX-mx)/heatW)*60);
+      ctx.font=`9px ${MONO}`; ctx.textAlign='center';
+      ctx.fillStyle=dimText;
+      ctx.fillText(secsAgo<=0?'NOW':`−${secsAgo}s`,mx,chartY1+12);
+    }
+    ctx.restore();
+  }
 
   // divider labels
   ctx.strokeStyle=alpha(T.gold,0.25); ctx.setLineDash([3,4]);
