@@ -1,17 +1,37 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
-const T = {
-  bg:     '#0a0a0a',
-  panel:  '#111111',
-  border: '#1e1e1e',
-  gold:   '#c9922a',
-  goldDim:'#7a5a1a',
-  text:   '#e8e0d0',
-  dim:    '#6b6560',
-  green:  '#00c896',
-  red:    '#e05252',
-  blue:   '#4a9eff',
+const PREFS_KEY = 'heymonday_dashboard_prefs_v1'
+
+const DARK = {
+  bg:       '#0a0a0a',
+  panel:    '#111111',
+  border:   '#1e1e1e',
+  gold:     '#c9922a',
+  goldDim:  '#7a5a1a',
+  text:     '#e8e0d0',
+  dim:      '#6b6560',
+  green:    '#00c896',
+  red:      '#e05252',
+  blue:     '#4a9eff',
+  rowAlt:   'rgba(255,255,255,0.015)',
+  rowHover: 'rgba(201,146,42,0.05)',
+}
+
+const LIGHT = {
+  bg:       '#f5f4f0',
+  panel:    '#ffffff',
+  border:   '#dedad4',
+  gold:     '#b07820',
+  goldDim:  '#c9922a',
+  text:     '#1a1710',
+  dim:      '#8c8680',
+  green:    '#00966e',
+  red:      '#c94040',
+  blue:     '#1a7fd4',
+  rowAlt:   'rgba(0,0,0,0.025)',
+  rowHover: 'rgba(176,120,32,0.06)',
 }
 
 interface Stock {
@@ -85,13 +105,24 @@ function fmtMcap(v: number) {
 type SortKey = 'change' | 'volume' | 'rsi' | 'marketCap' | 'signal' | 'price'
 
 export default function ScreenerPage() {
-  const [sector,  setSector]  = useState('All')
-  const [setup,   setSetup]   = useState('All')
+  const router = useRouter()
+  const [isDark, setIsDark] = useState(true)
+  const [sector,    setSector]    = useState('All')
+  const [setup,     setSetup]     = useState('All')
   const [rsiFilter, setRsiFilter] = useState('All')
   const [maFilter,  setMaFilter]  = useState('All')
-  const [sortKey, setSortKey] = useState<SortKey>('signal')
-  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
-  const [search,  setSearch]  = useState('')
+  const [sortKey,   setSortKey]   = useState<SortKey>('signal')
+  const [sortDir,   setSortDir]   = useState<'desc' | 'asc'>('desc')
+  const [search,    setSearch]    = useState('')
+
+  useEffect(() => {
+    try {
+      const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')
+      if (typeof p.isDark === 'boolean') setIsDark(p.isDark)
+    } catch {}
+  }, [])
+
+  const T = isDark ? DARK : LIGHT
 
   const results = useMemo(() => {
     let filtered = STOCKS.filter(s => {
@@ -127,7 +158,7 @@ export default function ScreenerPage() {
     Breakout:  T.gold,
     Momentum:  T.green,
     Pullback:  T.blue,
-    Oversold:  '#c97a2a',
+    Oversold:  isDark ? '#c97a2a' : '#b06010',
     Reversal:  '#9b7fd4',
   }
 
@@ -136,7 +167,7 @@ export default function ScreenerPage() {
       padding: '4px 12px', borderRadius: 4, fontSize: 11, fontWeight: 600, letterSpacing: '0.05em',
       cursor: 'pointer', transition: 'all 0.15s',
       background: active ? T.gold : 'transparent',
-      color: active ? '#000' : T.dim,
+      color: active ? (isDark ? '#000' : '#fff') : T.dim,
       border: `1px solid ${active ? T.gold : T.border}`,
     }}>{label}</button>
   )
@@ -147,6 +178,7 @@ export default function ScreenerPage() {
       letterSpacing: '0.08em', color: (sortKey === k && sortable) ? T.gold : T.dim,
       cursor: sortable ? 'pointer' : 'default', userSelect: 'none',
       borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap',
+      background: T.panel,
     }}>
       {label}{sortable && k && sortKey === k ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
     </th>
@@ -157,14 +189,23 @@ export default function ScreenerPage() {
 
       {/* Header */}
       <div style={{ borderBottom: `1px solid ${T.border}`, padding: '14px 24px', display: 'flex', alignItems: 'center', gap: 16 }}>
+        <button onClick={() => router.push('/dashboard')} style={{
+          fontFamily: "'SF Mono', 'Fira Code', monospace",
+          fontSize: 13, fontWeight: 700, color: T.gold,
+          background: 'transparent', border: `1px solid ${T.gold}72`,
+          borderRadius: 8, padding: '6px 14px', cursor: 'pointer',
+          flexShrink: 0,
+        }}>← Dashboard</button>
+
         <div>
           <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '0.04em', color: T.text }}>Market Screener</div>
           <div style={{ fontSize: 11, color: T.dim, marginTop: 2 }}>Broad market swing trade scanner</div>
         </div>
+
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
             padding: '4px 10px', borderRadius: 4, fontSize: 10, fontWeight: 700,
-            background: 'rgba(201,146,42,0.12)', color: T.goldDim,
+            background: `${T.gold}18`, color: T.goldDim,
             border: `1px solid ${T.goldDim}`, letterSpacing: '0.06em',
           }}>DEMO — CONNECT POLYGON FOR LIVE DATA</div>
           <div style={{ fontSize: 12, color: T.dim }}>{results.length} results</div>
@@ -172,7 +213,7 @@ export default function ScreenerPage() {
       </div>
 
       {/* Filter bar */}
-      <div style={{ padding: '12px 24px', borderBottom: `1px solid ${T.border}`, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' }}>
+      <div style={{ padding: '12px 24px', borderBottom: `1px solid ${T.border}`, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', background: T.bg }}>
 
         {/* Search */}
         <input
@@ -218,7 +259,7 @@ export default function ScreenerPage() {
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ background: T.panel }}>
+            <tr>
               <ColHeader label="TICKER"    />
               <ColHeader label="PRICE"     sortable k="price"     />
               <ColHeader label="CHANGE"    sortable k="change"    />
@@ -234,13 +275,15 @@ export default function ScreenerPage() {
             {results.map((s, i) => {
               const volRatio = s.volume / s.avgVolume
               const rsiColor = s.rsi < 35 ? T.green : s.rsi > 65 ? T.red : T.text
+              const rowBase = i % 2 === 0 ? 'transparent' : T.rowAlt
               return (
                 <tr key={s.ticker} style={{
-                  background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)',
+                  background: rowBase,
                   borderBottom: `1px solid ${T.border}`,
                   transition: 'background 0.1s',
-                }} onMouseEnter={e => (e.currentTarget.style.background = 'rgba(201,146,42,0.05)')}
-                   onMouseLeave={e => (e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)')}>
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = T.rowHover)}
+                onMouseLeave={e => (e.currentTarget.style.background = rowBase)}>
 
                   {/* Ticker */}
                   <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
@@ -290,9 +333,9 @@ export default function ScreenerPage() {
                       {[{ label:'20', v: s.ma20 }, { label:'50', v: s.ma50 }, { label:'200', v: s.ma200 }].map(m => (
                         <div key={m.label} style={{
                           padding: '2px 5px', borderRadius: 3, fontSize: 9, fontWeight: 700,
-                          background: m.v ? 'rgba(0,200,150,0.12)' : 'rgba(224,82,82,0.12)',
+                          background: m.v ? `${T.green}20` : `${T.red}20`,
                           color: m.v ? T.green : T.red,
-                          border: `1px solid ${m.v ? 'rgba(0,200,150,0.3)' : 'rgba(224,82,82,0.3)'}`,
+                          border: `1px solid ${m.v ? T.green : T.red}4d`,
                         }}>{m.label}</div>
                       ))}
                     </div>
