@@ -504,7 +504,16 @@ function draw(
   };
   panel(gX0,gX1); panel(mX0,mX1); panel(tX0,tX1);
 
-  sim.viewCenter+=(price-sim.viewCenter)*0.04;
+  // Hold Y range fixed while price stays inside it.
+  // Only scroll (gently) when price exits the visible boundary.
+  const _eff0=sim.viewCenter+pan;
+  if (price>_eff0+span/2) {
+    // Price above top edge — nudge view up, land price 15% from top
+    sim.viewCenter+=(price-(_eff0+span/2)+span*0.15)*0.08;
+  } else if (price<_eff0-span/2) {
+    // Price below bottom edge — nudge view down, land price 15% from bottom
+    sim.viewCenter+=(price-(_eff0-span/2)-span*0.15)*0.08;
+  }
   const eff=sim.viewCenter+pan;
   const chartY0=PAD+84, chartY1=h-PAD-148;
   const chartH=Math.max(60,chartY1-chartY0);
