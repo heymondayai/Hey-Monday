@@ -243,6 +243,7 @@ export default function ProViewPage() {
   const priceDragRef = useRef({ active:false, startY:0, startSpan:0 });
   const mouseRef     = useRef({ x:-1, y:-1 });
   const timeWinRef   = useRef(60);   // visible heat window in seconds (20–180)
+  const timeOffRef   = useRef(0);    // seconds offset from live (0 = present, + = past)
   const cssWRef    = useRef(0);
   const cssHRef    = useRef(0);
 
@@ -282,11 +283,23 @@ export default function ProViewPage() {
 
     const onWheel=(e: WheelEvent)=>{
       e.preventDefault();
+      const absDX=Math.abs(e.deltaX), absDY=Math.abs(e.deltaY);
+
+      // ── Horizontal trackpad swipe → pan time axis (TradingView left/right) ──
+      // Require clearly horizontal intent: |deltaX| > |deltaY|
+      if (absDX>0 && absDX>=absDY && !e.ctrlKey) {
+        // Scale so dragging the full heat area (~400px) pans one full time window
+        const sensitivity=timeWinRef.current/400;
+        // deltaX > 0 = swipe right = newer data; deltaX < 0 = swipe left = older data
+        timeOffRef.current=clamp(timeOffRef.current-e.deltaX*sensitivity,0,200-timeWinRef.current);
+        return;
+      }
+
       const raw=e.deltaY;
       const absDelta=Math.abs(raw);
 
       if (e.altKey) {
-        // Alt+scroll → Y axis zoom (manual price range), anchored to cursor
+        // Alt+vertical scroll → Y axis zoom (price range), anchored to cursor
         const rect=canvas.getBoundingClientRect();
         const cssY=e.clientY-rect.top;
         const cY0=PAD+84, cY1=cssHRef.current-PAD-148, cH=Math.max(60,cY1-cY0);
@@ -299,13 +312,13 @@ export default function ProViewPage() {
         panRef.current=clamp(priceAt+newSpan*((cssY-cY0)/cH-0.5)-sim.viewCenter,-15,15);
         spanRef.current=newSpan;
       } else {
-        // Default: scroll / pinch / two-finger → X axis zoom (time window)
-        // Small delta = trackpad smooth scroll; large delta = mousewheel notch; ctrlKey = pinch
+        // Vertical scroll / pinch → X axis zoom (time window)
         const magnitude=Math.min(absDelta,120)/120;
         const dir=raw>0?1:-1;
-        // Each "notch" expands/contracts the visible window ~8%
         const factor=1+dir*0.08*Math.max(magnitude,0.12);
         timeWinRef.current=clamp(timeWinRef.current*factor,20,180);
+        // Keep offset within available buffer when window grows
+        timeOffRef.current=clamp(timeOffRef.current,0,200-timeWinRef.current);
       }
     };
     const onMouseDown=(e: MouseEvent)=>{
@@ -348,12 +361,13 @@ export default function ProViewPage() {
     };
     // Auto-scale Y: TradingView behavior — fit all visible price data into the Y axis
     const autoScaleY=()=>{
-      const tw=timeWinRef.current;
+      const tw=timeWinRef.current, off=timeOffRef.current;
       const curT=now();
+      const viewEnd=curT-off, viewStart=viewEnd-tw;
       const prices:number[]=[sim.price];
-      // Include all price-trail points within current time window
-      for (const hpt of sim.hist) { if (curT-hpt.t<=tw+2) prices.push(hpt.p); }
-      // Include resting book levels
+      // Include price-trail points within the currently visible time window
+      for (const hpt of sim.hist) { if (hpt.t>=viewStart-1&&hpt.t<=viewEnd+1) prices.push(hpt.p); }
+      // Include resting book levels (always current)
       for (const l of sim.book.bids) prices.push(l.price);
       for (const l of sim.book.asks) prices.push(l.price);
       if (prices.length<2) { panRef.current=0; return; }
@@ -394,7 +408,7 @@ export default function ProViewPage() {
       if (cssWRef.current<40||cssHRef.current<40) return;
       const dpr=window.devicePixelRatio||1;
       ctx.setTransform(dpr,0,0,dpr,0,0);
-      draw(ctx,cssWRef.current,cssHRef.current,now(),sim,tokRef.current,tokRef.current===DARK,reducedRef.current,spanRef.current,panRef.current,mouseRef.current,timeWinRef.current);
+      draw(ctx,cssWRef.current,cssHRef.current,now(),sim,tokRef.current,tokRef.current===DARK,reducedRef.current,spanRef.current,panRef.current,mouseRef.current,timeWinRef.current,timeOffRef.current);
     };
     raf=requestAnimationFrame(frame);
 
@@ -478,8 +492,9 @@ export default function ProViewPage() {
 function draw(
   ctx: CanvasRenderingContext2D, w: number, h: number, t: number,
   sim: Sim, T: Tok, dark: boolean, reduced: boolean, span: number, pan: number,
-  mouse: { x: number; y: number }, timeWindow: number,
+  mouse: { x: number; y: number }, timeWindow: number, timeOffset: number,
 ) {
+  const viewEndT=t-timeOffset;  // the time represented at the right edge (nowX)
   const price=sim.price;
   const v=getVerdict(sim,t);
   const pulse=reduced?0.75:0.6+0.4*Math.sin(t*4.2);
@@ -542,7 +557,7 @@ function draw(
   // heat trail — gamma-curve intensity
   const colW=Math.max(1.6,heatW/(62/0.3))+0.6;
   for (const snap of sim.snaps) {
-    const x=nowX-((t-snap.t)/timeWindow)*heatW-colW;
+    const x=nowX-((viewEndT-snap.t)/timeWindow)*heatW-colW;
     if (x<heatX0-colW) continue;
     for (const lvl of snap.bids) {
       const inten=Math.pow(clamp(lvl.size/9000,0,1),0.45);
@@ -618,21 +633,23 @@ function draw(
   // price trail
   ctx.beginPath(); let started=false;
   for (const hpt of sim.hist) {
-    const x=nowX-((t-hpt.t)/timeWindow)*heatW; if (x<heatX0) continue;
+    const x=nowX-((viewEndT-hpt.t)/timeWindow)*heatW; if (x<heatX0) continue;
     const y=yOf(hpt.p);
     if (!started) { ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
   }
   ctx.strokeStyle=alpha(T.gold,0.9); ctx.lineWidth=1.6;
   ctx.shadowColor=alpha(T.gold,0.6); ctx.shadowBlur=6; ctx.stroke(); ctx.shadowBlur=0;
 
-  // live prints on now-line
-  for (const p of sim.tape) {
-    const age=t-p.t; if (age>1.6) break;
-    const y=yOf(p.price), r=1.5+Math.sqrt(p.size)/22;
-    const c=p.dark?T.purple:p.side===1?T.green:T.red;
-    ctx.beginPath(); ctx.arc(nowX,y,r,0,Math.PI*2);
-    ctx.fillStyle=alpha(c,0.75*(1-age/1.6)); ctx.fill();
-    if (p.large) { ctx.beginPath(); ctx.arc(nowX,y,r+age*16,0,Math.PI*2); ctx.strokeStyle=alpha(c,0.6*(1-age/1.6)); ctx.lineWidth=1.5; ctx.stroke(); }
+  // live prints — only draw when at live edge (timeOffset near 0)
+  if (timeOffset<1) {
+    for (const p of sim.tape) {
+      const age=t-p.t; if (age>1.6) break;
+      const y=yOf(p.price), r=1.5+Math.sqrt(p.size)/22;
+      const c=p.dark?T.purple:p.side===1?T.green:T.red;
+      ctx.beginPath(); ctx.arc(nowX,y,r,0,Math.PI*2);
+      ctx.fillStyle=alpha(c,0.75*(1-age/1.6)); ctx.fill();
+      if (p.large) { ctx.beginPath(); ctx.arc(nowX,y,r+age*16,0,Math.PI*2); ctx.strokeStyle=alpha(c,0.6*(1-age/1.6)); ctx.lineWidth=1.5; ctx.stroke(); }
+    }
   }
 
   // price line + tag
@@ -698,10 +715,11 @@ function draw(
 
     // Time-ago label below chart (only in heat zone)
     if (mx>=heatX0&&mx<=nowX) {
-      const secsAgo=Math.round(((nowX-mx)/heatW)*timeWindow);
+      const secsFromRight=Math.round(((nowX-mx)/heatW)*timeWindow);
+      const totalSecsAgo=secsFromRight+Math.round(timeOffset);
       ctx.font=`9px ${MONO}`; ctx.textAlign='center';
       ctx.fillStyle=dimText;
-      ctx.fillText(secsAgo<=0?'NOW':`−${secsAgo}s`,mx,chartY1+12);
+      ctx.fillText(totalSecsAgo<=0?'NOW':`−${totalSecsAgo}s`,mx,chartY1+12);
     }
     ctx.restore();
   }
@@ -710,8 +728,10 @@ function draw(
   ctx.strokeStyle=alpha(T.gold,0.25); ctx.setLineDash([3,4]);
   ctx.beginPath(); ctx.moveTo(nowX,chartY0); ctx.lineTo(nowX,chartY1); ctx.stroke(); ctx.setLineDash([]);
   ctx.font=`9px ${MONO}`; ctx.fillStyle=dimText; ctx.textAlign='center';
-  ctx.fillText(`←${Math.round(timeWindow)}s — LIQUIDITY HEAT`,(heatX0+nowX)/2,chartY1+12);
-  ctx.fillText('RESTING BOOK NOW →',(nowX+depthX1)/2,chartY1+12);
+  const offLbl=timeOffset>0.5?` · HISTORY −${Math.round(timeOffset)}s`:'';
+  ctx.fillText(`←${Math.round(timeWindow)}s HEAT${offLbl}`,(heatX0+nowX)/2,chartY1+12);
+  ctx.fillStyle=timeOffset>0.5?alpha(T.gold,0.9):dimText;
+  ctx.fillText(timeOffset>0.5?'◀ SWIPE RIGHT FOR LIVE':'RESTING BOOK →',(nowX+depthX1)/2,chartY1+12);
 
   // confluence beams
   for (const kw of KEY_WALLS) {
