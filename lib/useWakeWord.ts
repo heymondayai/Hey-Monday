@@ -202,9 +202,10 @@ export function useWakeWord({
     onDetectedRef.current()
 
     try {
-      const AudioCtx = globalThis.AudioContext || (globalThis as any).webkitAudioContext
-      const actx = new AudioCtx()
-      if (actx.state === 'suspended') await actx.resume()
+      // Reuse the already-running mic AudioContext so osc1 starts immediately
+      // (creating a new context every detection has ~100ms init lag on the first beep).
+      const actx = audioCtxRef.current
+      if (!actx) throw new Error('no audio context')
 
       const osc1 = actx.createOscillator()
       const osc2 = actx.createOscillator()
@@ -228,7 +229,7 @@ export function useWakeWord({
       osc1.stop(actx.currentTime + 0.14)
       osc2.start(actx.currentTime + 0.12)
       osc2.stop(actx.currentTime + 0.38)
-      osc2.onended = () => { void actx.close() }
+      osc2.onended = () => { /* shared context — do not close */ }
     } catch (err) {
       console.error('Wake word chime failed:', err)
     }
