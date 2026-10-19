@@ -68,6 +68,7 @@ export function useWakeWord({
 
   // Audio pipeline refs
   const audioCtxRef      = useRef<AudioContext | null>(null)
+  const chimeCtxRef      = useRef<AudioContext | null>(null) // separate context — no shared thread with mic
   const streamRef        = useRef<MediaStream | null>(null)
   const processorRef     = useRef<ScriptProcessorNode | null>(null)
   const sourceRef        = useRef<MediaStreamAudioSourceNode | null>(null)
@@ -201,45 +202,44 @@ export function useWakeWord({
     consecutiveHitsRef.current = 0
     onDetectedRef.current()
 
-    try {
-      // Reuse the already-running mic AudioContext so osc1 starts immediately
-      // (creating a new context every detection has ~100ms init lag on the first beep).
-      const actx = audioCtxRef.current
-      if (!actx) throw new Error('no audio context')
+    // Pause briefly after detection so the chime doesn't rush in, then play
+    // on the dedicated chime context (isolated from the mic ScriptProcessor thread).
+    setTimeout(() => {
+      try {
+        const actx = chimeCtxRef.current
+        if (!actx) return
 
-      // Capture once with a small lookahead so all events land in the future.
-      const t = actx.currentTime + 0.020
+        const t = actx.currentTime + 0.015 // small lookahead — context is pre-warmed
 
-      const osc1 = actx.createOscillator()
-      const osc2 = actx.createOscillator()
-      // Separate gain per oscillator — lets each fade to 0 before stopping (no click).
-      const g1 = actx.createGain()
-      const g2 = actx.createGain()
+        const osc1 = actx.createOscillator()
+        const osc2 = actx.createOscillator()
+        const g1 = actx.createGain()
+        const g2 = actx.createGain()
 
-      osc1.type = 'sine'; osc1.frequency.value = 440
-      osc2.type = 'sine'; osc2.frequency.value = 587
+        osc1.type = 'sine'; osc1.frequency.value = 440
+        osc2.type = 'sine'; osc2.frequency.value = 587
 
-      // First tone (440 Hz): fade in → sustain → fade out, fully silent before stop.
-      g1.gain.setValueAtTime(0, t)
-      g1.gain.linearRampToValueAtTime(0.18, t + 0.03)
-      g1.gain.setValueAtTime(0.18, t + 0.11)
-      g1.gain.linearRampToValueAtTime(0, t + 0.15)
+        // First tone: fade in → sustain → fade to zero before stopping (no click).
+        g1.gain.setValueAtTime(0, t)
+        g1.gain.linearRampToValueAtTime(0.18, t + 0.03)
+        g1.gain.setValueAtTime(0.18, t + 0.11)
+        g1.gain.linearRampToValueAtTime(0, t + 0.15)
 
-      // Second tone (587 Hz): starts while first is fading, its own clean envelope.
-      g2.gain.setValueAtTime(0, t + 0.12)
-      g2.gain.linearRampToValueAtTime(0.18, t + 0.15)
-      g2.gain.setValueAtTime(0.18, t + 0.34)
-      g2.gain.linearRampToValueAtTime(0, t + 0.38)
+        // Second tone: overlaps slightly with first fading out, clean envelope.
+        g2.gain.setValueAtTime(0, t + 0.12)
+        g2.gain.linearRampToValueAtTime(0.18, t + 0.15)
+        g2.gain.setValueAtTime(0.18, t + 0.34)
+        g2.gain.linearRampToValueAtTime(0, t + 0.38)
 
-      osc1.connect(g1); g1.connect(actx.destination)
-      osc2.connect(g2); g2.connect(actx.destination)
+        osc1.connect(g1); g1.connect(actx.destination)
+        osc2.connect(g2); g2.connect(actx.destination)
 
-      osc1.start(t);          osc1.stop(t + 0.17) // stops after gain hits 0 at +0.15
-      osc2.start(t + 0.12);   osc2.stop(t + 0.40) // stops after gain hits 0 at +0.38
-      osc2.onended = () => { /* shared context — do not close */ }
-    } catch (err) {
-      console.error('Wake word chime failed:', err)
-    }
+        osc1.start(t);        osc1.stop(t + 0.17)
+        osc2.start(t + 0.12); osc2.stop(t + 0.40)
+      } catch (err) {
+        console.error('Wake word chime failed:', err)
+      }
+    }, 80) // 80ms pause after detection before the chime plays
   }
 }
 
@@ -310,6 +310,10 @@ export function useWakeWord({
       const ctx = new AudioContext()
       audioCtxRef.current = ctx
 
+      // Pre-warm a dedicated chime context so it's ready with no init lag at detection time.
+      const chimeCtx = new AudioContext()
+      chimeCtxRef.current = chimeCtx
+
       const source = ctx.createMediaStreamSource(stream)
       sourceRef.current = source
 
@@ -372,11 +376,13 @@ export function useWakeWord({
     processorRef.current?.disconnect()
     sourceRef.current?.disconnect()
     void audioCtxRef.current?.close()
+    void chimeCtxRef.current?.close()
     streamRef.current?.getTracks().forEach(t => t.stop())
 
     processorRef.current = null
     sourceRef.current = null
     audioCtxRef.current = null
+    chimeCtxRef.current = null
     streamRef.current = null
 
     sampleBufferRef.current = new Float32Array(0)
