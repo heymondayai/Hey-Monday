@@ -207,28 +207,35 @@ export function useWakeWord({
       const actx = audioCtxRef.current
       if (!actx) throw new Error('no audio context')
 
+      // Capture once with a small lookahead so all events land in the future.
+      const t = actx.currentTime + 0.020
+
       const osc1 = actx.createOscillator()
       const osc2 = actx.createOscillator()
-      const gain = actx.createGain()
+      // Separate gain per oscillator — lets each fade to 0 before stopping (no click).
+      const g1 = actx.createGain()
+      const g2 = actx.createGain()
 
-      osc1.type = 'sine'
-      osc2.type = 'sine'
-      osc1.frequency.setValueAtTime(440, actx.currentTime)
-      osc2.frequency.setValueAtTime(587, actx.currentTime + 0.12)
+      osc1.type = 'sine'; osc1.frequency.value = 440
+      osc2.type = 'sine'; osc2.frequency.value = 587
 
-      gain.gain.setValueAtTime(0.0, actx.currentTime)
-      gain.gain.linearRampToValueAtTime(0.18, actx.currentTime + 0.03)
-      gain.gain.setValueAtTime(0.18, actx.currentTime + 0.10)
-      gain.gain.linearRampToValueAtTime(0.0, actx.currentTime + 0.38)
+      // First tone (440 Hz): fade in → sustain → fade out, fully silent before stop.
+      g1.gain.setValueAtTime(0, t)
+      g1.gain.linearRampToValueAtTime(0.18, t + 0.03)
+      g1.gain.setValueAtTime(0.18, t + 0.11)
+      g1.gain.linearRampToValueAtTime(0, t + 0.15)
 
-      osc1.connect(gain)
-      osc2.connect(gain)
-      gain.connect(actx.destination)
+      // Second tone (587 Hz): starts while first is fading, its own clean envelope.
+      g2.gain.setValueAtTime(0, t + 0.12)
+      g2.gain.linearRampToValueAtTime(0.18, t + 0.15)
+      g2.gain.setValueAtTime(0.18, t + 0.34)
+      g2.gain.linearRampToValueAtTime(0, t + 0.38)
 
-      osc1.start(actx.currentTime)
-      osc1.stop(actx.currentTime + 0.14)
-      osc2.start(actx.currentTime + 0.12)
-      osc2.stop(actx.currentTime + 0.38)
+      osc1.connect(g1); g1.connect(actx.destination)
+      osc2.connect(g2); g2.connect(actx.destination)
+
+      osc1.start(t);          osc1.stop(t + 0.17) // stops after gain hits 0 at +0.15
+      osc2.start(t + 0.12);   osc2.stop(t + 0.40) // stops after gain hits 0 at +0.38
       osc2.onended = () => { /* shared context — do not close */ }
     } catch (err) {
       console.error('Wake word chime failed:', err)
